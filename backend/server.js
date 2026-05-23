@@ -27,7 +27,6 @@ if (missingEnv.length > 0) {
   console.error('❌ Missing required environment variables: ' + missingEnv.join(', '));
   console.error('   Make sure a .env file exists on the server (it is gitignored,');
   console.error('   so it does NOT get deployed automatically) or set them in PM2.');
-  process.exit(1);
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
