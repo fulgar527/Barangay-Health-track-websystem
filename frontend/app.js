@@ -1,0 +1,5381 @@
+
+// ==================== API LAYER ====================
+// All data operations go through the Express backend.
+// LocalStorage is ONLY used for: theme preference.
+
+const API_BASE_URL = window.location.hostname === 'localhost'
+  ? 'http://localhost:3000/api'
+  : '/api';
+
+// JWT lives in sessionStorage: survives page refresh, cleared on tab close
+let _authToken = (() => { try { return sessionStorage.getItem('ht_token') || null; } catch { return null; } })();
+const getToken = () => _authToken;
+const setToken = (t) => {
+  _authToken = t;
+  try { if (t) sessionStorage.setItem('ht_token', t); else sessionStorage.removeItem('ht_token'); } catch {}
+};
+
+// Central fetch helper — attaches Bearer token, throws on non-2xx
+async function api(method, path, body) {
+  const headers = { 'Content-Type': 'application/json' };
+  const tok = getToken();
+  if (tok) headers['Authorization'] = 'Bearer ' + tok;
+  const res = await fetch(API_BASE_URL + path, {
+    method, headers,
+    body: body != null ? JSON.stringify(body) : undefined
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const e = new Error(data.error || ('HTTP ' + res.status));
+    e.status = res.status; e.data = data; throw e;
+  }
+  return data;
+}
+
+// ── Normalizers: DB snake_case → frontend camelCase ─────────────────────────
+function normalizePatient(p) {
+  if (!p) return null;
+  return {
+    id: p.patient_id||p.id,  patientId: p.patient_id||p.patientId,
+    firstName:  p.first_name ||p.firstName ||'',  lastName: p.last_name||p.lastName||'',
+    middleName: p.middle_name||p.middleName||'',
+    dateOfBirth: p.date_of_birth||p.dateOfBirth||'',
+    age: p.age||0, sex: p.sex||'', address: p.address||'',
+    contact:       p.contact_number||p.contactNumber||p.contact||'',
+    contactNumber: p.contact_number||p.contactNumber||p.contact||'',
+    civilStatus:   p.civil_status  ||p.civilStatus  ||'',  occupation: p.occupation||'',
+    philHealthNumber:       p.philhealth_number      ||p.philHealthNumber      ||'',
+    emergencyContactPerson: p.emergency_contact_person||p.emergencyContactPerson||'',
+    emergencyContactNumber: p.emergency_contact_number||p.emergencyContactNumber||'',
+    allergies:         p.allergies         ||'',
+    chronicConditions: p.chronic_conditions||p.chronicConditions||'',
+    currentMedications:p.current_medications||p.currentMedications||'',
+    registeredDate:   p.created_at||p.registeredDate||'',
+    registrationDate: p.registration_date||p.registrationDate||p.created_at||'',
+  };
+}
+function normalizeQueue(q) {
+  if (!q) return null;
+  const fn=q.first_name||'', ln=q.last_name||'';
+  return {
+    id: q.queue_id||q.id,  queueId: q.queue_id||q.id,
+    queueNumber: q.queue_number||q.queueNumber||0,
+    patientId:   q.patient_id ||q.patientId ||'',
+    name: q.name||(fn&&ln ? fn+' '+ln : ''),
+    age: q.age||0, sex: q.sex||'',
+    service:         q.service_name    ||q.service        ||'',
+    serviceCategory: q.service_category||q.serviceCategory||'',
+    priority:      q.priority      ||'Regular',
+    chiefComplaint:q.chief_complaint||q.chiefComplaint||'',
+    appointmentDate: q.appointment_date||q.appointmentDate||'',
+    appointmentTime: q.appointment_time||q.appointmentTime||'',
+    status:          q.status     ||'Waiting',
+    timeQueued:      q.time_queued||q.timeQueued||new Date().toISOString(),
+    selfBooked:      !!(q.self_booked||q.selfBooked),
+    bookedByUsername: q.booked_by_username||q.bookedByUsername||null,
+    rejectedReason:   q.rejected_reason  ||q.rejectedReason  ||'',
+    rejectedAt:       q.rejected_at      ||q.rejectedAt      ||null,
+  };
+}
+function normalizeVisit(v) {
+  if (!v) return null;
+  return {
+    id: v.visit_id||v.id,  patientId: v.patient_id||v.patientId||'',
+    name: v.name||((v.first_name||'')+' '+(v.last_name||'')).trim(),
+    age: v.age||0, sex: v.sex||'',
+    service:         v.service_name    ||v.service        ||'',
+    serviceCategory: v.service_category||v.serviceCategory||'',
+    priority:      v.priority      ||'',
+    chiefComplaint:v.chief_complaint||v.chiefComplaint||'',
+    visitDate:  v.visit_date||v.visitDate ||v.created_at||'',
+    timeQueued: v.time_queued||v.timeQueued||'',
+    timeServed: v.time_served||v.timeServed||'',
+    diagnosis:   v.diagnosis   ||'', treatment:   v.treatment   ||'',
+    prescription:v.prescription||'', notes:       v.notes       ||'',
+    address: v.address||'',
+    contact: v.contact_number||v.contactNumber||v.contact||'',
+    attendedBy: v.attended_by||v.attendedBy||'',
+  };
+}
+function normalizeUser(u) {
+  if (!u) return null;
+  return {
+    id: u.user_id||u.id,  userId: u.user_id||u.id,
+    username: u.username||'', role: u.role||'',
+    fullName: u.full_name||u.fullName||'', email: u.email||'',
+    createdAt: u.created_at||u.createdAt||'', lastLogin: u.last_login||u.lastLogin||'',
+  };
+}
+
+
+        const { useState, useEffect } = React;
+
+        // ==================== ICON COMPONENTS ====================
+        const Activity = ({ className }) => (
+            <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+        );
+
+        const UserPlus = ({ className }) => (
+            <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+            </svg>
+        );
+
+        const Users = ({ className }) => (
+            <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+            </svg>
+        );
+
+        const Clock = ({ className }) => (
+            <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+        );
+
+        const AlertCircle = ({ className }) => (
+            <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+        );
+
+        const CheckCircle = ({ className }) => (
+            <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+        );
+
+        const List = ({ className }) => (
+            <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+        );
+
+        const Calendar = ({ className }) => (
+            <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+        );
+
+        const Download = ({ className }) => (
+            <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+            </svg>
+        );
+
+        const FileSpreadsheet = ({ className }) => (
+            <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+        );
+
+        const Search = ({ className }) => (
+            <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+        );
+
+        const Edit = ({ className }) => (
+            <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+            </svg>
+        );
+
+        const Trash = ({ className }) => (
+            <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+        );
+
+        const XCircle = ({ className }) => (
+            <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+        );
+
+        const Bell = ({ className }) => (
+            <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+            </svg>
+        );
+
+        const BarChart = ({ className }) => (
+            <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+            </svg>
+        );
+
+        const FileText = ({ className }) => (
+            <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+        );
+
+        const Home = ({ className }) => (
+            <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+            </svg>
+        );
+
+        const LogOut = ({ className }) => (
+            <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+            </svg>
+        );
+
+        // ==================== SERVICES CONFIGURATION ====================
+        const SERVICE_CATEGORIES = {
+          'Maternal Care': {
+            urgency: 'Non-Urgent',
+            services: [
+              { name: 'Prenatal check-up', priority: 'Regular' },
+              { name: 'Postnatal care', priority: 'Regular' },
+              { name: 'Safe motherhood education', priority: 'Regular' }
+            ]
+          },
+          'Child Health Services': {
+            urgency: 'Non-Urgent',
+            services: [
+              { name: 'Newborn check-up', priority: 'Regular' },
+              { name: 'Immunization/vaccination programs', priority: 'Regular' },
+              { name: 'Growth monitoring (weighing, height measurement)', priority: 'Regular' }
+            ]
+          },
+          'Family Planning': {
+            urgency: 'Non-Urgent',
+            services: [
+              { name: 'Counseling sessions', priority: 'Regular' },
+              { name: 'Distribution of contraceptives (pills, condoms, injectables)', priority: 'Regular' },
+              { name: 'Natural family planning guidance', priority: 'Regular' }
+            ]
+          },
+          'Basic Medical Services': {
+            urgency: 'Mixed',
+            services: [
+              { name: 'First aid treatment for minor injuries', priority: 'Urgent' },
+              { name: 'Consultation for common illnesses (fever, cough, colds, diarrhea)', priority: 'Regular' },
+              { name: 'Vital signs monitoring (BP, temperature, weight)', priority: 'Regular' },
+              { name: 'Referral to hospitals for advanced care', priority: 'Priority Case' }
+            ]
+          },
+          'Nutrition Programs': {
+            urgency: 'Non-Urgent',
+            services: [
+              { name: 'Operation Timbang (child weighing)', priority: 'Regular' },
+              { name: 'Nutrition and diet counseling', priority: 'Regular' },
+              { name: 'Vitamin supplementation (Vit. A, Iron, etc.)', priority: 'Regular' }
+            ]
+          },
+          'Communicable Disease Control': {
+            urgency: 'Urgent',
+            services: [
+              { name: 'Tuberculosis (TB) screening and referral', priority: 'Urgent' },
+              { name: 'Dengue monitoring and awareness campaigns', priority: 'Urgent' },
+              { name: 'COVID-19 monitoring', priority: 'Urgent' },
+              { name: 'Rabies prevention information', priority: 'Urgent' }
+            ]
+          },
+          'Health Education & Counseling': {
+            urgency: 'Non-Urgent',
+            services: [
+              { name: 'Hygiene and sanitation education', priority: 'Regular' },
+              { name: 'Adolescent health counseling', priority: 'Regular' },
+              { name: 'Awareness programs for diabetes, hypertension, etc.', priority: 'Regular' }
+            ]
+          },
+          'Environmental Health & Sanitation Services': {
+            urgency: 'Non-Urgent',
+            services: [
+              { name: 'Water sanitation and safety awareness', priority: 'Regular' },
+              { name: 'Waste disposal education', priority: 'Regular' },
+              { name: 'Community health surveillance', priority: 'Regular' }
+            ]
+          },
+          'Senior Citizen Health Services': {
+            urgency: 'Non-Urgent',
+            services: [
+              { name: 'Blood pressure check', priority: 'Regular' },
+              { name: 'Basic medical consultation', priority: 'Regular' },
+              { name: 'Maintenance medicine distribution', priority: 'Regular' }
+            ]
+          },
+          'Administrative & Health Records Services': {
+            urgency: 'Non-Urgent',
+            services: [
+              { name: 'Updating barangay health records', priority: 'Regular' },
+              { name: 'Health referrals and documents', priority: 'Regular' },
+              { name: 'Assistance with health certificates', priority: 'Regular' }
+            ]
+          }
+        };
+
+        // Legacy SERVICES object for backward compatibility
+        const SERVICES = {};
+        Object.keys(SERVICE_CATEGORIES).forEach(category => {
+          SERVICE_CATEGORIES[category].services.forEach(service => {
+            SERVICES[service.name] = {
+              category: SERVICE_CATEGORIES[category].urgency,
+              priority: service.priority
+            };
+          });
+        });
+
+        // ==================== MAIN APP COMPONENT ====================
+        function HealthTrackApp() {
+          // ==================== PHONE NUMBER HELPER ====================
+          const sanitizePhone = (val) => {
+            return val.replace(/[^0-9+]/g, '').replace(/(.)\+/g, '$1');
+          };
+          const isValidPhone = (val) => {
+            if (!val) return true;
+            var digits = val.replace(/\D/g,'');
+            return digits.length >= 7 && digits.length <= 15;
+          };
+          const phoneClass = (val) => {
+            if (!val) return '';
+            if (/[a-zA-Z]/.test(val)) return 'border-red-400 bg-red-50';
+            if (!isValidPhone(val)) return 'border-amber-400 bg-amber-50';
+            return 'border-green-400 bg-green-50';
+          };
+          const PhoneMsg = ({ val }) => {
+            if (!val) return null;
+            if (/[a-zA-Z]/.test(val)) return React.createElement('p', {style:{color:'#dc2626',fontSize:'11px',marginTop:'3px'}}, 'Numbers only — letters not allowed.');
+            if (!isValidPhone(val)) return React.createElement('p', {style:{color:'#CC0000',fontSize:'11px',marginTop:'3px'}}, 'Enter a valid phone number (7–15 digits).');
+            return React.createElement('p', {style:{color:'#111827',fontSize:'11px',marginTop:'3px'}}, '✓ Valid phone number');
+          };
+          // ==================== END PHONE HELPER ====================
+
+          // ==================== THEME SYSTEM ====================
+          const DEFAULT_THEME = {
+            primary: '#CC0000',
+            accent: '#990000',
+            bg: '#f8fafc',
+          };
+          const THEME_VERSION = 'v3';
+          const savedTheme = (() => {
+            try {
+              const raw = JSON.parse(localStorage.getItem('ht_theme'));
+              if (!raw || raw._v !== THEME_VERSION) return DEFAULT_THEME;
+              return raw;
+            } catch(e) { return DEFAULT_THEME; }
+          })();
+          const [theme, setTheme] = useState(savedTheme);
+
+          const applyTheme = (t) => {
+            // Compute derived shades
+            const toHex = (c,a) => { const r=parseInt(c.slice(1,3),16), g=parseInt(c.slice(3,5),16), b=parseInt(c.slice(5,7),16); return `rgba(${r},${g},${b},${a})`; };
+            const lighten = (c) => { const r=Math.min(255,parseInt(c.slice(1,3),16)+180), g=Math.min(255,parseInt(c.slice(3,5),16)+180), b=Math.min(255,parseInt(c.slice(5,7),16)+180); return `#${r.toString(16).padStart(2,'0')}${g.toString(16).padStart(2,'0')}${b.toString(16).padStart(2,'0')}`; };
+            const darken = (c) => { const r=Math.max(0,parseInt(c.slice(1,3),16)-30), g=Math.max(0,parseInt(c.slice(3,5),16)-30), b=Math.max(0,parseInt(c.slice(5,7),16)-30); return `#${r.toString(16).padStart(2,'0')}${g.toString(16).padStart(2,'0')}${b.toString(16).padStart(2,'0')}`; };
+            let el = document.getElementById('ht-theme-vars');
+            if (!el) { el = document.createElement('style'); el.id = 'ht-theme-vars'; document.head.appendChild(el); }
+            el.textContent = `:root {
+              --ht-primary: ${t.primary};
+              --ht-primary-dark: ${darken(t.primary)};
+              --ht-primary-light: ${lighten(t.primary)};
+              --ht-accent: ${t.accent};
+              --ht-bg: ${t.bg};
+            }
+            body { background-color: ${t.bg} !important; }
+            .min-h-screen.bg-gray-50 { background-color: ${t.bg} !important; }
+            .min-h-screen { background-color: ${t.bg} !important; }
+            `;
+          };
+
+          useEffect(() => { applyTheme(theme); }, [theme]);
+
+          const saveTheme = (newTheme) => {
+            setTheme(newTheme);
+            localStorage.setItem('ht_theme', JSON.stringify({...newTheme, _v: THEME_VERSION}));
+            applyTheme(newTheme);
+          };
+          const resetTheme = () => saveTheme(DEFAULT_THEME);
+          // ==================== END THEME SYSTEM ====================
+
+          // Core States
+          const [userRole, setUserRole] = useState(''); // '', 'admin', 'staff', 'resident'
+          const [activeTab, setActiveTab] = useState('dashboard');
+          const [currentUser, setCurrentUser] = useState(null);
+          
+          // Authentication States
+          const [loginUsername, setLoginUsername] = useState('');
+          const [loginPassword, setLoginPassword] = useState('');
+          const [loginError, setLoginError] = useState('');
+          const [showCreateAccount, setShowCreateAccount] = useState(false);
+          const [showPassword, setShowPassword] = useState(false);
+          const [showRegPassword, setShowRegPassword] = useState(false);
+          const [newAccount, setNewAccount] = useState({
+            username: '', password: '', confirmPassword: '', role: 'resident',
+            firstName: '', middleInitial: '', lastName: '',
+            birthday: '',
+            email: '', mobile: '', contactMethod: 'email'
+          });
+          const [registerError, setRegisterError] = useState('');
+          const [registerSuccess, setRegisterSuccess] = useState('');
+
+          // ── Login lockout state ──────────────────────────────────────────
+          const [loginAttempts, setLoginAttempts] = useState(0);
+          const [lockoutUntil, setLockoutUntil] = useState(null); // timestamp ms
+          const [lockoutCountdown, setLockoutCountdown] = useState(0);
+
+          // ── Session inactivity state ─────────────────────────────────────
+          const [lastActivity, setLastActivity] = useState(Date.now());
+          const [showIdleWarning, setShowIdleWarning] = useState(false);
+          const [idleCountdown, setIdleCountdown] = useState(120);
+          const SESSION_TIMEOUT_MS  = 15 * 60 * 1000; // 15 min
+          const SESSION_WARNING_MS  = 2  * 60 * 1000; // warn 2 min before
+          const [otpStep, setOtpStep] = useState(false);
+          const [otpCode, setOtpCode] = useState('');
+          const [otpInput, setOtpInput] = useState('');
+          const [otpError, setOtpError] = useState('');
+          const [otpContact, setOtpContact] = useState('');
+          const [pendingAccount, setPendingAccount] = useState(null);
+          const [otpResendCount, setOtpResendCount] = useState(0);
+
+          // NOTE: simpleHash and localStorage-based getAccounts removed.
+          // Accounts are now managed by the backend (/api/auth). Use the `users` state.
+          const getAccounts = () => users; // kept as alias so JSX references still work
+
+          // Handle Login — calls /api/auth/login, receives JWT
+          const MAX_ATTEMPTS = 5;
+          const LOCKOUT_DURATION_MS = 5 * 60 * 1000; // 5 minutes
+
+          const handleLogin = async (e) => {
+            e.preventDefault();
+            setLoginError('');
+
+            // Check lockout
+            if (lockoutUntil && Date.now() < lockoutUntil) {
+              const secs = Math.ceil((lockoutUntil - Date.now()) / 1000);
+              setLoginError(`Account locked. Try again in ${Math.floor(secs/60)}:${String(secs%60).padStart(2,'0')} minutes.`);
+              return;
+            }
+            if (!loginUsername.trim() || !loginPassword.trim()) {
+              setLoginError('Please enter both username and password.');
+              return;
+            }
+
+            // ── DEFAULT LOGIN (bypass API for local testing) ─────────────────
+            // Uses hardcoded credentials matching the default accounts shown on
+            // the login screen. Remove this block and restore the API call below
+            // once the backend is confirmed working on Hostinger.
+            const DEFAULT_ACCOUNTS = [
+              { username: 'admin',    password: 'admin123',    role: 'admin',    fullName: 'Admin User',    userId: 'local-admin' },
+              { username: 'staff',    password: 'staff123',    role: 'staff',    fullName: 'Staff User',    userId: 'local-staff' },
+              { username: 'resident', password: 'resident123', role: 'resident', fullName: 'Resident User', userId: 'local-resident' },
+            ];
+
+            const match = DEFAULT_ACCOUNTS.find(
+              a => a.username === loginUsername.trim().toLowerCase() && a.password === loginPassword
+            );
+
+            if (match) {
+              const user = {
+                id: match.userId, userId: match.userId,
+                username: match.username, role: match.role,
+                fullName: match.fullName, email: '',
+              };
+              setToken('local-dev-token');
+              setLoginAttempts(0); setLockoutUntil(null);
+              setCurrentUser(user); setUserRole(user.role);
+              try { sessionStorage.setItem('ht_user', JSON.stringify(user)); } catch {}
+              if (user.role === 'resident') setResidentView('queue');
+              else setActiveTab('dashboard');
+              setLoginUsername(''); setLoginPassword('');
+              setLoginError(''); setShowPassword(false);
+              setLastActivity(Date.now());
+            } else {
+              const newAttempts = loginAttempts + 1;
+              setLoginAttempts(newAttempts);
+              if (newAttempts >= MAX_ATTEMPTS) {
+                const until = Date.now() + LOCKOUT_DURATION_MS;
+                setLockoutUntil(until); setLoginAttempts(0);
+                setLoginError('Too many failed attempts. Login locked for 5 minutes.');
+              } else {
+                setLoginError(`Invalid username or password. ${MAX_ATTEMPTS - newAttempts} attempt${MAX_ATTEMPTS - newAttempts !== 1 ? 's' : ''} remaining.`);
+              }
+            }
+            // ── END DEFAULT LOGIN ─────────────────────────────────────────────
+            // To restore API login, delete everything above this line (inside the
+            // try block) and uncomment the block below:
+            //
+            // try {
+            //   setLoginError('');
+            //   const data = await api('POST', '/auth/login', {
+            //     username: loginUsername.trim(), password: loginPassword
+            //   });
+            //   setToken(data.token);
+            //   const user = {
+            //     id: data.user.userId, userId: data.user.userId,
+            //     username: data.user.username, role: data.user.role,
+            //     fullName: data.user.fullName, email: data.user.email,
+            //   };
+            //   setLoginAttempts(0); setLockoutUntil(null);
+            //   setCurrentUser(user); setUserRole(user.role);
+            //   try { sessionStorage.setItem('ht_user', JSON.stringify(user)); } catch {}
+            //   if (user.role === 'resident') setResidentView('queue');
+            //   else setActiveTab('dashboard');
+            //   setLoginUsername(''); setLoginPassword('');
+            //   setLoginError(''); setShowPassword(false);
+            //   setLastActivity(Date.now());
+            // } catch (err) {
+            //   const newAttempts = loginAttempts + 1;
+            //   setLoginAttempts(newAttempts);
+            //   if (newAttempts >= MAX_ATTEMPTS) {
+            //     const until = Date.now() + LOCKOUT_DURATION_MS;
+            //     setLockoutUntil(until); setLoginAttempts(0);
+            //     setLoginError('Too many failed attempts. Login locked for 5 minutes.');
+            //   } else {
+            //     const msg = err.message || 'Invalid username or password.';
+            //     setLoginError(`${msg} ${MAX_ATTEMPTS - newAttempts} attempt${MAX_ATTEMPTS - newAttempts !== 1 ? 's' : ''} remaining.`);
+            //   }
+            // }
+          };
+
+          // ── Audit logger — writes to backend (fire-and-forget) ──────────────
+          const writeAudit = (action, details = '') => {
+            // Best-effort: POST to /api/audit. Never blocks UI.
+            api('POST', '/audit', {
+              action,
+              username: currentUser?.username || 'unknown',
+              role: currentUser?.role || userRole || 'unknown',
+              details
+            }).catch(() => {});
+          };
+
+          // Password strength validator
+          const validatePassword = (pw) => {
+            if (pw.length < 8) return 'Password must be at least 8 characters.';
+            if (!/[a-zA-Z]/.test(pw)) return 'Password must contain at least one letter.';
+            if (!/[0-9]/.test(pw)) return 'Password must contain at least one number.';
+            if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(pw)) return 'Password must contain at least one special character (e.g. @, #, $).';
+            return null;
+          };
+
+          // Generate OTP
+          const generateOTP = () => String(Math.floor(100000 + Math.random() * 900000));
+
+          // Send OTP step — validates form, builds pending account, shows OTP screen
+          const handleSendOTP = (e) => {
+            e.preventDefault();
+            setRegisterError('');
+            const { username, password, confirmPassword, role, firstName, middleInitial, lastName, birthday, email, mobile, contactMethod } = newAccount;
+            if (!username.trim() || !password || !confirmPassword || !firstName.trim() || !lastName.trim()) {
+              setRegisterError('Please fill in all required fields.');
+              return;
+            }
+            if (!birthday) {
+              setRegisterError('Date of Birth is required.');
+              return;
+            }
+            const today = new Date();
+            const dob = new Date(birthday);
+            let age = today.getFullYear() - dob.getFullYear();
+            const m = today.getMonth() - dob.getMonth();
+            if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) age--;
+            if (age < 18) {
+              setRegisterError('You must be at least 18 years old to create an account.');
+              return;
+            }
+            if (age > 85) {
+              setRegisterError('Account registration is only available for individuals 85 years old and below. Please visit your barangay health clinic directly.');
+              return;
+            }
+            if (username.trim().length < 3) {
+              setRegisterError('Username must be at least 3 characters.');
+              return;
+            }
+            const pwError = validatePassword(password);
+            if (pwError) { setRegisterError(pwError); return; }
+            if (password !== confirmPassword) { setRegisterError('Passwords do not match.'); return; }
+            if (contactMethod === 'email') {
+              if (!email.trim()) { setRegisterError('Email address is required for OTP verification.'); return; }
+              if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) { setRegisterError('Please enter a valid email address.'); return; }
+            } else {
+              if (!mobile.trim()) { setRegisterError('Mobile number is required for OTP verification.'); return; }
+              if (!/^(09|\+639)\d{9}$/.test(mobile.trim())) { setRegisterError('Please enter a valid PH mobile number (e.g. 09XXXXXXXXX).'); return; }
+            }
+            const accounts = getAccounts();
+            if (accounts.find(a => a.username.toLowerCase() === username.trim().toLowerCase())) {
+              setRegisterError('Username already exists. Please choose another.');
+              return;
+            }
+            const fullName = `${firstName.trim()} ${middleInitial.trim() ? middleInitial.trim().replace('.','') + '. ' : ''}${lastName.trim()}`;
+            const contact = contactMethod === 'email' ? email.trim() : mobile.trim();
+            const code = generateOTP();
+            setOtpCode(code);
+            setOtpContact(contact);
+            setOtpInput('');
+            setOtpError('');
+            setOtpResendCount(0);
+            const safeRole = 'resident'; // Public registration is resident-only
+            setPendingAccount({
+              id: Date.now(),
+              username: username.trim().toLowerCase(),
+              _plainPassword: password,    // used by handleVerifyOTP to POST to API
+              _firstName: firstName.trim(),
+              _middleInitial: middleInitial.trim(),
+              _lastName: lastName.trim(),
+              role: safeRole, fullName,
+              birthday: birthday,
+              email: contactMethod === 'email' ? email.trim() : '',
+              mobile: contactMethod === 'mobile' ? mobile.trim() : '',
+              createdAt: new Date().toISOString()
+            });
+            setOtpStep(true);
+          };
+
+          // Resend OTP
+          const handleResendOTP = () => {
+            const code = generateOTP();
+            setOtpCode(code);
+            setOtpInput('');
+            setOtpError('');
+            setOtpResendCount(c => c + 1);
+          };
+
+          // Verify OTP and finalize account creation — POST to /api/auth/register
+          const handleVerifyOTP = async () => {
+            if (!otpInput.trim()) { setOtpError('Please enter the 6-digit OTP.'); return; }
+            if (otpInput.trim() !== otpCode) { setOtpError('Incorrect OTP. Please try again.'); return; }
+            try {
+              await api('POST', '/auth/register', {
+                username:  pendingAccount.username,
+                password:  pendingAccount._plainPassword,
+                role:      'resident',
+                firstName: pendingAccount._firstName,
+                middleInitial: pendingAccount._middleInitial || '',
+                lastName:  pendingAccount._lastName,
+                email:     pendingAccount.email || '',
+                mobile:    pendingAccount.mobile || '',
+              });
+              setOtpStep(false); setPendingAccount(null); setOtpCode(''); setOtpInput('');
+              setRegisterSuccess(`Account created successfully! You can now log in as "${pendingAccount.username}".`);
+              setNewAccount({ username:'', password:'', confirmPassword:'', role:'resident', firstName:'', middleInitial:'', lastName:'', birthday:'', email:'', mobile:'', contactMethod:'email' });
+              setShowRegPassword(false); setShowCreateAccount(false);
+            } catch(err) {
+              setOtpError(err.message || 'Registration failed. Please try again.');
+            }
+          };
+
+          // Cancel OTP step
+          const handleCancelOTP = () => {
+            setOtpStep(false);
+            setPendingAccount(null);
+            setOtpCode('');
+            setOtpInput('');
+            setOtpError('');
+          };
+
+          // Handle Create Account (alias kept for form onSubmit)
+          const handleCreateAccount = handleSendOTP;
+
+          // Handle Logout — clear JWT + all state
+          const handleLogout = () => {
+            setShowIdleWarning(false);
+            writeAudit('LOGOUT', `${currentUser?.username || ''} logged out`);
+            setToken(null);
+            try { sessionStorage.removeItem('ht_user'); } catch {}
+            setUserRole(''); setCurrentUser(null);
+            setRegisteredPatients([]); setQueue([]); setVisitLog([]); setUsers([]);
+            setLoginUsername(''); setLoginPassword(''); setLoginError('');
+            setShowCreateAccount(false); setShowPassword(false);
+          };
+
+          // ── Clinic Appointment Slots (1-hour, 8 AM–5 PM, lunch 12–1 PM blocked) ──
+          const CLINIC_SLOTS = [
+            { value: '08:00', label: '8:00 AM – 9:00 AM',   slot: 1 },
+            { value: '09:00', label: '9:00 AM – 10:00 AM',  slot: 2 },
+            { value: '10:00', label: '10:00 AM – 11:00 AM', slot: 3 },
+            { value: '11:00', label: '11:00 AM – 12:00 PM', slot: 4 },
+            { value: '12:00', label: '12:00 PM – 1:00 PM',  slot: 5, lunch: true },
+            { value: '13:00', label: '1:00 PM – 2:00 PM',   slot: 6 },
+            { value: '14:00', label: '2:00 PM – 3:00 PM',   slot: 7 },
+            { value: '15:00', label: '3:00 PM – 4:00 PM',   slot: 8 },
+            { value: '16:00', label: '4:00 PM – 5:00 PM',   slot: 9 },
+          ];
+
+          // Returns Set of booked time-values for a given date (excluding an optional appointment id)
+          const getBookedSlots = (date, excludeId = null) => {
+            if (!date) return new Set();
+            return new Set(
+              queue
+                .filter(q => q.appointmentDate === date && q.id !== excludeId && q.status !== 'Cancelled')
+                .map(q => q.appointmentTime)
+            );
+          };
+
+          // Data States
+          const [registeredPatients, setRegisteredPatients] = useState([]);
+          const [queue, setQueue] = useState([]);
+          const [visitLog, setVisitLog] = useState([]);
+          const [users, setUsers] = useState([]);        // admin account management
+          const [loadingData, setLoadingData] = useState(false);
+          const [syncStatus, setSyncStatus] = useState(''); // 'syncing'|'ok'|'error'
+          
+          // UI States
+          const [showRegisterPatient, setShowRegisterPatient] = useState(false);
+          const [showAddToQueue, setShowAddToQueue] = useState(false);
+          const [selectedPatient, setSelectedPatient] = useState(null);
+          const [searchTerm, setSearchTerm] = useState('');
+          const [editingPatient, setEditingPatient] = useState(null);
+          
+          // Analytics States
+          const [analyticsTimeRange, setAnalyticsTimeRange] = useState('daily');
+
+          // ── Session inactivity timer ─────────────────────────────────────
+          React.useEffect(() => {
+            if (!userRole) return; // only when logged in
+            const resetActivity = () => setLastActivity(Date.now());
+            const events = ['mousemove','keydown','click','scroll','touchstart'];
+            events.forEach(e => window.addEventListener(e, resetActivity, { passive: true }));
+            return () => events.forEach(e => window.removeEventListener(e, resetActivity));
+          }, [userRole]);
+
+          React.useEffect(() => {
+            if (!userRole) return;
+            const interval = setInterval(() => {
+              const idle = Date.now() - lastActivity;
+              if (idle >= SESSION_TIMEOUT_MS) {
+                // Force logout
+                setUserRole('');
+                setCurrentUser(null);
+                setLoginError('You were logged out due to inactivity.');
+                setShowIdleWarning(false);
+              } else if (idle >= SESSION_TIMEOUT_MS - SESSION_WARNING_MS) {
+                const remaining = Math.ceil((SESSION_TIMEOUT_MS - idle) / 1000);
+                setIdleCountdown(remaining);
+                setShowIdleWarning(true);
+              } else {
+                setShowIdleWarning(false);
+              }
+            }, 1000);
+            return () => clearInterval(interval);
+          }, [userRole, lastActivity]);
+
+          // ── Lockout countdown timer ──────────────────────────────────────
+          React.useEffect(() => {
+            if (!lockoutUntil) return;
+            const interval = setInterval(() => {
+              const remaining = Math.ceil((lockoutUntil - Date.now()) / 1000);
+              if (remaining <= 0) {
+                setLockoutUntil(null);
+                setLoginError('');
+                setLockoutCountdown(0);
+              } else {
+                setLockoutCountdown(remaining);
+                setLoginError(`Account locked. Try again in ${Math.floor(remaining/60)}:${String(remaining%60).padStart(2,'0')}.`);
+              }
+            }, 1000);
+            return () => clearInterval(interval);
+          }, [lockoutUntil]);
+          // ── Session restore on page reload (token was in sessionStorage) ──────
+          useEffect(() => {
+            const savedToken = getToken();
+            const savedUser = (() => { try { return JSON.parse(sessionStorage.getItem('ht_user')||'null'); } catch { return null; } })();
+            if (!savedToken || !savedUser) return;
+            api('GET', '/auth/verify').then(data => {
+              if (data.valid) {
+                setCurrentUser(savedUser);
+                setUserRole(savedUser.role);
+                if (savedUser.role === 'resident') setResidentView('queue');
+                else setActiveTab('dashboard');
+                setLastActivity(Date.now());
+              } else {
+                setToken(null);
+              }
+            }).catch(() => setToken(null));
+          }, []);
+
+          const [showAdminAddAccount, setShowAdminAddAccount] = useState(false);
+          const [adminNewAccount, setAdminNewAccount] = useState({ username: '', password: '', confirmPassword: '', role: 'staff', firstName: '', middleInitial: '', lastName: '', email: '' });
+          const [adminAccountError, setAdminAccountError] = useState('');
+          const [adminAccountSuccess, setAdminAccountSuccess] = useState('');
+          const [deleteAccountTarget, setDeleteAccountTarget] = useState(null);
+          const [deleteAccountError, setDeleteAccountError] = useState('');
+
+          const handleDeleteAccount = async () => {
+            if (!deleteAccountTarget) return;
+            if (deleteAccountTarget.username === currentUser?.username) {
+              setDeleteAccountError('You cannot delete your own account while logged in.');
+              return;
+            }
+            try {
+              await api('DELETE', '/auth/users/' + deleteAccountTarget.userId);
+              setUsers(prev => prev.filter(u => u.id !== deleteAccountTarget.id));
+              writeAudit('DELETE_USER', `Deleted account: @${deleteAccountTarget.username}`);
+              setDeleteAccountTarget(null); setDeleteAccountError('');
+            } catch(err) {
+              setDeleteAccountError(err.message || 'Failed to delete account.');
+            }
+          };
+          const [analyticsServiceFilter, setAnalyticsServiceFilter] = useState('all');
+          
+          // Resident Portal States
+          const [residentView, setResidentView] = useState('queue'); // 'queue', 'history', 'booking', 'appointments'
+          const [residentPatientId, setResidentPatientId] = useState('');
+          const [residentBooking, setResidentBooking] = useState({
+            lastName: '', firstName: '', middleName: '',
+            dateOfBirth: '', sex: '', civilStatus: '',
+            address: '', contactNumber: '', occupation: '',
+            emergencyContactPerson: '', emergencyContactNumber: '',
+            philHealthNumber: '', allergies: '', chronicConditions: '', currentMedications: '',
+            appointmentDate: '', appointmentTime: '',
+            serviceCategory: '', serviceType: '', priorityLevel: '', notes: ''
+          });
+
+          // Appointment Management States
+          const [editingAppointment, setEditingAppointment] = useState(null);
+          const [editMode, setEditMode] = useState(''); // 'edit', 'reschedule'
+          const [showCancelConfirm, setShowCancelConfirm] = useState(null);
+          const [appointmentSearch, setAppointmentSearch] = useState('');
+
+          // ── Data loading helpers ──────────────────────────────────────────
+          const loadPatients = async () => {
+            try {
+              const rows = await api('GET', '/patients');
+              setRegisteredPatients(rows.map(normalizePatient));
+            } catch(e) { console.error('loadPatients:', e.message); }
+          };
+
+          const loadQueue = async () => {
+            try {
+              const rows = await api('GET', '/queue');
+              setQueue(rows.map(normalizeQueue));
+            } catch(e) { console.error('loadQueue:', e.message); }
+          };
+
+          const loadVisitLog = async () => {
+            try {
+              const rows = await api('GET', '/visit-log');
+              setVisitLog(rows.map(normalizeVisit));
+            } catch(e) { console.error('loadVisitLog:', e.message); }
+          };
+
+          const loadUsers = async () => {
+            try {
+              const data = await api('GET', '/auth/users');
+              setUsers((data.users || []).map(normalizeUser));
+            } catch(e) { console.error('loadUsers:', e.message); }
+          };
+
+          // ── Initial load: session restore + data fetch on login ──────────
+          useEffect(() => {
+            if (!userRole) return;
+            setLoadingData(true);
+            const tasks = [loadPatients(), loadQueue(), loadVisitLog()];
+            if (userRole === 'admin') tasks.push(loadUsers());
+            Promise.all(tasks).finally(() => setLoadingData(false));
+          }, [userRole]);
+
+          // ── Real-time polling: queue every 5 s, full refresh every 30 s ──
+          useEffect(() => {
+            if (!userRole) return;
+            const queueTimer = setInterval(() => {
+              loadQueue();
+            }, 5000);
+            const fullTimer = setInterval(() => {
+              loadPatients();
+              loadVisitLog();
+              if (userRole === 'admin') loadUsers();
+            }, 30000);
+            return () => { clearInterval(queueTimer); clearInterval(fullTimer); };
+          }, [userRole]);
+
+          // Initial state for new patient registration
+          const [newPatient, setNewPatient] = useState({
+            lastName: '',
+            firstName: '',
+            middleName: '',
+            dateOfBirth: '',
+            sex: '',
+            address: '',
+            contact: '',
+            civilStatus: '',
+            occupation: '',
+            philHealthNumber: '',
+            emergencyContactPerson: '',
+            emergencyContactNumber: '',
+            allergies: '',
+            chronicConditions: '',
+            currentMedications: ''
+          });
+
+          // State for adding registered patient to queue
+          const [queuePatient, setQueuePatient] = useState({
+            patientId: '',
+            serviceCategory: '',
+            serviceType: '',
+            priority: 'Regular',
+            chiefComplaint: ''
+          });
+
+          const priorityLevels = {
+            'Priority Case': { color: 'bg-red-500', textColor: 'text-red-700', bgLight: 'bg-red-50', border: 'border-red-200', weight: 1 },
+            Urgent: { color: 'bg-orange-500', textColor: 'text-orange-700', bgLight: 'bg-orange-50', border: 'border-orange-200', weight: 2 },
+            Regular: { color: 'bg-green-500', textColor: 'text-green-700', bgLight: 'bg-green-50', border: 'border-green-200', weight: 3 }
+          };
+
+          // Generate unique Patient ID
+          const generatePatientId = () => {
+            const year = new Date().getFullYear();
+            const sequence = (registeredPatients.length + 1).toString().padStart(4, '0');
+            return `PT-${year}-${sequence}`;
+          };
+
+          // Calculate age from date of birth
+          const calculateAge = (dateOfBirth) => {
+            const today = new Date();
+            const birthDate = new Date(dateOfBirth);
+            let age = today.getFullYear() - birthDate.getFullYear();
+            const monthDiff = today.getMonth() - birthDate.getMonth();
+            if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+              age--;
+            }
+            return age;
+          };
+
+          // Register new patient — POST to /api/patients
+          const registerPatient = async () => {
+            if (!newPatient.lastName || !newPatient.firstName || !newPatient.dateOfBirth || !newPatient.sex || !newPatient.address || !newPatient.contact) {
+              alert('Please fill in all required fields (marked with *)');
+              return;
+            }
+            if (/[a-zA-Z]/.test(newPatient.contact)) {
+              alert('Contact Number must contain digits only — no letters allowed.');
+              return;
+            }
+            if (newPatient.emergencyContactNumber && /[a-zA-Z]/.test(newPatient.emergencyContactNumber)) {
+              alert('Emergency Contact Number must contain digits only — no letters allowed.');
+              return;
+            }
+            try {
+              const row = await api('POST', '/patients', {
+                lastName: newPatient.lastName, firstName: newPatient.firstName,
+                middleName: newPatient.middleName || null,
+                dateOfBirth: newPatient.dateOfBirth,
+                age: calculateAge(newPatient.dateOfBirth),
+                sex: newPatient.sex, address: newPatient.address,
+                contactNumber: newPatient.contact,
+                civilStatus: newPatient.civilStatus || null,
+                occupation: newPatient.occupation || null,
+                philhealthNumber: newPatient.philHealthNumber || null,
+                emergencyContactPerson: newPatient.emergencyContactPerson || null,
+                emergencyContactNumber: newPatient.emergencyContactNumber || null,
+                allergies: newPatient.allergies || null,
+                chronicConditions: newPatient.chronicConditions || null,
+                currentMedications: newPatient.currentMedications || null,
+              });
+              const patient = normalizePatient(row);
+              setRegisteredPatients(prev => [patient, ...prev]);
+              setNewPatient({ lastName:'', firstName:'', middleName:'', dateOfBirth:'', sex:'', address:'', contact:'', civilStatus:'', occupation:'', philHealthNumber:'', emergencyContactPerson:'', emergencyContactNumber:'', allergies:'', chronicConditions:'', currentMedications:'' });
+              setShowRegisterPatient(false);
+              alert('Patient registered successfully! Patient ID: ' + patient.patientId);
+              setActiveTab('patients');
+            } catch(err) {
+              alert('Registration failed: ' + (err.message || 'Unknown error'));
+            }
+          };
+
+          // Add registered patient to queue — POST /api/queue
+          const addToQueue = async () => {
+            if (!queuePatient.patientId || !queuePatient.serviceCategory || !queuePatient.serviceType || !queuePatient.chiefComplaint) {
+              alert('Please select a patient, service category, service type, and enter chief complaint');
+              return;
+            }
+            const patient = registeredPatients.find(p => p.patientId === queuePatient.patientId);
+            if (!patient) { alert('Patient not found'); return; }
+            const alreadyInQueue = queue.find(q =>
+              q.patientId === queuePatient.patientId &&
+              !['Completed','Cancelled','Rejected'].includes(q.status)
+            );
+            if (alreadyInQueue) {
+              alert(`${patient.firstName} ${patient.lastName} is already in the queue (#${alreadyInQueue.queueNumber}). Please serve or remove the existing entry first.`);
+              return;
+            }
+            const priority = queuePatient.priority ||
+              SERVICE_CATEGORIES[queuePatient.serviceCategory]?.services
+                .find(s => s.name === queuePatient.serviceType)?.priority || 'Regular';
+            try {
+              const row = await api('POST', '/queue', {
+                patientId: patient.patientId,
+                serviceCategory: queuePatient.serviceCategory,
+                serviceName: queuePatient.serviceType,
+                priority,
+                chiefComplaint: queuePatient.chiefComplaint,
+                selfBooked: false,
+                bookedByUsername: currentUser?.username || null,
+              });
+              const entry = normalizeQueue(row);
+              setQueue(prev => [...prev, entry].sort((a,b) => priorityLevels[a.priority].weight - priorityLevels[b.priority].weight));
+              setQueuePatient({ patientId:'', serviceCategory:'', serviceType:'', priority:'Regular', chiefComplaint:'' });
+              setShowAddToQueue(false);
+              alert(`${patient.firstName} ${patient.lastName} added to queue with ${priority} priority`);
+            } catch(err) {
+              alert('Failed to add to queue: ' + (err.message || 'Unknown error'));
+            }
+          };
+
+          // ── Serve modal state ──
+          const [serveModalTarget, setServeModalTarget] = useState(null);
+          const [serveForm, setServeForm] = useState({ diagnosis: '', treatment: '', prescription: '', notes: '' });
+          const [serveError, setServeError] = useState('');
+
+          // Open serve modal instead of direct serve
+          const markAsServed = (queueItem) => {
+            setServeModalTarget(queueItem);
+            setServeForm({ diagnosis: '', treatment: '', prescription: '', notes: '' });
+            setServeError('');
+          };
+
+          // Confirm serve — POST /api/queue/:id/complete (creates visit log on backend)
+          const confirmServe = async () => {
+            if (!serveForm.diagnosis.trim()) {
+              setServeError('Diagnosis is required before marking a patient as served.');
+              return;
+            }
+            if (!serveForm.notes.trim()) {
+              setServeError('Clinical notes are required before marking a patient as served.');
+              return;
+            }
+            try {
+              await api('POST', '/queue/' + serveModalTarget.queueId + '/complete', {
+                diagnosis:    serveForm.diagnosis.trim(),
+                treatment:    serveForm.treatment.trim() || null,
+                prescription: serveForm.prescription.trim() || null,
+                notes:        serveForm.notes.trim(),
+                attendedBy:   currentUser?.fullName || currentUser?.username || 'Staff',
+              });
+              // Refresh both queue and visit log from server
+              await Promise.all([loadQueue(), loadVisitLog()]);
+              setServeModalTarget(null); setServeError('');
+              alert(`Patient "${serveModalTarget.name}" marked as served.`);
+            } catch(err) {
+              setServeError(err.message || 'Failed to mark as served.');
+            }
+          };
+
+          // ── Notifications (in-app) ──
+          const [notifications, setNotifications] = useState([]);
+          const [showNotifPanel, setShowNotifPanel] = useState(false);
+
+          const pushNotification = (patientId, title, message, type = 'info') => {
+            const notif = { id: Date.now(), patientId, title, message, type, timestamp: new Date().toISOString(), read: false };
+            const updated = [notif, ...notifications];
+            setNotifications(updated);
+          };
+
+          const markNotifsRead = () => {
+            setNotifications(notifications.map(n => ({ ...n, read: true })));
+          };
+
+          // ── Reject modal state ──
+          const [rejectTarget, setRejectTarget] = useState(null);
+          const [rejectReason, setRejectReason] = useState('');
+          const [rejectError, setRejectError] = useState('');
+
+          const openRejectModal = (item) => { setRejectTarget(item); setRejectReason(''); setRejectError(''); };
+          const closeRejectModal = () => { setRejectTarget(null); setRejectReason(''); setRejectError(''); };
+
+          const confirmReject = async () => {
+            if (!rejectReason.trim()) { setRejectError('Please provide a reason for rejection.'); return; }
+            try {
+              await api('PATCH', '/queue/' + rejectTarget.queueId + '/status', {
+                status: 'Rejected', rejectedReason: rejectReason.trim()
+              });
+              setQueue(prev => prev.map(q => q.id === rejectTarget.id
+                ? { ...q, status:'Rejected', rejectedReason:rejectReason.trim(), rejectedAt:new Date().toISOString() }
+                : q
+              ));
+              pushNotification(rejectTarget.patientId, 'Appointment Rejected',
+                `Your appointment on ${rejectTarget.appointmentDate||'N/A'} has been rejected. Reason: ${rejectReason.trim()}`, 'rejected');
+              closeRejectModal();
+            } catch(err) { setRejectError(err.message || 'Failed to reject appointment.'); }
+          };
+
+          const acceptAppointment = async (item) => {
+            try {
+              await api('PATCH', '/queue/' + item.queueId + '/status', { status: 'Accepted' });
+              setQueue(prev => prev.map(q => q.id === item.id ? {...q, status:'Accepted'} : q));
+              pushNotification(item.patientId, 'Appointment Accepted',
+                `Your appointment on ${item.appointmentDate||'N/A'} has been accepted. Please arrive on time.`, 'accepted');
+            } catch(err) { alert('Failed to accept: ' + (err.message||'Error')); }
+          };
+
+          // Remove from queue — DELETE /api/queue/:id
+          const removeFromQueue = async (queueItem) => {
+            if (!window.confirm(`Remove ${queueItem.name} from queue?`)) return;
+            try {
+              await api('DELETE', '/queue/' + queueItem.queueId);
+              writeAudit('QUEUE_REMOVED', `Removed: ${queueItem.name} (${queueItem.patientId})`);
+              setQueue(prev => prev.filter(item => item.id !== queueItem.id));
+            } catch(err) { alert('Failed to remove: ' + (err.message||'Error')); }
+          };
+
+          // Update patient information — PUT /api/patients/:id
+          const updatePatient = async () => {
+            if (!editingPatient) return;
+            try {
+              const row = await api('PUT', '/patients/' + editingPatient.patientId, {
+                lastName: editingPatient.lastName, firstName: editingPatient.firstName,
+                middleName: editingPatient.middleName || null,
+                dateOfBirth: editingPatient.dateOfBirth,
+                age: calculateAge(editingPatient.dateOfBirth),
+                sex: editingPatient.sex, address: editingPatient.address,
+                contactNumber: editingPatient.contact || editingPatient.contactNumber,
+                civilStatus: editingPatient.civilStatus || null,
+                occupation: editingPatient.occupation || null,
+                philhealthNumber: editingPatient.philHealthNumber || null,
+                emergencyContactPerson: editingPatient.emergencyContactPerson || null,
+                emergencyContactNumber: editingPatient.emergencyContactNumber || null,
+                allergies: editingPatient.allergies || null,
+                chronicConditions: editingPatient.chronicConditions || null,
+                currentMedications: editingPatient.currentMedications || null,
+              });
+              const updated = normalizePatient(row);
+              setRegisteredPatients(prev => prev.map(p => p.patientId === updated.patientId ? updated : p));
+              setEditingPatient(null);
+              alert('Patient information updated successfully');
+            } catch(err) { alert('Update failed: ' + (err.message||'Error')); }
+          };
+
+          // Delete patient — DELETE /api/patients/:id
+          const deletePatient = async (patientId) => {
+            if (!window.confirm('Are you sure you want to delete this patient? This action cannot be undone.')) return;
+            try {
+              const patient = registeredPatients.find(p => p.id === patientId || p.patientId === patientId);
+              const pid = patient?.patientId || patientId;
+              await api('DELETE', '/patients/' + pid);
+              writeAudit('DELETE_PATIENT', `Deleted patient: ${pid}`);
+              setRegisteredPatients(prev => prev.filter(p => p.id !== patientId && p.patientId !== patientId));
+              alert('Patient deleted successfully');
+            } catch(err) { alert('Delete failed: ' + (err.message||'Error')); }
+          };
+
+          // ==================== ANALYTICS FUNCTIONS ====================
+          const getAnalyticsData = () => {
+            const now = new Date();
+            let startDate, endDate;
+
+            switch (analyticsTimeRange) {
+              case 'daily':
+                startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+                endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+                break;
+              case 'weekly':
+                startDate = new Date(now);
+                startDate.setDate(now.getDate() - 7);
+                endDate = now;
+                break;
+              case 'monthly':
+                startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+                endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+                break;
+              case 'yearly':
+                startDate = new Date(now.getFullYear(), 0, 1);
+                endDate = new Date(now.getFullYear(), 11, 31, 23, 59, 59);
+                break;
+              default:
+                startDate = new Date(0);
+                endDate = now;
+            }
+
+            let filteredVisits = visitLog.filter(v => {
+              const visitDate = new Date(v.visitDate);
+              return visitDate >= startDate && visitDate <= endDate;
+            });
+
+            // Apply service filter
+            if (analyticsServiceFilter !== 'all') {
+              filteredVisits = filteredVisits.filter(v => v.service === analyticsServiceFilter);
+            }
+
+            return filteredVisits;
+          };
+
+          const getServiceStatistics = () => {
+            const data = getAnalyticsData();
+            const serviceCount = {};
+            const urgentCount = {};
+            const nonUrgentCount = {};
+
+            data.forEach(visit => {
+              serviceCount[visit.service] = (serviceCount[visit.service] || 0) + 1;
+              
+              if (visit.serviceCategory === 'Urgent') {
+                urgentCount[visit.service] = (urgentCount[visit.service] || 0) + 1;
+              } else {
+                nonUrgentCount[visit.service] = (nonUrgentCount[visit.service] || 0) + 1;
+              }
+            });
+
+            return {
+              total: data.length,
+              byService: serviceCount,
+              urgent: urgentCount,
+              nonUrgent: nonUrgentCount,
+              priorityCases: data.filter(v => v.priority === 'Priority Case').length,
+              urgentCases: data.filter(v => v.priority === 'Urgent').length,
+              regularCases: data.filter(v => v.priority === 'Regular').length
+            };
+          };
+
+          // ==================== EXPORT FUNCTIONS ====================
+          const exportToExcel = (data, filename) => {
+            const ws = XLSX.utils.json_to_sheet(data);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Data");
+            XLSX.writeFile(wb, `${filename}_${new Date().toISOString().split('T')[0]}.xlsx`);
+          };
+
+          const exportPatients = () => {
+            const data = registeredPatients.map(patient => ({
+              'Patient ID': patient.patientId,
+              'Last Name': patient.lastName,
+              'First Name': patient.firstName,
+              'Middle Name': patient.middleName || 'N/A',
+              'Date of Birth': new Date(patient.dateOfBirth).toLocaleDateString(),
+              'Age': patient.age,
+              'Sex': patient.sex,
+              'Address': patient.address,
+              'Contact': patient.contact,
+              'Civil Status': patient.civilStatus || 'N/A',
+              'Occupation': patient.occupation || 'N/A',
+              'PhilHealth Number': patient.philHealthNumber || 'N/A',
+              'Emergency Contact Person': patient.emergencyContactPerson || 'N/A',
+              'Emergency Contact Number': patient.emergencyContactNumber || 'N/A',
+              'Allergies': patient.allergies || 'None',
+              'Chronic Conditions': patient.chronicConditions || 'None',
+              'Current Medications': patient.currentMedications || 'None',
+              'Registered Date': new Date(patient.registeredDate).toLocaleDateString()
+            }));
+            exportToExcel(data, 'HealthTrack_Patients');
+          };
+
+          const exportVisitLog = () => {
+            const data = visitLog.map(visit => ({
+              'Visit Date': new Date(visit.visitDate).toLocaleDateString(),
+              'Patient ID': visit.patientId,
+              'Patient Name': visit.name,
+              'Age': visit.age,
+              'Sex': visit.sex,
+              'Service': visit.service,
+              'Service Category': visit.serviceCategory,
+              'Priority': visit.priority,
+              'Reason for Visit': visit.chiefComplaint,
+              'Time Queued': new Date(visit.timeQueued).toLocaleTimeString(),
+              'Time Served': new Date(visit.timeServed).toLocaleTimeString(),
+              'Diagnosis': visit.diagnosis || 'N/A',
+              'Treatment': visit.treatment || 'N/A',
+              'Prescription': visit.prescription || 'N/A',
+              'Notes': visit.notes || 'N/A'
+            }));
+            exportToExcel(data, 'HealthTrack_VisitLog');
+          };
+
+          const exportAnalytics = () => {
+            const data = getAnalyticsData();
+            const timeRangeLabel = analyticsTimeRange.charAt(0).toUpperCase() + analyticsTimeRange.slice(1);
+            
+            // Summary Statistics
+            const summaryData = [
+              { 'Section': 'SUMMARY STATISTICS', 'Value': '' },
+              { 'Metric': 'Report Period', 'Value': timeRangeLabel },
+              { 'Metric': 'Total Visits', 'Value': data.length },
+              { 'Metric': 'Average Daily Visits', 'Value': (data.length / 7).toFixed(1) },
+              { 'Metric': 'Total Appointments', 'Value': queue.filter(q => q.appointmentDate).length },
+              { 'Metric': 'Registered Patients', 'Value': registeredPatients.length },
+              { 'Metric': '', 'Value': '' },
+            ];
+
+            // Priority Distribution
+            summaryData.push(
+              { 'Section': 'PRIORITY DISTRIBUTION', 'Value': '' },
+              { 'Metric': 'Priority Case (Emergency)', 'Value': data.filter(v => v.priority === 'Priority Case').length },
+              { 'Metric': 'Urgent', 'Value': data.filter(v => v.priority === 'Urgent').length },
+              { 'Metric': 'Regular', 'Value': data.filter(v => v.priority === 'Regular').length },
+              { 'Metric': '', 'Value': '' }
+            );
+
+            // Service Category Breakdown
+            summaryData.push({ 'Section': 'SERVICE CATEGORY BREAKDOWN', 'Value': '' });
+            Object.keys(SERVICE_CATEGORIES).forEach(category => {
+              const count = data.filter(v => v.serviceCategory === category).length;
+              summaryData.push({ 'Metric': category, 'Value': count });
+            });
+            summaryData.push({ 'Metric': '', 'Value': '' });
+
+            // Age Distribution
+            const ageGroups = { '0-17': 0, '18-35': 0, '36-50': 0, '51-65': 0, '65+': 0 };
+            registeredPatients.forEach(patient => {
+              const age = patient.age;
+              if (age <= 17) ageGroups['0-17']++;
+              else if (age <= 35) ageGroups['18-35']++;
+              else if (age <= 50) ageGroups['36-50']++;
+              else if (age <= 65) ageGroups['51-65']++;
+              else ageGroups['65+']++;
+            });
+            
+            summaryData.push({ 'Section': 'AGE DISTRIBUTION', 'Value': '' });
+            Object.entries(ageGroups).forEach(([group, count]) => {
+              summaryData.push({ 'Metric': `Age ${group}`, 'Value': count });
+            });
+            summaryData.push({ 'Metric': '', 'Value': '' });
+
+            // Daily Visits (Last 7 Days)
+            summaryData.push({ 'Section': 'DAILY VISITS (LAST 7 DAYS)', 'Value': '' });
+            for (let i = 6; i >= 0; i--) {
+              const date = new Date();
+              date.setDate(date.getDate() - i);
+              const dateStr = date.toISOString().split('T')[0];
+              const count = visitLog.filter(v => v.visitDate === dateStr).length;
+              summaryData.push({ 
+                'Metric': date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }), 
+                'Value': count 
+              });
+            }
+
+            // Detailed Visit Log
+            summaryData.push({ 'Metric': '', 'Value': '' });
+            summaryData.push({ 'Section': 'DETAILED VISIT LOG', 'Value': '' });
+            
+            const detailedData = data.map(visit => ({
+              'Date': new Date(visit.visitDate).toLocaleDateString(),
+              'Patient ID': visit.patientId,
+              'Patient Name': visit.name,
+              'Age': visit.age,
+              'Sex': visit.sex,
+              'Service Category': visit.serviceCategory,
+              'Service Type': visit.service,
+              'Priority': visit.priority,
+              'Reason for Visit': visit.chiefComplaint,
+              'Time Queued': new Date(visit.timeQueued).toLocaleTimeString(),
+              'Time Served': visit.timeServed ? new Date(visit.timeServed).toLocaleTimeString() : 'N/A',
+              'Diagnosis': visit.diagnosis || 'N/A',
+              'Treatment': visit.treatment || 'N/A'
+            }));
+
+            // Create workbook with multiple sheets
+            const wb = XLSX.utils.book_new();
+            
+            // Summary sheet
+            const summarySheet = XLSX.utils.json_to_sheet(summaryData);
+            XLSX.utils.book_append_sheet(wb, summarySheet, "Summary");
+            
+            // Detailed visits sheet
+            if (detailedData.length > 0) {
+              const detailedSheet = XLSX.utils.json_to_sheet(detailedData);
+              XLSX.utils.book_append_sheet(wb, detailedSheet, "Detailed Visits");
+            }
+            
+            XLSX.writeFile(wb, `HealthTrack_${timeRangeLabel}_Report_${new Date().toISOString().split('T')[0]}.xlsx`);
+          };
+
+          // ==================== RESIDENT PORTAL FUNCTIONS ====================
+          const submitResidentBooking = async () => {
+            // Validate all required fields
+            if (!residentBooking.firstName || !residentBooking.lastName || !residentBooking.dateOfBirth ||
+                !residentBooking.sex || !residentBooking.contactNumber || !residentBooking.address ||
+                !residentBooking.appointmentDate || !residentBooking.appointmentTime ||
+                !residentBooking.serviceCategory || !residentBooking.serviceType) {
+              alert('Please fill in all required fields'); return;
+            }
+            if (/[a-zA-Z]/.test(residentBooking.contactNumber)) {
+              alert('Contact Number must contain digits only — no letters allowed.'); return;
+            }
+            if (residentBooking.emergencyContactNumber && /[a-zA-Z]/.test(residentBooking.emergencyContactNumber)) {
+              alert('Emergency Contact Number must contain digits only — no letters allowed.'); return;
+            }
+            const selectedDate = new Date(residentBooking.appointmentDate + 'T00:00:00');
+            const todayDate = new Date(); todayDate.setHours(0,0,0,0);
+            if (selectedDate < todayDate) { alert('Appointment date cannot be in the past.'); return; }
+            const dayOfWeek = selectedDate.getDay();
+            if (dayOfWeek === 0 || dayOfWeek === 6) { alert('Clinic is open Monday to Friday only.'); return; }
+            const [hours] = residentBooking.appointmentTime.split(':').map(Number);
+            if (hours < 8 || hours > 16) { alert('Please select a valid clinic slot (8 AM – 4 PM).'); return; }
+            if (residentBooking.appointmentTime === '12:00') { alert('12:00 PM – 1:00 PM is the lunch break.'); return; }
+            const bookedSlots = getBookedSlots(residentBooking.appointmentDate);
+            if (bookedSlots.has(residentBooking.appointmentTime)) {
+              alert('This time slot is already fully booked. Please choose another time.'); return;
+            }
+
+            try {
+              // Calculate age
+              const today = new Date(), birthDate = new Date(residentBooking.dateOfBirth);
+              let age = today.getFullYear() - birthDate.getFullYear();
+              const m = today.getMonth() - birthDate.getMonth();
+              if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) age--;
+
+              // Upsert patient: check if exists by name + DOB, else create
+              let patient = registeredPatients.find(p =>
+                p.firstName.toLowerCase() === residentBooking.firstName.toLowerCase() &&
+                p.lastName.toLowerCase()  === residentBooking.lastName.toLowerCase() &&
+                p.dateOfBirth === residentBooking.dateOfBirth
+              );
+              if (!patient) {
+                const row = await api('POST', '/patients', {
+                  lastName: residentBooking.lastName, firstName: residentBooking.firstName,
+                  middleName: residentBooking.middleName || null,
+                  dateOfBirth: residentBooking.dateOfBirth, age,
+                  sex: residentBooking.sex, address: residentBooking.address,
+                  contactNumber: residentBooking.contactNumber,
+                  civilStatus: residentBooking.civilStatus || null,
+                  occupation: residentBooking.occupation || null,
+                  philhealthNumber: residentBooking.philHealthNumber || null,
+                  emergencyContactPerson: residentBooking.emergencyContactPerson || null,
+                  emergencyContactNumber: residentBooking.emergencyContactNumber || null,
+                  allergies: residentBooking.allergies || null,
+                  chronicConditions: residentBooking.chronicConditions || null,
+                  currentMedications: residentBooking.currentMedications || null,
+                });
+                patient = normalizePatient(row);
+                setRegisteredPatients(prev => [patient, ...prev]);
+              }
+
+              const priority = residentBooking.priorityLevel ||
+                SERVICE_CATEGORIES[residentBooking.serviceCategory]?.services
+                  .find(s => s.name === residentBooking.serviceType)?.priority || 'Regular';
+
+              const qRow = await api('POST', '/queue', {
+                patientId:       patient.patientId,
+                serviceCategory: residentBooking.serviceCategory,
+                serviceName:     residentBooking.serviceType,
+                priority,
+                chiefComplaint:  residentBooking.notes || 'Scheduled appointment',
+                appointmentDate: residentBooking.appointmentDate,
+                appointmentTime: residentBooking.appointmentTime,
+                selfBooked:      true,
+                bookedByUsername: currentUser?.username || null,
+              });
+              const queueEntry = normalizeQueue(qRow);
+              setQueue(prev => [...prev, queueEntry].sort((a,b) => priorityLevels[a.priority].weight - priorityLevels[b.priority].weight));
+
+              setResidentBooking({ lastName:'', firstName:'', middleName:'', dateOfBirth:'', sex:'', civilStatus:'', address:'', contactNumber:'', occupation:'', emergencyContactPerson:'', emergencyContactNumber:'', philHealthNumber:'', allergies:'', chronicConditions:'', currentMedications:'', appointmentDate:'', appointmentTime:'', serviceCategory:'', serviceType:'', priorityLevel:'', notes:'' });
+              alert(`Booking confirmed for ${residentBooking.appointmentDate} at ${residentBooking.appointmentTime}.\n\nPatient ID: ${patient.patientId}\nQueue #: ${queueEntry.queueNumber}\n\nSave your Patient ID for future reference.`);
+              setResidentView('appointments');
+            } catch(err) {
+              alert('Booking failed: ' + (err.message || 'Unknown error'));
+            }
+          };
+
+          const getResidentVisitHistory = () => {
+            if (!residentPatientId) return [];
+            return visitLog.filter(v => v.patientId === residentPatientId)
+              .sort((a, b) => new Date(b.visitDate) - new Date(a.visitDate));
+          };
+
+          // ==================== APPOINTMENT MANAGEMENT FUNCTIONS ====================
+          
+          // Get resident's own appointments from queue — filtered strictly by logged-in user
+          const getMyAppointments = () => {
+            return queue.filter(item => {
+              if (!item.selfBooked) return false;
+              // Privacy: only show entries booked by this logged-in user
+              if (item.bookedByUsername && currentUser?.username &&
+                  item.bookedByUsername !== currentUser.username) return false;
+              // Fallback: match by fullName if bookedByUsername not set (legacy entries)
+              if (!item.bookedByUsername && currentUser?.fullName &&
+                  item.name && item.name.toLowerCase() !== currentUser.fullName.toLowerCase()) return false;
+              // Filter by search term if provided
+              if (appointmentSearch) {
+                const searchLower = appointmentSearch.toLowerCase();
+                return (
+                  (item.patientId && item.patientId.toLowerCase().includes(searchLower)) ||
+                  (item.service && item.service.toLowerCase().includes(searchLower)) ||
+                  (item.appointmentDate && item.appointmentDate.includes(searchLower))
+                );
+              }
+              return true;
+            }).sort((a, b) => new Date(b.timeQueued) - new Date(a.timeQueued));
+          };
+
+          // Open edit modal for an appointment
+          const openEditAppointment = (appointment, mode) => {
+            setEditingAppointment({
+              ...appointment,
+              newServiceCategory: appointment.serviceCategory || '',
+              newServiceType: appointment.service || '',
+              newPriorityLevel: appointment.priority || '',
+              newAppointmentDate: appointment.appointmentDate || '',
+              newAppointmentTime: appointment.appointmentTime || '',
+              newNotes: appointment.chiefComplaint || ''
+            });
+            setEditMode(mode);
+          };
+
+          // Save edited appointment — PUT /api/queue/:id
+          const saveEditedAppointment = async () => {
+            if (!editingAppointment) return;
+
+            if (editMode === 'reschedule') {
+              if (!editingAppointment.newAppointmentDate || !editingAppointment.newAppointmentTime) {
+                alert('Please select a new date and time for rescheduling.');
+                return;
+              }
+            }
+
+            if (editMode === 'edit') {
+              if (!editingAppointment.newServiceCategory || !editingAppointment.newServiceType) {
+                alert('Please select a service category and type.');
+                return;
+              }
+            }
+
+            try {
+              await api('PUT', '/queue/' + editingAppointment.queueId, {
+                serviceCategory: editingAppointment.newServiceCategory || editingAppointment.serviceCategory,
+                serviceName:     editingAppointment.newServiceType     || editingAppointment.service,
+                priority:        editingAppointment.newPriorityLevel   || editingAppointment.priority,
+                chiefComplaint:  editingAppointment.newNotes           || editingAppointment.chiefComplaint,
+                appointmentDate: editingAppointment.newAppointmentDate || editingAppointment.appointmentDate,
+                appointmentTime: editingAppointment.newAppointmentTime || editingAppointment.appointmentTime,
+              });
+              await loadQueue();
+              setEditingAppointment(null); setEditMode('');
+              alert(editMode === 'reschedule'
+                ? `Appointment rescheduled to ${editingAppointment.newAppointmentDate} at ${editingAppointment.newAppointmentTime}.`
+                : 'Appointment updated successfully.');
+            } catch(err) { alert('Update failed: ' + (err.message||'Error')); }
+          };
+
+          // Cancel an appointment — PATCH /api/queue/:id/status
+          const cancelAppointment = async (appointmentId) => {
+            const item = queue.find(q => q.id === appointmentId);
+            if (!item) return;
+            try {
+              await api('PATCH', '/queue/' + item.queueId + '/status', { status: 'Cancelled' });
+              setQueue(prev => prev.map(q => q.id === appointmentId
+                ? {...q, status:'Cancelled', cancelledAt:new Date().toISOString()} : q));
+              setShowCancelConfirm(null);
+              alert('Appointment cancelled successfully.');
+            } catch(err) { alert('Cancel failed: ' + (err.message||'Error')); }
+          };
+
+          // ==================== RENDER: LOGIN SCREEN ====================
+          if (!userRole) {
+            return (
+              <div className="min-h-screen flex items-center justify-center p-4" style={{background: 'linear-gradient(135deg, #fff0f0 0%, #ffffff 50%, #ffe5e5 100%)'}}>
+                <div className="max-w-md w-full">
+                  <div className="bg-white rounded-2xl shadow-2xl p-8">
+                    <div className="text-center mb-6">
+                      <div className="flex justify-center mb-3">
+                        <img src="Upper_Bicutan_Logo.jpg" alt="Barangay Upper Bicutan" className="w-20 h-20 object-contain drop-shadow-md" style={{borderRadius:'50%'}} />
+                      </div>
+                      <h1 className="text-3xl font-bold mb-1" style={{color:'var(--ht-primary)'}}>HealthTrack</h1>
+                      <p className="text-sm font-medium" style={{color:'var(--ht-accent)'}}>Patient Information System with Queueing</p>
+                      <p className="text-gray-500 text-xs mt-1">For Barangay Upper Bicutan Health Clinics - City of Taguig</p>
+                    </div>
+
+                    {otpStep ? (
+                      /* ===== OTP VERIFICATION SCREEN ===== */
+                      <div className="space-y-5">
+                        <div className="text-center">
+                          <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                            <span className="text-3xl">{pendingAccount && pendingAccount.email ? '📧' : '📱'}</span>
+                          </div>
+                          <h3 className="text-lg font-bold text-gray-800">Verify Your Account</h3>
+                          <p className="text-sm text-gray-500 mt-1">
+                            A 6-digit OTP has been sent to
+                          </p>
+                          <p className="text-sm font-semibold text-blue-600 mt-0.5">{otpContact}</p>
+                        </div>
+
+                        {/* Demo OTP display — remove in production */}
+                        <div className="bg-amber-50 border border-amber-300 rounded-xl px-4 py-3 text-center">
+                          <p className="text-xs text-amber-600 font-semibold uppercase tracking-wide mb-1">Demo Mode — OTP Code</p>
+                          <p className="text-2xl font-mono font-bold tracking-widest text-amber-800">{otpCode}</p>
+                          <p className="text-xs text-amber-500 mt-1">In production this will be sent via {pendingAccount && pendingAccount.email ? 'email' : 'SMS'}</p>
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700 mb-1">Enter OTP <span className="text-red-500">*</span></label>
+                          <input
+                            type="text"
+                            value={otpInput}
+                            onChange={(e) => setOtpInput(e.target.value.replace(/\D/g,'').slice(0,6))}
+                            className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-center text-2xl font-mono tracking-widest"
+                            placeholder="------"
+                            maxLength={6}
+                          />
+                          {otpError && <p className="text-xs text-red-500 mt-1">{otpError}</p>}
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={handleVerifyOTP}
+                          className="w-full py-3 text-white font-semibold rounded-xl transition-colors" style={{background:'var(--ht-primary)'}}
+                        >
+                          ✓ Verify &amp; Create Account
+                        </button>
+
+                        <div className="flex items-center justify-between text-sm">
+                          <button type="button" onClick={handleCancelOTP} className="text-gray-500 hover:text-gray-700 hover:underline">
+                            ← Back to Registration
+                          </button>
+                          <button type="button" onClick={handleResendOTP} className="text-blue-600 hover:text-blue-700 hover:underline">
+                            Resend OTP {otpResendCount > 0 && `(${otpResendCount})`}
+                          </button>
+                        </div>
+                      </div>
+                    ) : !showCreateAccount ? (
+                      /* ===== LOGIN FORM ===== */
+                      <form onSubmit={handleLogin}>
+                        <div className="space-y-4">
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
+                            <div className="relative">
+                              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                <Users className="w-4 h-4 text-gray-400" />
+                              </div>
+                              <input
+                                type="text"
+                                value={loginUsername}
+                                onChange={(e) => { setLoginUsername(e.target.value); setLoginError(''); }}
+                                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                                placeholder="Enter your username"
+                                autoComplete="username"
+                              />
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                            <div className="relative">
+                              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                                </svg>
+                              </div>
+                              <input
+                                type={showPassword ? "text" : "password"}
+                                value={loginPassword}
+                                onChange={(e) => { setLoginPassword(e.target.value); setLoginError(''); }}
+                                className="w-full pl-10 pr-12 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-colors"
+                                placeholder="Enter your password"
+                                autoComplete="current-password"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => setShowPassword(!showPassword)}
+                                className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
+                              >
+                                {showPassword ? (
+                                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.878 9.878L3 3m6.878 6.878L21 21" />
+                                  </svg>
+                                ) : (
+                                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                  </svg>
+                                )}
+                              </button>
+                            </div>
+                          </div>
+
+                          {loginError && (
+                            <div className="flex items-center space-x-2 text-red-600 bg-red-50 p-3 rounded-lg">
+                              <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                              <p className="text-sm">{loginError}</p>
+                            </div>
+                          )}
+
+                          <button
+                            type="submit"
+                            className="w-full text-white py-3 rounded-xl font-semibold transition-all transform hover:scale-105 shadow-lg" style={{background:'linear-gradient(to right,var(--ht-primary),var(--ht-accent))'}}
+                          >
+                            Sign In
+                          </button>
+                        </div>
+
+                        <div className="mt-6 text-center">
+                          <p className="text-sm text-gray-600">
+                            Don't have an account?{' '}
+                            <button
+                              type="button"
+                              onClick={() => { setShowCreateAccount(true); setLoginError(''); setRegisterError(''); setRegisterSuccess(''); }}
+                              className="text-blue-600 hover:text-blue-700 font-semibold hover:underline"
+                            >
+                              Create Account
+                            </button>
+                          </p>
+                        </div>
+
+                        <div className="mt-4 p-3 bg-gray-50 rounded-lg">
+                          <p className="text-xs text-gray-500 font-semibold mb-2 text-center">Default Accounts</p>
+                          <div className="grid grid-cols-3 gap-2 text-xs text-gray-500">
+                            <div className="text-center p-1.5 bg-white rounded border">
+                              <p className="font-semibold text-blue-600">Admin</p>
+                              <p>admin</p>
+                              <p className="text-gray-400">admin123</p>
+                            </div>
+                            <div className="text-center p-1.5 bg-white rounded border">
+                              <p className="font-semibold text-green-600">Staff</p>
+                              <p>staff</p>
+                              <p className="text-gray-400">staff123</p>
+                            </div>
+                            <div className="text-center p-1.5 bg-white rounded border">
+                              <p className="font-semibold text-purple-600">Resident</p>
+                              <p>resident</p>
+                              <p className="text-gray-400">resident123</p>
+                            </div>
+                          </div>
+                        </div>
+                      </form>
+                    ) : (
+                      /* ===== CREATE ACCOUNT FORM ===== */
+                      <form onSubmit={handleCreateAccount}>
+                        <div className="space-y-3">
+                          {/* Name Fields */}
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Last Name <span className="text-red-500">*</span></label>
+                            <input
+                              type="text"
+                              value={newAccount.lastName}
+                              onChange={(e) => setNewAccount({...newAccount, lastName: e.target.value})}
+                              className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                              placeholder="e.g. Dela Cruz"
+                            />
+                          </div>
+
+                          <div className="grid grid-cols-3 gap-2">
+                            <div className="col-span-2">
+                              <label className="block text-sm font-medium text-gray-700 mb-1">First Name <span className="text-red-500">*</span></label>
+                              <input
+                                type="text"
+                                value={newAccount.firstName}
+                                onChange={(e) => setNewAccount({...newAccount, firstName: e.target.value})}
+                                className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                placeholder="e.g. Juan"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-1">M.I.</label>
+                              <input
+                                type="text"
+                                value={newAccount.middleInitial}
+                                onChange={(e) => setNewAccount({...newAccount, middleInitial: e.target.value.slice(0,1).toUpperCase()})}
+                                className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-center font-semibold"
+                                placeholder="A"
+                                maxLength={1}
+                              />
+                            </div>
+                          </div>
+
+                          {/* Date of Birth */}
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Date of Birth <span className="text-red-500">*</span></label>
+                            <input
+                              type="date"
+                              value={newAccount.birthday}
+                              onChange={(e) => setNewAccount({...newAccount, birthday: e.target.value})}
+                              max={(() => { const d = new Date(); d.setFullYear(d.getFullYear() - 18); return d.toISOString().split('T')[0]; })()}
+                              min={(() => { const d = new Date(); d.setFullYear(d.getFullYear() - 85); return d.toISOString().split('T')[0]; })()}
+                              className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            />
+                            {newAccount.birthday && (() => {
+                              const today = new Date();
+                              const dob = new Date(newAccount.birthday);
+                              let age = today.getFullYear() - dob.getFullYear();
+                              const m = today.getMonth() - dob.getMonth();
+                              if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) age--;
+                              if (age < 18) return React.createElement('p', {className: 'text-xs text-red-500 mt-1'}, '✗ Must be at least 18 years old to register');
+                              if (age > 85) return React.createElement('p', {className: 'text-xs text-red-500 mt-1'}, '✗ Registration is only available for ages 18–85');
+                              return React.createElement('p', {className: 'text-xs text-green-500 mt-1'}, `✓ Age ${age} — eligible to register`);
+                            })()}
+                            <p className="text-xs text-gray-400 mt-1">Must be 18–85 years old to register</p>
+                          </div>
+
+                          {/* Contact Method for Confirmation */}
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Account Confirmation Via <span className="text-red-500">*</span></label>
+                            <div className="grid grid-cols-2 gap-2 mb-2">
+                              <button type="button"
+                                onClick={() => setNewAccount({...newAccount, contactMethod: 'email'})}
+                                className={`py-2 px-3 rounded-xl text-sm font-medium border-2 transition-all ${newAccount.contactMethod === 'email' ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>
+                                📧 Email
+                              </button>
+                              <button type="button"
+                                onClick={() => setNewAccount({...newAccount, contactMethod: 'mobile'})}
+                                className={`py-2 px-3 rounded-xl text-sm font-medium border-2 transition-all ${newAccount.contactMethod === 'mobile' ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>
+                                📱 Mobile
+                              </button>
+                            </div>
+                            {newAccount.contactMethod === 'email' ? (
+                              <input
+                                type="email"
+                                value={newAccount.email}
+                                onChange={(e) => setNewAccount({...newAccount, email: e.target.value})}
+                                className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                placeholder="email@example.com"
+                              />
+                            ) : (
+                              <>
+                                <input
+                                  type="tel"
+                                  value={newAccount.mobile}
+                                  onChange={(e) => setNewAccount({...newAccount, mobile: sanitizePhone(e.target.value)})}
+                                  className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${phoneClass(newAccount.mobile)}`}
+                                  placeholder="09XXXXXXXXX"
+                                  maxLength={16}
+                                />
+                                <PhoneMsg val={newAccount.mobile} />
+                              </>
+                            )}
+                          </div>
+
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Username <span className="text-red-500">*</span></label>
+                            <input
+                              type="text"
+                              value={newAccount.username}
+                              onChange={(e) => setNewAccount({...newAccount, username: e.target.value})}
+                              className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                              placeholder="Choose a username (min 3 characters)"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Password <span className="text-red-500">*</span></label>
+                            <div className="relative">
+                              <input
+                                type={showRegPassword ? "text" : "password"}
+                                value={newAccount.password}
+                                onChange={(e) => setNewAccount({...newAccount, password: e.target.value})}
+                                className="w-full px-4 py-2.5 pr-12 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                                placeholder="Min 8 chars, letters + numbers + special"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => setShowRegPassword(!showRegPassword)}
+                                className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
+                              >
+                                {showRegPassword ? (
+                                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.878 9.878L3 3m6.878 6.878L21 21" /></svg>
+                                ) : (
+                                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                                )}
+                              </button>
+                            </div>
+                            {newAccount.password && (
+                              <div className="mt-1 space-y-0.5">
+                                <p className={`text-xs ${newAccount.password.length >= 8 ? 'text-green-500' : 'text-red-400'}`}>
+                                  {newAccount.password.length >= 8 ? '✓' : '✗'} At least 8 characters
+                                </p>
+                                <p className={`text-xs ${/[a-zA-Z]/.test(newAccount.password) && /[0-9]/.test(newAccount.password) ? 'text-green-500' : 'text-red-400'}`}>
+                                  {/[a-zA-Z]/.test(newAccount.password) && /[0-9]/.test(newAccount.password) ? '✓' : '✗'} Letters and numbers
+                                </p>
+                                <p className={`text-xs ${/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(newAccount.password) ? 'text-green-500' : 'text-red-400'}`}>
+                                  {/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(newAccount.password) ? '✓' : '✗'} At least one special character
+                                </p>
+                              </div>
+                            )}
+                          </div>
+
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Confirm Password <span className="text-red-500">*</span></label>
+                            <input
+                              type="password"
+                              value={newAccount.confirmPassword}
+                              onChange={(e) => setNewAccount({...newAccount, confirmPassword: e.target.value})}
+                              className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                              placeholder="Re-enter password"
+                            />
+                            {newAccount.password && newAccount.confirmPassword && newAccount.password !== newAccount.confirmPassword && (
+                              <p className="text-xs text-red-500 mt-1">Passwords do not match</p>
+                            )}
+                            {newAccount.password && newAccount.confirmPassword && newAccount.password === newAccount.confirmPassword && (
+                              <p className="text-xs text-green-500 mt-1">Passwords match</p>
+                            )}
+                          </div>
+
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Account Role</label>
+                            <div className="flex items-center gap-3 rounded-xl p-3 border-2" style={{background:'var(--ht-primary-light)',borderColor:'var(--ht-primary)'}}>
+                              <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style={{background:'var(--ht-primary)'}}>
+                                <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+                              </div>
+                              <div className="flex-1">
+                                <p className="font-bold text-sm" style={{color:'var(--ht-primary)'}}>Resident</p>
+                                <p className="text-xs" style={{color:'var(--ht-accent)'}}>Self-service portal access</p>
+                              </div>
+                              <span className="text-xs px-2 py-1 rounded-full font-medium" style={{background:'var(--ht-primary-light)',color:'var(--ht-primary)'}}>Fixed</span>
+                            </div>
+                            <div className="flex items-start gap-2 mt-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                              <svg className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" /></svg>
+                              <p className="text-xs text-amber-700">Admin and Staff accounts are exclusive to clinic personnel and can only be created by a system administrator.</p>
+                            </div>
+                          </div>
+
+                          {registerError && (
+                            <div className="flex items-center space-x-2 text-red-600 bg-red-50 p-3 rounded-lg">
+                              <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                              <p className="text-sm">{registerError}</p>
+                            </div>
+                          )}
+
+                          {registerSuccess && (
+                            <div className="flex items-center space-x-2 text-green-600 bg-green-50 p-3 rounded-lg">
+                              <CheckCircle className="w-4 h-4 flex-shrink-0" />
+                              <p className="text-sm">{registerSuccess}</p>
+                            </div>
+                          )}
+
+                          <button
+                            type="submit"
+                            className="w-full text-white py-3 rounded-xl font-semibold transition-all transform hover:scale-105 shadow-lg" style={{background:'linear-gradient(to right,var(--ht-accent),var(--ht-primary))'}}
+                          >
+                            Create Account
+                          </button>
+                        </div>
+
+                        <div className="mt-4 text-center">
+                          <p className="text-sm text-gray-600">
+                            Already have an account?{' '}
+                            <button
+                              type="button"
+                              onClick={() => { setShowCreateAccount(false); setRegisterError(''); setRegisterSuccess(''); }}
+                              className="text-blue-600 hover:text-blue-700 font-semibold hover:underline"
+                            >
+                              Sign In
+                            </button>
+                          </p>
+                        </div>
+                      </form>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          }
+
+          // ==================== RENDER: RESIDENT PORTAL ====================
+          if (userRole === 'resident') {
+            return (
+              <div className="min-h-screen bg-gray-50">
+                {/* Header */}
+                {/* ── Idle Session Warning Modal ── */}
+                {showIdleWarning && (
+                  <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-sm w-full p-6 text-center">
+                      <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <svg className="w-8 h-8 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
+                      </div>
+                      <h2 className="text-xl font-bold text-gray-800 mb-2">Session Expiring Soon</h2>
+                      <p className="text-gray-500 text-sm mb-3">You will be automatically logged out due to inactivity in</p>
+                      <div className="text-5xl font-bold text-amber-500 mb-1">{idleCountdown}s</div>
+                      <div className="w-full bg-gray-100 rounded-full h-2 mb-4">
+                        <div className="bg-amber-400 h-2 rounded-full transition-all" style={{width: `${(idleCountdown/120)*100}%`}}></div>
+                      </div>
+                      <p className="text-xs text-gray-400 mb-5">Your session is protected automatically to keep patient data secure.</p>
+                      <button
+                        onClick={() => { setLastActivity(Date.now()); setShowIdleWarning(false); }}
+                        className="w-full text-white py-3 rounded-xl font-bold transition-all mb-2" style={{background:'linear-gradient(to right,var(--ht-primary),var(--ht-accent))'}}
+                      >
+                        ✓ I'm still here — Stay Logged In
+                      </button>
+                      <button
+                        onClick={handleLogout}
+                        className="w-full text-gray-400 hover:text-gray-600 text-sm py-2"
+                      >
+                        Log out now
+                      </button>
+                    </div>
+                  </div>
+                )}
+                <div className="text-white shadow-lg" style={{background:'linear-gradient(to right,var(--ht-primary),var(--ht-accent))'}}>
+                  <div className="container mx-auto px-4 py-4">
+                    <div className="flex justify-between items-center">
+                    <div className="flex items-center gap-3">
+                      <img src="Upper_Bicutan_Logo.jpg" alt="Barangay Upper Bicutan" className="w-10 h-10 object-contain rounded-full flex-shrink-0" style={{background:'rgba(255,255,255,0.15)',padding:'2px'}} />
+                      <div>
+                        <h1 className="text-2xl font-bold">HealthTrack — Resident Portal</h1>
+                        <p className="text-sm" style={{color:'rgba(255,255,255,0.85)'}}>Self-Service Queue and Visit History · Barangay Upper Bicutan, City of Taguig</p>
+                      </div>
+                    </div>
+                      <div className="flex items-center space-x-4">
+                        {currentUser && (
+                          <div className="text-right">
+                            <p className="text-sm font-semibold">{currentUser.fullName}</p>
+                            <p className="text-xs text-purple-200">Resident</p>
+                          </div>
+                        )}
+                        <button
+                          onClick={handleLogout}
+                          className="flex items-center space-x-2 bg-white/20 hover:bg-white/30 px-4 py-2 rounded-lg transition-colors"
+                        >
+                          <LogOut className="w-4 h-4" />
+                          <span>Logout</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Navigation */}
+                <div className="bg-white shadow-sm border-b">
+                  <div className="container mx-auto px-4">
+                    <div className="flex items-center justify-between gap-2">
+                      <nav className="nav-scroll flex-1 min-w-0">
+                        <div className="flex space-x-1">
+                          {[
+                          { id: 'queue', label: 'Queue Status', icon: Clock },
+                          { id: 'appointments', label: 'My Appointments', icon: List },
+                          { id: 'booking', label: 'Book Appointment', icon: Calendar },
+                          { id: 'history', label: 'My Visit History', icon: FileText }
+                        ].map(tab => (
+                          <button
+                            key={tab.id}
+                            onClick={() => setResidentView(tab.id)}
+                            className={`flex items-center space-x-2 px-6 py-4 border-b-2 transition-colors ${
+                              residentView === tab.id
+                                ? 'border-transparent font-semibold'
+                                : 'border-transparent text-gray-600 hover:border-gray-300'
+                            }`}
+                            style={residentView === tab.id ? {borderColor:'var(--ht-primary)',color:'var(--ht-primary)',borderBottomColor:'var(--ht-primary)'} : {}}
+                          >
+                            <tab.icon className="w-5 h-5" />
+                            <span>{tab.label}</span>
+                          </button>
+                        ))}
+                        </div>
+                      </nav>
+                      {/* Notification Bell */}
+                      <div className="relative pr-2 flex-shrink-0">
+                        <button
+                          onClick={() => { setShowNotifPanel(!showNotifPanel); markNotifsRead(); }}
+                          className="relative p-2 text-gray-500 hover:text-purple-600 transition-colors"
+                        >
+                          <Bell className="w-6 h-6" />
+                          {notifications.filter(n => !n.read).length > 0 && (
+                            <span className="absolute top-1 right-1 w-4 h-4 bg-red-500 rounded-full text-white text-xs flex items-center justify-center font-bold">
+                              {notifications.filter(n => !n.read).length}
+                            </span>
+                          )}
+                        </button>
+                        {/* Notification Dropdown */}
+                        {showNotifPanel && (
+                          <div className="absolute right-0 top-full mt-1 w-80 bg-white rounded-xl shadow-2xl border border-gray-200 z-50 overflow-hidden">
+                            <div className="bg-gradient-to-r from-purple-600 to-pink-600 px-4 py-3 flex items-center justify-between">
+                              <p className="text-white font-bold text-sm">Notifications</p>
+                              <button onClick={() => setShowNotifPanel(false)} className="text-white/70 hover:text-white text-lg leading-none">&times;</button>
+                            </div>
+                            <div className="max-h-72 overflow-y-auto divide-y divide-gray-100">
+                              {notifications.length === 0 ? (
+                                <div className="px-4 py-6 text-center text-gray-400 text-sm">No notifications yet</div>
+                              ) : notifications.map(n => (
+                                <div key={n.id} className={`px-4 py-3 ${n.read ? 'bg-white' : 'bg-purple-50'}`}>
+                                  <div className="flex items-start gap-2">
+                                    <span className="text-lg mt-0.5">
+                                      {n.type === 'accepted' ? '✅' : n.type === 'rejected' ? '❌' : 'ℹ️'}
+                                    </span>
+                                    <div className="flex-1 min-w-0">
+                                      <p className={`text-sm font-bold ${n.type === 'accepted' ? 'text-green-700' : n.type === 'rejected' ? 'text-red-700' : 'text-gray-800'}`}>
+                                        {n.title}
+                                      </p>
+                                      <p className="text-xs text-gray-600 mt-0.5 leading-snug">{n.message}</p>
+                                      <p className="text-xs text-gray-400 mt-1">{new Date(n.timestamp).toLocaleString('en-PH')}</p>
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Content */}
+                <div className="container mx-auto px-4 py-6">
+                  {/* Queue Status View */}
+                  {residentView === 'queue' && (() => {
+                    // Privacy: only show this resident's own queue entry
+                    const myEntry = queue.find(q =>
+                      q.bookedByUsername === currentUser?.username ||
+                      (q.selfBooked && q.patientId && registeredPatients.find(p =>
+                        p.patientId === q.patientId &&
+                        (p.firstName + ' ' + p.lastName).toLowerCase() === currentUser?.fullName?.toLowerCase()
+                      ))
+                    );
+                    const queuePosition = myEntry
+                      ? queue.filter(q => q.status !== 'Cancelled' && q.status !== 'Rejected').findIndex(q => q.id === myEntry.id) + 1
+                      : null;
+                    const apptSlot = myEntry?.appointmentTime ? CLINIC_SLOTS.find(s => s.value === myEntry.appointmentTime) : null;
+                    const apptDateStr = myEntry?.appointmentDate
+                      ? new Date(myEntry.appointmentDate + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+                      : null;
+                    const statusColors = {
+                      'Accepted':  { bg: 'bg-green-50 border-green-300',  badge: 'bg-green-100 text-green-700', icon: '✅', label: 'Accepted' },
+                      'Rejected':  { bg: 'bg-red-50 border-red-300',      badge: 'bg-red-100 text-red-700',    icon: '❌', label: 'Rejected' },
+                      'Waiting':   { bg: 'bg-yellow-50 border-yellow-300', badge: 'bg-yellow-100 text-yellow-700', icon: '⏳', label: 'Waiting for Confirmation' },
+                      'Completed': { bg: 'bg-blue-50 border-blue-300',    badge: 'bg-blue-100 text-blue-700',  icon: '✔️', label: 'Completed' },
+                    };
+                    const sc = myEntry ? (statusColors[myEntry.status] || statusColors['Waiting']) : null;
+
+                    return (
+                      <div className="space-y-6">
+                        {/* Clinic-wide stats — totals only, no names */}
+                        <div className="bg-white rounded-xl shadow-md p-6">
+                          <h2 className="text-xl font-bold text-gray-800 mb-1">Clinic Queue Status</h2>
+                          <p className="text-sm text-gray-500 mb-4">Live slot availability at the clinic today</p>
+                          <div className="grid grid-cols-3 gap-4">
+                            <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-center">
+                              <p className="text-xs text-gray-500 font-medium uppercase tracking-wide mb-1">Priority Cases</p>
+                              <p className="text-3xl font-bold text-red-600">{queue.filter(p => p.priority === 'Priority Case' && p.status !== 'Cancelled' && p.status !== 'Rejected').length}</p>
+                            </div>
+                            <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 text-center">
+                              <p className="text-xs text-gray-500 font-medium uppercase tracking-wide mb-1">Urgent</p>
+                              <p className="text-3xl font-bold text-orange-600">{queue.filter(p => p.priority === 'Urgent' && p.status !== 'Cancelled' && p.status !== 'Rejected').length}</p>
+                            </div>
+                            <div className="bg-green-50 border border-green-200 rounded-lg p-4 text-center">
+                              <p className="text-xs text-gray-500 font-medium uppercase tracking-wide mb-1">Regular</p>
+                              <p className="text-3xl font-bold text-green-600">{queue.filter(p => p.priority === 'Regular' && p.status !== 'Cancelled' && p.status !== 'Rejected').length}</p>
+                            </div>
+                          </div>
+                          <p className="text-xs text-gray-400 mt-3 text-center">
+                            Total in queue: {queue.filter(q => q.status !== 'Cancelled' && q.status !== 'Rejected').length} patient{queue.filter(q => q.status !== 'Cancelled' && q.status !== 'Rejected').length !== 1 ? 's' : ''}
+                          </p>
+                        </div>
+
+                        {/* My Appointment Status */}
+                        <div className="bg-white rounded-xl shadow-md p-6">
+                          <h2 className="text-xl font-bold text-gray-800 mb-1">My Appointment Status</h2>
+                          <p className="text-sm text-gray-500 mb-4">Your current booking with the clinic</p>
+
+                          {!myEntry ? (
+                            <div className="text-center py-10">
+                              <div className="w-16 h-16 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                                <Calendar className="w-8 h-8 text-purple-400" />
+                              </div>
+                              <p className="text-gray-600 font-medium">No active appointment</p>
+                              <p className="text-sm text-gray-400 mt-1">You have no current booking in the queue.</p>
+                              <button
+                                onClick={() => setResidentView('booking')}
+                                className="mt-4 bg-gradient-to-r from-purple-600 to-pink-600 text-white px-6 py-2.5 rounded-xl font-semibold text-sm hover:from-purple-700 hover:to-pink-700 transition-all"
+                              >
+                                Book an Appointment
+                              </button>
+                            </div>
+                          ) : (
+                            <div className={`border-2 rounded-xl p-5 ${sc.bg}`}>
+                              {/* Status badge + queue position */}
+                              <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xl">{sc.icon}</span>
+                                  <span className={`px-3 py-1 rounded-full text-sm font-bold border ${sc.badge}`}>
+                                    {sc.label}
+                                  </span>
+                                </div>
+                                {queuePosition && myEntry.status !== 'Rejected' && myEntry.status !== 'Completed' && (
+                                  <div className="bg-white border border-gray-200 rounded-lg px-3 py-1 text-center">
+                                    <p className="text-xs text-gray-400 leading-none">Queue Position</p>
+                                    <p className="text-2xl font-bold text-gray-800 leading-tight">#{queuePosition}</p>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Patient + service info */}
+                              <div className="mb-4">
+                                <p className="text-lg font-bold text-gray-800">{myEntry.name}</p>
+                                <p className="text-sm text-gray-500">Patient ID: {myEntry.patientId}</p>
+                                <p className="text-sm text-gray-600 mt-1">
+                                  <span className="font-medium">Service:</span> {myEntry.service}
+                                  <span className="mx-2 text-gray-300">|</span>
+                                  <span className="font-medium">Priority:</span> {myEntry.priority}
+                                </p>
+                              </div>
+
+                              {/* Appointment date/time box */}
+                              {apptDateStr ? (
+                                <div className="flex items-center gap-3 bg-white rounded-xl border border-blue-200 px-4 py-3 mb-4">
+                                  <span className="text-2xl">📅</span>
+                                  <div>
+                                    <p className="text-xs text-blue-500 font-bold uppercase tracking-wide">Scheduled Appointment</p>
+                                    <p className="text-base font-bold text-gray-800">{apptDateStr}</p>
+                                    <p className="text-sm text-blue-700 font-semibold">
+                                      🕐 {apptSlot ? `${apptSlot.label} (Slot ${apptSlot.slot})` : myEntry.appointmentTime}
+                                    </p>
+                                  </div>
+                                </div>
+                              ) : null}
+
+                              {/* Rejection reason */}
+                              {myEntry.status === 'Rejected' && myEntry.rejectedReason && (
+                                <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 mb-4">
+                                  <p className="text-xs font-bold text-red-600 uppercase tracking-wide mb-1">Reason for Rejection</p>
+                                  <p className="text-sm text-red-700">{myEntry.rejectedReason}</p>
+                                  <p className="text-xs text-gray-400 mt-2">
+                                    Please visit the clinic or contact staff to reschedule.
+                                  </p>
+                                </div>
+                              )}
+
+                              <p className="text-xs text-gray-400">Booked on: {new Date(myEntry.timeQueued).toLocaleString('en-PH')}</p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* My Appointments View */}
+                  {residentView === 'appointments' && (
+                    <div className="space-y-6">
+                      <div className="bg-white rounded-xl shadow-md p-6">
+                        <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-6 gap-4">
+                          <div>
+                            <h2 className="text-xl font-bold text-gray-800">My Appointments</h2>
+                            <p className="text-sm text-gray-500 mt-1">Manage, reschedule, or cancel your booked appointments</p>
+                          </div>
+                          <div className="flex items-center space-x-3">
+                            <div className="relative">
+                              <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 transform -translate-y-1/2" />
+                              <input
+                                type="text"
+                                value={appointmentSearch}
+                                onChange={(e) => setAppointmentSearch(e.target.value)}
+                                placeholder="Search by name, ID, or service..."
+                                className="pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm w-64"
+                              />
+                            </div>
+                            <button
+                              onClick={() => setResidentView('booking')}
+                              className="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:from-purple-700 hover:to-pink-700 transition-all flex items-center space-x-1"
+                            >
+                              <Calendar className="w-4 h-4" />
+                              <span>New Booking</span>
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Summary Cards */}
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+                          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-center">
+                            <p className="text-2xl font-bold text-blue-600">{getMyAppointments().length}</p>
+                            <p className="text-xs text-gray-600">Total Booked</p>
+                          </div>
+                          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-center">
+                            <p className="text-2xl font-bold text-yellow-600">{getMyAppointments().filter(q => q.status === 'Waiting').length}</p>
+                            <p className="text-xs text-gray-600">Waiting</p>
+                          </div>
+                          <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-center">
+                            <p className="text-2xl font-bold text-green-600">{getMyAppointments().filter(q => q.status === 'Completed').length}</p>
+                            <p className="text-xs text-gray-600">Completed</p>
+                          </div>
+                          <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-center">
+                            <p className="text-2xl font-bold text-red-600">{getMyAppointments().filter(q => q.status === 'Cancelled').length}</p>
+                            <p className="text-xs text-gray-600">Cancelled</p>
+                          </div>
+                        </div>
+
+                        {/* Appointments List */}
+                        {getMyAppointments().length === 0 ? (
+                          <div className="text-center py-12 text-gray-500">
+                            <Calendar className="w-16 h-16 mx-auto mb-3 text-gray-300" />
+                            <p className="text-lg font-medium">No appointments found</p>
+                            <p className="text-sm mt-1">Book a new appointment to get started</p>
+                            <button
+                              onClick={() => setResidentView('booking')}
+                              className="mt-4 bg-gradient-to-r from-purple-600 to-pink-600 text-white px-6 py-2 rounded-lg text-sm font-semibold hover:from-purple-700 hover:to-pink-700 transition-all"
+                            >
+                              Book Appointment
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="space-y-4">
+                            {getMyAppointments().map((item) => (
+                              <div key={item.id} className={`border rounded-xl overflow-hidden transition-all hover:shadow-lg ${
+                                item.status === 'Cancelled' ? 'bg-gray-50 border-gray-200 opacity-75' :
+                                item.status === 'Completed' ? 'bg-green-50 border-green-200' :
+                                item.status === 'In Progress' ? 'bg-blue-50 border-blue-200' :
+                                `${priorityLevels[item.priority]?.bgLight || 'bg-white'} ${priorityLevels[item.priority]?.border || 'border-gray-200'}`
+                              }`}>
+                                {/* Card Header */}
+                                <div className="px-5 py-4">
+                                  <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
+                                    <div className="flex-1">
+                                      <div className="flex items-center flex-wrap gap-2 mb-2">
+                                        <span className={`px-3 py-1 rounded-full text-xs font-semibold text-white ${
+                                          item.status === 'Cancelled' ? 'bg-gray-400' :
+                                          item.status === 'Completed' ? 'bg-green-500' :
+                                          item.status === 'In Progress' ? 'bg-blue-500' :
+                                          priorityLevels[item.priority]?.color || 'bg-gray-500'
+                                        }`}>
+                                          {item.priority}
+                                        </span>
+                                        <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                                          item.status === 'Waiting' ? 'bg-yellow-100 text-yellow-700' :
+                                          item.status === 'In Progress' ? 'bg-blue-100 text-blue-700' :
+                                          item.status === 'Completed' ? 'bg-green-100 text-green-700' :
+                                          'bg-gray-100 text-gray-600'
+                                        }`}>
+                                          {item.status}
+                                        </span>
+                                        {item.selfBooked && (
+                                          <span className="px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-600">
+                                            Self-Booked
+                                          </span>
+                                        )}
+                                      </div>
+                                      <h3 className="font-bold text-gray-800 text-lg">{item.name}</h3>
+                                      <p className="text-sm text-gray-500">Patient ID: {item.patientId}</p>
+                                    </div>
+
+                                    {/* Action Buttons - Only show for Waiting status */}
+                                    {item.status === 'Waiting' && (
+                                      <div className="flex items-center gap-2 flex-shrink-0">
+                                        <button
+                                          onClick={() => openEditAppointment(item, 'edit')}
+                                          className="flex items-center space-x-1.5 px-3 py-2 bg-blue-50 text-blue-600 border border-blue-200 rounded-lg text-sm font-medium hover:bg-blue-100 transition-all"
+                                          title="Edit appointment details"
+                                        >
+                                          <Edit className="w-4 h-4" />
+                                          <span>Edit</span>
+                                        </button>
+                                        <button
+                                          onClick={() => openEditAppointment(item, 'reschedule')}
+                                          className="flex items-center space-x-1.5 px-3 py-2 bg-orange-50 text-orange-600 border border-orange-200 rounded-lg text-sm font-medium hover:bg-orange-100 transition-all"
+                                          title="Reschedule to a different date/time"
+                                        >
+                                          <Calendar className="w-4 h-4" />
+                                          <span>Reschedule</span>
+                                        </button>
+                                        <button
+                                          onClick={() => setShowCancelConfirm(item.id)}
+                                          className="flex items-center space-x-1.5 px-3 py-2 bg-red-50 text-red-600 border border-red-200 rounded-lg text-sm font-medium hover:bg-red-100 transition-all"
+                                          title="Cancel this appointment"
+                                        >
+                                          <Trash className="w-4 h-4" />
+                                          <span>Cancel</span>
+                                        </button>
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  {/* Appointment Details */}
+                                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-4 text-sm">
+                                    <div className="flex items-start space-x-2">
+                                      <Calendar className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                                      <div>
+                                        <p className="text-gray-500 text-xs">Date & Time</p>
+                                        <p className="font-medium text-gray-700">
+                                          {item.appointmentDate ? new Date(item.appointmentDate + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' }) : 'Not set'}
+                                          {item.appointmentTime && (
+                                            <span className="ml-1 text-purple-600">
+                                              at {new Date('2000-01-01T' + item.appointmentTime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}
+                                            </span>
+                                          )}
+                                        </p>
+                                      </div>
+                                    </div>
+                                    <div className="flex items-start space-x-2">
+                                      <Activity className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                                      <div>
+                                        <p className="text-gray-500 text-xs">Service</p>
+                                        <p className="font-medium text-gray-700">{item.service}</p>
+                                        <p className="text-xs text-gray-400">{item.serviceCategory}</p>
+                                      </div>
+                                    </div>
+                                    <div className="flex items-start space-x-2">
+                                      <FileText className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                                      <div>
+                                        <p className="text-gray-500 text-xs">Reason for Visit</p>
+                                        <p className="font-medium text-gray-700">{item.chiefComplaint || 'N/A'}</p>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-100">
+                                    <p className="text-xs text-gray-400">
+                                      Booked: {new Date(item.timeQueued).toLocaleString()}
+                                      {item.updatedAt && (
+                                        <span className="ml-2 text-orange-400">• Updated: {new Date(item.updatedAt).toLocaleString()}</span>
+                                      )}
+                                    </p>
+                                    {item.status === 'Cancelled' && item.cancelledAt && (
+                                      <p className="text-xs text-red-400">Cancelled: {new Date(item.cancelledAt).toLocaleString()}</p>
+                                    )}
+                                  </div>
+                                </div>
+
+                                {/* Cancel Confirmation Inline */}
+                                {showCancelConfirm === item.id && (
+                                  <div className="bg-red-50 border-t border-red-200 px-5 py-4">
+                                    <div className="flex items-center justify-between">
+                                      <div className="flex items-center space-x-2">
+                                        <AlertCircle className="w-5 h-5 text-red-500" />
+                                        <p className="text-sm font-medium text-red-700">Are you sure you want to cancel this appointment?</p>
+                                      </div>
+                                      <div className="flex items-center space-x-2">
+                                        <button
+                                          onClick={() => setShowCancelConfirm(null)}
+                                          className="px-4 py-1.5 bg-white border border-gray-300 text-gray-600 rounded-lg text-sm font-medium hover:bg-gray-50 transition-all"
+                                        >
+                                          Keep It
+                                        </button>
+                                        <button
+                                          onClick={() => cancelAppointment(item.id)}
+                                          className="px-4 py-1.5 bg-red-600 text-white rounded-lg text-sm font-semibold hover:bg-red-700 transition-all"
+                                        >
+                                          Yes, Cancel
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Edit / Reschedule Modal */}
+                      {editingAppointment && (
+                        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+                          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+                            {/* Modal Header */}
+                            <div className={`px-6 py-4 rounded-t-2xl ${
+                              editMode === 'reschedule' 
+                                ? 'bg-gradient-to-r from-orange-500 to-amber-500' 
+                                : 'bg-gradient-to-r from-blue-600 to-indigo-600'
+                            } text-white`}>
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <h3 className="text-lg font-bold">
+                                    {editMode === 'reschedule' ? 'Reschedule Appointment' : 'Edit Appointment'}
+                                  </h3>
+                                  <p className="text-sm opacity-90">{editingAppointment.name} — {editingAppointment.patientId}</p>
+                                </div>
+                                <button
+                                  onClick={() => { setEditingAppointment(null); setEditMode(''); }}
+                                  className="p-1 hover:bg-white/20 rounded-lg transition-colors"
+                                >
+                                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                  </svg>
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Modal Body */}
+                            <div className="p-6 space-y-4">
+                              {/* Date & Time — always shown */}
+                              <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                  <label className="block text-sm font-semibold text-gray-700 mb-1">
+                                    Appointment Date <span className="text-red-500">*</span>
+                                  </label>
+                                  <input
+                                    type="date"
+                                    value={editingAppointment.newAppointmentDate}
+                                    onChange={(e) => setEditingAppointment({...editingAppointment, newAppointmentDate: e.target.value})}
+                                    min={new Date().toISOString().split('T')[0]}
+                                    className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-semibold text-gray-700 mb-1">
+                                    Appointment Time <span className="text-red-500">*</span>
+                                  </label>
+                                  {(() => {
+                                    const booked = getBookedSlots(editingAppointment.newAppointmentDate, editingAppointment.id);
+                                    return (
+                                      <select
+                                        value={editingAppointment.newAppointmentTime}
+                                        onChange={(e) => setEditingAppointment({...editingAppointment, newAppointmentTime: e.target.value})}
+                                        className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                                      >
+                                        <option value="">-- Select a Time Slot --</option>
+                                        {CLINIC_SLOTS.map(s => {
+                                          const isBooked = booked.has(s.value);
+                                          const isLunch  = s.lunch;
+                                          const disabled = isBooked || isLunch;
+                                          return (
+                                            <option key={s.value} value={s.value} disabled={disabled}>
+                                              {`Slot ${s.slot}: ${s.label}${isLunch ? ' 🍽 Lunch Break' : isBooked ? ' ✗ Fully Booked' : ''}`}
+                                            </option>
+                                          );
+                                        })}
+                                      </select>
+                                    );
+                                  })()}
+                                </div>
+                              </div>
+
+                              {/* Service fields — only for full edit */}
+                              {editMode === 'edit' && (
+                                <>
+                                  <div>
+                                    <label className="block text-sm font-semibold text-gray-700 mb-1">
+                                      Service Category <span className="text-red-500">*</span>
+                                    </label>
+                                    <select
+                                      value={editingAppointment.newServiceCategory}
+                                      onChange={(e) => setEditingAppointment({
+                                        ...editingAppointment,
+                                        newServiceCategory: e.target.value,
+                                        newServiceType: '',
+                                        newPriorityLevel: ''
+                                      })}
+                                      className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                                    >
+                                      <option value="">Select service category</option>
+                                      {Object.keys(SERVICE_CATEGORIES).map(cat => (
+                                        <option key={cat} value={cat}>{cat}</option>
+                                      ))}
+                                    </select>
+                                  </div>
+
+                                  <div>
+                                    <label className="block text-sm font-semibold text-gray-700 mb-1">
+                                      Service Type <span className="text-red-500">*</span>
+                                    </label>
+                                    <select
+                                      value={editingAppointment.newServiceType}
+                                      onChange={(e) => {
+                                        const svc = SERVICE_CATEGORIES[editingAppointment.newServiceCategory]?.services.find(s => s.name === e.target.value);
+                                        setEditingAppointment({
+                                          ...editingAppointment,
+                                          newServiceType: e.target.value,
+                                          newPriorityLevel: svc?.priority || editingAppointment.newPriorityLevel
+                                        });
+                                      }}
+                                      disabled={!editingAppointment.newServiceCategory}
+                                      className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent disabled:bg-gray-100"
+                                    >
+                                      <option value="">{editingAppointment.newServiceCategory ? 'Select service type' : 'Select a category first'}</option>
+                                      {editingAppointment.newServiceCategory && SERVICE_CATEGORIES[editingAppointment.newServiceCategory]?.services.map(s => (
+                                        <option key={s.name} value={s.name}>{s.name}</option>
+                                      ))}
+                                    </select>
+                                  </div>
+
+                                  <div>
+                                    <label className="block text-sm font-semibold text-gray-700 mb-1">Priority Level</label>
+                                    <select
+                                      value={editingAppointment.newPriorityLevel}
+                                      onChange={(e) => setEditingAppointment({...editingAppointment, newPriorityLevel: e.target.value})}
+                                      className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                                    >
+                                      <option value="Priority Case">Priority Case</option>
+                                      <option value="Urgent">Urgent</option>
+                                      <option value="Regular">Regular</option>
+                                    </select>
+                                  </div>
+                                </>
+                              )}
+
+                              {/* Reason for Visit */}
+                              <div>
+                                <label className="block text-sm font-semibold text-gray-700 mb-1">
+                                  Reason for Visit
+                                </label>
+                                <textarea
+                                  value={editingAppointment.newNotes}
+                                  onChange={(e) => setEditingAppointment({...editingAppointment, newNotes: e.target.value})}
+                                  rows={3}
+                                  placeholder="Describe the reason for your visit..."
+                                  className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent resize-none"
+                                />
+                              </div>
+
+                              {/* Info box for reschedule */}
+                              {editMode === 'reschedule' && (
+                                <div className="bg-orange-50 border border-orange-200 rounded-lg p-3 flex items-start space-x-2">
+                                  <AlertCircle className="w-5 h-5 text-orange-500 flex-shrink-0 mt-0.5" />
+                                  <div className="text-sm text-orange-700">
+                                    <p className="font-medium">Rescheduling Info</p>
+                                    <p className="mt-1">Your queue position may change based on the new date. The service and priority level will remain the same.</p>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Modal Footer */}
+                            <div className="px-6 py-4 border-t bg-gray-50 rounded-b-2xl flex gap-3">
+                              <button
+                                onClick={() => { setEditingAppointment(null); setEditMode(''); }}
+                                className="flex-1 bg-white border-2 border-gray-300 text-gray-700 py-2.5 rounded-lg font-semibold hover:bg-gray-50 transition-all"
+                              >
+                                Cancel
+                              </button>
+                              <button
+                                onClick={saveEditedAppointment}
+                                className={`flex-1 text-white py-2.5 rounded-lg font-semibold transition-all transform hover:scale-[1.02] shadow-lg ${
+                                  editMode === 'reschedule' 
+                                    ? 'bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600' 
+                                    : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700'
+                                }`}
+                              >
+                                {editMode === 'reschedule' ? 'Confirm Reschedule' : 'Save Changes'}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Booking View */}
+                  {residentView === 'booking' && (
+                    <div className="max-w-3xl mx-auto p-4">
+                      <div className="bg-white rounded-xl shadow-lg overflow-hidden">
+                        {/* Purple Header */}
+                        <div className="bg-gradient-to-r from-purple-600 to-pink-600 px-6 py-5">
+                          <h2 className="text-2xl font-bold text-white mb-2">Book Appointment</h2>
+                          <p className="text-white/90 text-sm flex items-center">
+                            <span className="mr-2">✨</span>
+                            No Patient ID required - Just your name!
+                          </p>
+                        </div>
+                        
+                        {/* Form Content */}
+                        <div className="p-6 space-y-6">
+
+                          {/* ── PERSONAL INFORMATION ── */}
+                          <div>
+                            <h3 className="text-base font-bold text-gray-800 mb-3 pb-2 border-b border-gray-200">Personal Information</h3>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div>
+                                <label className="block text-sm font-semibold text-gray-700 mb-1">Last Name <span className="text-red-500">*</span></label>
+                                <input type="text" value={residentBooking.lastName}
+                                  onChange={(e) => setResidentBooking({...residentBooking, lastName: e.target.value})}
+                                  placeholder="Dela Cruz"
+                                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all" />
+                              </div>
+                              <div>
+                                <label className="block text-sm font-semibold text-gray-700 mb-1">First Name <span className="text-red-500">*</span></label>
+                                <input type="text" value={residentBooking.firstName}
+                                  onChange={(e) => setResidentBooking({...residentBooking, firstName: e.target.value})}
+                                  placeholder="Juan"
+                                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all" />
+                              </div>
+                              <div>
+                                <label className="block text-sm font-semibold text-gray-700 mb-1">Middle Name</label>
+                                <input type="text" value={residentBooking.middleName}
+                                  onChange={(e) => setResidentBooking({...residentBooking, middleName: e.target.value})}
+                                  placeholder="Santos"
+                                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all" />
+                              </div>
+                              <div>
+                                <label className="block text-sm font-semibold text-gray-700 mb-1">Date of Birth <span className="text-red-500">*</span></label>
+                                <input type="date" value={residentBooking.dateOfBirth}
+                                  onChange={(e) => setResidentBooking({...residentBooking, dateOfBirth: e.target.value})}
+                                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all" />
+                              </div>
+                              <div>
+                                <label className="block text-sm font-semibold text-gray-700 mb-1">Sex <span className="text-red-500">*</span></label>
+                                <select value={residentBooking.sex}
+                                  onChange={(e) => setResidentBooking({...residentBooking, sex: e.target.value})}
+                                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all">
+                                  <option value="">Select</option>
+                                  <option value="Male">Male</option>
+                                  <option value="Female">Female</option>
+                                </select>
+                              </div>
+                              <div>
+                                <label className="block text-sm font-semibold text-gray-700 mb-1">Civil Status</label>
+                                <select value={residentBooking.civilStatus}
+                                  onChange={(e) => setResidentBooking({...residentBooking, civilStatus: e.target.value})}
+                                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all">
+                                  <option value="">Select</option>
+                                  <option value="Single">Single</option>
+                                  <option value="Married">Married</option>
+                                  <option value="Widowed">Widowed</option>
+                                  <option value="Separated">Separated</option>
+                                  <option value="Divorced">Divorced</option>
+                                </select>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* ── CONTACT INFORMATION ── */}
+                          <div>
+                            <h3 className="text-base font-bold text-gray-800 mb-3 pb-2 border-b border-gray-200">Contact Information</h3>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div className="md:col-span-2">
+                                <label className="block text-sm font-semibold text-gray-700 mb-1">Address <span className="text-red-500">*</span></label>
+                                <input type="text" value={residentBooking.address}
+                                  onChange={(e) => setResidentBooking({...residentBooking, address: e.target.value})}
+                                  placeholder="Barangay, City/Municipality"
+                                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all" />
+                              </div>
+                              <div>
+                                <label className="block text-sm font-semibold text-gray-700 mb-1">Contact Number <span className="text-red-500">*</span></label>
+                                <input type="tel" value={residentBooking.contactNumber}
+                                  onChange={(e) => setResidentBooking({...residentBooking, contactNumber: sanitizePhone(e.target.value)})}
+                                  placeholder="09XXXXXXXXX"
+                                  maxLength={16}
+                                  className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all ${phoneClass(residentBooking.contactNumber)}`} />
+                                <PhoneMsg val={residentBooking.contactNumber} />
+                              </div>
+                              <div>
+                                <label className="block text-sm font-semibold text-gray-700 mb-1">Occupation</label>
+                                <input type="text" value={residentBooking.occupation}
+                                  onChange={(e) => setResidentBooking({...residentBooking, occupation: e.target.value})}
+                                  placeholder="e.g. Teacher, Farmer"
+                                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all" />
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* ── EMERGENCY CONTACT ── */}
+                          <div>
+                            <h3 className="text-base font-bold text-gray-800 mb-3 pb-2 border-b border-gray-200">Emergency Contact</h3>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div>
+                                <label className="block text-sm font-semibold text-gray-700 mb-1">Emergency Contact Person</label>
+                                <input type="text" value={residentBooking.emergencyContactPerson}
+                                  onChange={(e) => setResidentBooking({...residentBooking, emergencyContactPerson: e.target.value})}
+                                  placeholder="Full name"
+                                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all" />
+                              </div>
+                              <div>
+                                <label className="block text-sm font-semibold text-gray-700 mb-1">Emergency Contact Number</label>
+                                <input type="tel" value={residentBooking.emergencyContactNumber}
+                                  onChange={(e) => setResidentBooking({...residentBooking, emergencyContactNumber: sanitizePhone(e.target.value)})}
+                                  placeholder="09XXXXXXXXX"
+                                  maxLength={16}
+                                  className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all ${phoneClass(residentBooking.emergencyContactNumber)}`} />
+                                <PhoneMsg val={residentBooking.emergencyContactNumber} />
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* ── MEDICAL INFORMATION ── */}
+                          <div>
+                            <h3 className="text-base font-bold text-gray-800 mb-3 pb-2 border-b border-gray-200">Medical Information</h3>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div>
+                                <label className="block text-sm font-semibold text-gray-700 mb-1">
+                                  PhilHealth Number
+                                  <span className="ml-1 text-xs font-normal text-gray-400">(optional)</span>
+                                </label>
+                                <input type="text" value={residentBooking.philHealthNumber}
+                                  onChange={(e) => setResidentBooking({...residentBooking, philHealthNumber: e.target.value})}
+                                  placeholder="XX-XXXXXXXXX-X"
+                                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all" />
+                              </div>
+                              <div>
+                                <label className="block text-sm font-semibold text-gray-700 mb-1">Allergies</label>
+                                <input type="text" value={residentBooking.allergies}
+                                  onChange={(e) => setResidentBooking({...residentBooking, allergies: e.target.value})}
+                                  placeholder="e.g., Penicillin, Peanuts"
+                                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all" />
+                              </div>
+                              <div className="md:col-span-2">
+                                <label className="block text-sm font-semibold text-gray-700 mb-1">Chronic Conditions</label>
+                                <input type="text" value={residentBooking.chronicConditions}
+                                  onChange={(e) => setResidentBooking({...residentBooking, chronicConditions: e.target.value})}
+                                  placeholder="e.g., Hypertension, Diabetes"
+                                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all" />
+                              </div>
+                              <div className="md:col-span-2">
+                                <label className="block text-sm font-semibold text-gray-700 mb-1">Current Medications</label>
+                                <textarea value={residentBooking.currentMedications}
+                                  onChange={(e) => setResidentBooking({...residentBooking, currentMedications: e.target.value})}
+                                  placeholder="List current medications"
+                                  rows={2}
+                                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all resize-none" />
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* ── APPOINTMENT SCHEDULE ── */}
+                          <div>
+                            <h3 className="text-base font-bold text-gray-800 mb-3 pb-2 border-b border-gray-200">Appointment Schedule</h3>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+                            {/* Appointment Date */}
+                            <div>
+                              <label className="block text-sm font-semibold text-gray-700 mb-2">
+                                Appointment Date <span className="text-red-500">*</span>
+                              </label>
+                              <input
+                                type="date"
+                                value={residentBooking.appointmentDate}
+                                onChange={(e) => setResidentBooking({...residentBooking, appointmentDate: e.target.value})}
+                                min={new Date().toISOString().split('T')[0]}
+                                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                              />
+                              <p className="text-xs text-gray-400 mt-1">📅 Weekdays only (Mon–Fri)</p>
+                            </div>
+
+                            {/* Appointment Time */}
+                            <div>
+                              <label className="block text-sm font-semibold text-gray-700 mb-2">
+                                Appointment Time <span className="text-red-500">*</span>
+                              </label>
+                              {(() => {
+                                const booked = getBookedSlots(residentBooking.appointmentDate);
+                                return (
+                                  <select
+                                    value={residentBooking.appointmentTime}
+                                    onChange={(e) => setResidentBooking({...residentBooking, appointmentTime: e.target.value})}
+                                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                                  >
+                                    <option value="">-- Select a Time Slot --</option>
+                                    {CLINIC_SLOTS.map(s => {
+                                      const isBooked = booked.has(s.value);
+                                      const isLunch  = s.lunch;
+                                      const disabled = isBooked || isLunch;
+                                      return (
+                                        <option key={s.value} value={s.value} disabled={disabled}>
+                                          {`Slot ${s.slot}: ${s.label}${isLunch ? ' 🍽 Lunch Break' : isBooked ? ' ✗ Fully Booked' : ''}`}
+                                        </option>
+                                      );
+                                    })}
+                                  </select>
+                                );
+                              })()}
+                              <p className="text-xs text-gray-400 mt-1">🏥 Clinic hours: 8:00 AM – 5:00 PM | 9 slots/day | Lunch 12–1 PM blocked</p>
+                            </div>
+
+                            {/* Service Category - Full Width */}
+                            <div className="md:col-span-2">
+                              <label className="block text-sm font-semibold text-gray-700 mb-2">
+                                Service Category <span className="text-red-500">*</span>
+                              </label>
+                              <select
+                                value={residentBooking.serviceCategory}
+                                onChange={(e) => {
+                                  setResidentBooking({
+                                    ...residentBooking, 
+                                    serviceCategory: e.target.value,
+                                    serviceType: '', // Reset service type when category changes
+                                    priorityLevel: '' // Reset priority level
+                                  });
+                                }}
+                                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                              >
+                                <option value="">Select service category</option>
+                                {Object.keys(SERVICE_CATEGORIES).map(category => (
+                                  <option key={category} value={category}>{category}</option>
+                                ))}
+                              </select>
+                            </div>
+
+                            {/* Service Type - Full Width */}
+                            <div className="md:col-span-2">
+                              <label className="block text-sm font-semibold text-gray-700 mb-2">
+                                Service Type <span className="text-red-500">*</span>
+                              </label>
+                              <select
+                                value={residentBooking.serviceType}
+                                onChange={(e) => {
+                                  const selectedService = SERVICE_CATEGORIES[residentBooking.serviceCategory]?.services
+                                    .find(s => s.name === e.target.value);
+                                  setResidentBooking({
+                                    ...residentBooking, 
+                                    serviceType: e.target.value,
+                                    priorityLevel: selectedService?.priority || '' // Auto-populate priority
+                                  });
+                                }}
+                                disabled={!residentBooking.serviceCategory}
+                                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all disabled:bg-gray-100 disabled:cursor-not-allowed"
+                              >
+                                <option value="">
+                                  {residentBooking.serviceCategory ? 'Select service type' : 'Please select a service category first'}
+                                </option>
+                                {residentBooking.serviceCategory && 
+                                  SERVICE_CATEGORIES[residentBooking.serviceCategory]?.services.map(service => (
+                                    <option key={service.name} value={service.name}>{service.name}</option>
+                                  ))
+                                }
+                              </select>
+                            </div>
+
+                            {/* Priority Level - Full Width */}
+                            <div className="md:col-span-2">
+                              <label className="block text-sm font-semibold text-gray-700 mb-2">
+                                Priority Level <span className="text-red-500">*</span>
+                              </label>
+                              <select
+                                value={residentBooking.priorityLevel}
+                                onChange={(e) => setResidentBooking({...residentBooking, priorityLevel: e.target.value})}
+                                disabled={!residentBooking.serviceType}
+                                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all disabled:bg-gray-100 disabled:cursor-not-allowed"
+                              >
+                                <option value="">
+                                  {residentBooking.serviceType ? 'Select priority level' : 'Please select a service type first'}
+                                </option>
+                                <option value="Priority Case">Priority Case</option>
+                                <option value="Urgent">Urgent</option>
+                                <option value="Regular">Regular</option>
+                              </select>
+                              {residentBooking.serviceType && (
+                                <p className="text-xs text-gray-500 mt-1">
+                                  Default priority for this service is auto-filled, but you can change it if needed.
+                                </p>
+                              )}
+                            </div>
+
+                            {/* Reason for Visit - Full Width */}
+                            <div className="md:col-span-2">
+                              <label className="block text-sm font-semibold text-gray-700 mb-2">
+                                Reason for Visit <span className="text-red-500">*</span>
+                              </label>
+                              <textarea
+                                value={residentBooking.notes}
+                                onChange={(e) => setResidentBooking({...residentBooking, notes: e.target.value})}
+                                placeholder=""
+                                rows={3}
+                                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all resize-none"
+                              />
+                            </div>
+                          </div>
+                          </div>{/* end Appointment Schedule section */}
+
+                          {/* Action Buttons */}
+                          <div className="flex gap-3 mt-6">
+                            <button
+                              onClick={() => {
+                                setResidentBooking({
+                                  lastName: '', firstName: '', middleName: '',
+                                  dateOfBirth: '', sex: '', civilStatus: '',
+                                  address: '', contactNumber: '', occupation: '',
+                                  emergencyContactPerson: '', emergencyContactNumber: '',
+                                  philHealthNumber: '', allergies: '', chronicConditions: '', currentMedications: '',
+                                  appointmentDate: '', appointmentTime: '',
+                                  serviceCategory: '', serviceType: '', priorityLevel: '', notes: ''
+                                });
+                                setResidentView('queue');
+                              }}
+                              className="flex-1 bg-white border-2 border-gray-300 text-gray-700 py-3 rounded-lg font-semibold hover:bg-gray-50 transition-all"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              onClick={submitResidentBooking}
+                              className="flex-1 bg-gradient-to-r from-purple-600 to-pink-600 text-white py-3 rounded-lg font-semibold hover:from-purple-700 hover:to-pink-700 transition-all transform hover:scale-[1.02] shadow-lg"
+                            >
+                              Book Appointment
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Visit History View */}
+                  {residentView === 'history' && (
+                    <div className="space-y-6">
+                      <div className="bg-white rounded-xl shadow-md p-6">
+                        <h2 className="text-xl font-bold text-gray-800 mb-4">My Visit History</h2>
+                        
+                        <div className="mb-4">
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">
+                            Enter Patient ID to view history
+                          </label>
+                          <input
+                            type="text"
+                            value={residentPatientId}
+                            onChange={(e) => setResidentPatientId(e.target.value)}
+                            placeholder="Enter your Patient ID"
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                          />
+                        </div>
+
+                        {residentPatientId && getResidentVisitHistory().length === 0 && (
+                          <div className="text-center py-8 text-gray-500">
+                            <FileText className="w-12 h-12 mx-auto mb-2 text-gray-300" />
+                            <p>No visit history found for this Patient ID</p>
+                          </div>
+                        )}
+
+                        {residentPatientId && getResidentVisitHistory().length > 0 && (
+                          <div className="space-y-4">
+                            {getResidentVisitHistory().map((visit) => (
+                              <div key={visit.id} className="border rounded-lg p-4 hover:shadow-md transition-shadow">
+                                <div className="flex justify-between items-start mb-3">
+                                  <div>
+                                    <p className="font-semibold text-gray-800">{visit.service}</p>
+                                    <p className="text-sm text-gray-600">{new Date(visit.visitDate).toLocaleDateString()}</p>
+                                  </div>
+                                  <span className={`px-3 py-1 rounded-full text-xs font-semibold ${priorityLevels[visit.priority].color} text-white`}>
+                                    {visit.priority}
+                                  </span>
+                                </div>
+                                <div className="grid md:grid-cols-2 gap-3 text-sm">
+                                  <div>
+                                    <p className="text-gray-600"><span className="font-medium">Reason for Visit:</span> {visit.chiefComplaint}</p>
+                                    <p className="text-gray-600"><span className="font-medium">Time Served:</span> {new Date(visit.timeServed).toLocaleTimeString()}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-gray-600"><span className="font-medium">Diagnosis:</span> {visit.diagnosis || 'N/A'}</p>
+                                    <p className="text-gray-600"><span className="font-medium">Treatment:</span> {visit.treatment || 'N/A'}</p>
+                                  </div>
+                                </div>
+                                {visit.notes && (
+                                  <div className="mt-3 pt-3 border-t">
+                                    <p className="text-sm text-gray-600"><span className="font-medium">Notes:</span> {visit.notes}</p>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          }
+
+          // ==================== RENDER: STAFF/ADMIN DASHBOARD ====================
+          return (
+            <div className="min-h-screen bg-gray-50">
+              {/* Header */}
+              <div className="text-white shadow-lg" style={{background:'linear-gradient(to right,var(--ht-primary),var(--ht-primary-dark))'}}>
+                <div className="container mx-auto px-4 py-4">
+                  <div className="flex justify-between items-center">
+                    <div className="flex items-center gap-3">
+                      <img src="Upper_Bicutan_Logo.jpg" alt="Barangay Upper Bicutan" className="w-12 h-12 object-contain rounded-full" style={{background:'rgba(255,255,255,0.15)',padding:'2px'}} />
+                      <div>
+                        <h1 className="text-2xl font-bold">HealthTrack</h1>
+                        <p className="text-sm" style={{color:'rgba(255,255,255,0.85)'}}>Patient Information System with Queueing for Barangay Upper Bicutan Health Clinics - City of Taguig</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center space-x-4">
+                      <div className="text-right">
+                        <p className="text-sm font-semibold">{currentUser ? currentUser.fullName : (userRole === 'admin' ? 'Administrator' : 'Staff')}</p>
+                        <p className="text-xs text-blue-200">{userRole === 'admin' ? 'Administrator' : 'Staff'} Access</p>
+                      </div>
+                      <button
+                        onClick={handleLogout}
+                        className="flex items-center space-x-2 bg-white/20 hover:bg-white/30 px-4 py-2 rounded-lg transition-colors"
+                      >
+                        <LogOut className="w-4 h-4" />
+                        <span>Logout</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Navigation */}
+              <div className="bg-white shadow-sm border-b">
+                <nav className="nav-scroll">
+                  <div className="flex space-x-1 px-4">
+                    {[
+                      { id: 'dashboard', label: 'Dashboard', icon: BarChart },
+                      { id: 'queue', label: 'Queue Management', icon: Clock },
+                      { id: 'patients', label: 'Patients', icon: Users },
+                      { id: 'visitlog', label: 'Visit Log', icon: List },
+                      { id: 'analytics', label: 'Analytics', icon: BarChart },
+                      { id: 'reports', label: 'Reports', icon: FileSpreadsheet },
+                      ...(userRole === 'admin' ? [
+                        { id: 'accounts', label: 'Accounts', icon: Users },
+                        { id: 'auditlog', label: 'Audit Log', icon: List },
+                        { id: 'theme', label: '🎨 Theme', icon: Activity }
+                      ] : [])
+                    ].map(tab => (
+                      <button
+                        key={tab.id}
+                        onClick={() => setActiveTab(tab.id)}
+                        className={`flex items-center space-x-2 px-6 py-4 border-b-2 transition-colors ${
+                          activeTab === tab.id
+                            ? 'border-transparent font-semibold'
+                            : 'border-transparent text-gray-600 hover:border-gray-300'
+                        }`}
+                        style={activeTab === tab.id ? {borderColor:'var(--ht-primary)',color:'var(--ht-primary)',borderBottomColor:'var(--ht-primary)'} : {}}
+                      >
+                        <tab.icon className="w-5 h-5" />
+                        <span>{tab.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </nav>
+              </div>
+
+              {/* Main Content */}
+              <div className="container mx-auto px-4 py-6">
+                {/* DASHBOARD TAB */}
+                {activeTab === 'dashboard' && (
+                  <div className="space-y-6">
+                    {/* Stats Cards */}
+                    <div className="grid md:grid-cols-4 gap-6">
+                      <div className="bg-white rounded-xl shadow-md p-6 border-l-4 border-blue-500">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-gray-600 text-sm font-medium uppercase">Total Patients</p>
+                            <p className="text-3xl font-bold text-gray-800 mt-2">{registeredPatients.length}</p>
+                          </div>
+                          <Users className="w-12 h-12 text-blue-500 opacity-50" />
+                        </div>
+                      </div>
+
+                      <div className="bg-white rounded-xl shadow-md p-6 border-l-4 border-orange-500">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-gray-600 text-sm font-medium uppercase">In Queue</p>
+                            <p className="text-3xl font-bold text-gray-800 mt-2">{queue.length}</p>
+                          </div>
+                          <Clock className="w-12 h-12 text-orange-500 opacity-50" />
+                        </div>
+                      </div>
+
+                      <div className="bg-white rounded-xl shadow-md p-6 border-l-4 border-red-500">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-gray-600 text-sm font-medium uppercase">Priority Cases</p>
+                            <p className="text-3xl font-bold text-gray-800 mt-2">
+                              {queue.filter(p => p.priority === 'Priority Case').length}
+                            </p>
+                            <p className="text-sm text-gray-600">Priority & urgent cases only</p>
+                          </div>
+                          <AlertCircle className="w-12 h-12 text-red-500 opacity-50" />
+                        </div>
+                      </div>
+
+                      <div className="bg-white rounded-xl shadow-md p-6 border-l-4 border-green-500">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-gray-600 text-sm font-medium uppercase">Today's Visits</p>
+                            <p className="text-3xl font-bold text-gray-800 mt-2">
+                              {visitLog.filter(v => new Date(v.visitDate).toDateString() === new Date().toDateString()).length}
+                            </p>
+                          </div>
+                          <CheckCircle className="w-12 h-12 text-green-500 opacity-50" />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Quick Actions */}
+                    <div className="bg-white rounded-xl shadow-md p-6">
+                      <h2 className="text-xl font-bold text-gray-800 mb-4">Quick Actions</h2>
+                      <div className="grid md:grid-cols-3 gap-4">
+                        <button
+                          onClick={() => setShowRegisterPatient(true)}
+                          className="flex items-center justify-center space-x-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white py-4 rounded-lg font-semibold hover:from-blue-600 hover:to-blue-700 transition-all transform hover:scale-105 shadow-md"
+                        >
+                          <UserPlus className="w-5 h-5" />
+                          <span>Register New Patient</span>
+                        </button>
+                        <button
+                          onClick={() => setShowAddToQueue(true)}
+                          className="flex items-center justify-center space-x-2 bg-gradient-to-r from-orange-500 to-orange-600 text-white py-4 rounded-lg font-semibold hover:from-orange-600 hover:to-orange-700 transition-all transform hover:scale-105 shadow-md"
+                        >
+                          <Clock className="w-5 h-5" />
+                          <span>Add to Queue</span>
+                        </button>
+                        <button
+                          onClick={() => setActiveTab('analytics')}
+                          className="flex items-center justify-center space-x-2 bg-gradient-to-r from-purple-500 to-purple-600 text-white py-4 rounded-lg font-semibold hover:from-purple-600 hover:to-purple-700 transition-all transform hover:scale-105 shadow-md"
+                        >
+                          <BarChart className="w-5 h-5" />
+                          <span>View Analytics</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Recent Activity */}
+                    <div className="grid md:grid-cols-2 gap-6">
+                      <div className="bg-white rounded-xl shadow-md p-6">
+                        <h3 className="text-lg font-bold text-gray-800 mb-4">Current Queue Summary</h3>
+                        <div className="space-y-3">
+                          {queue.length === 0 ? (
+                            <p className="text-gray-500 text-center py-4">No patients in queue</p>
+                          ) : (
+                            queue.slice(0, 5).map((item, index) => (
+                              <div key={item.id} className={`border rounded-lg p-3 ${priorityLevels[item.priority].bgLight} ${priorityLevels[item.priority].border}`}>
+                                <div className="flex items-center justify-between">
+                                  <div>
+                                    <div className="flex items-center space-x-2">
+                                      <span className="font-bold text-gray-700">#{index + 1}</span>
+                                      <span className="font-semibold text-gray-800">{item.name}</span>
+                                    </div>
+                                    <p className="text-xs text-gray-600 mt-1">{item.service}</p>
+                                  </div>
+                                  <span className={`px-2 py-1 rounded-full text-xs font-semibold ${priorityLevels[item.priority].color} text-white`}>
+                                    {item.priority}
+                                  </span>
+                                </div>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="bg-white rounded-xl shadow-md p-6">
+                        <h3 className="text-lg font-bold text-gray-800 mb-4">Recent Visits (Today)</h3>
+                        <div className="space-y-3">
+                          {visitLog.filter(v => new Date(v.visitDate).toDateString() === new Date().toDateString()).slice(0, 5).length === 0 ? (
+                            <p className="text-gray-500 text-center py-4">No visits today</p>
+                          ) : (
+                            visitLog
+                              .filter(v => new Date(v.visitDate).toDateString() === new Date().toDateString())
+                              .slice(0, 5)
+                              .map((visit) => (
+                                <div key={visit.id} className="border rounded-lg p-3 hover:shadow-md transition-shadow">
+                                  <div className="flex items-center justify-between">
+                                    <div>
+                                      <p className="font-semibold text-gray-800">{visit.name}</p>
+                                      <p className="text-xs text-gray-600">{visit.service}</p>
+                                    </div>
+                                    <p className="text-xs text-gray-500">{new Date(visit.timeServed).toLocaleTimeString()}</p>
+                                  </div>
+                                </div>
+                              ))
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* QUEUE MANAGEMENT TAB */}
+                {activeTab === 'queue' && (
+                  <div className="space-y-6">
+                    <div className="flex justify-between items-center">
+                      <h2 className="text-2xl font-bold text-gray-800">Queue Management</h2>
+                      <button
+                        onClick={() => setShowAddToQueue(true)}
+                        className="flex items-center space-x-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:from-blue-600 hover:to-blue-700 transition-all transform hover:scale-105 shadow-md"
+                      >
+                        <UserPlus className="w-5 h-5" />
+                        <span>Add to Queue</span>
+                      </button>
+                    </div>
+
+                    {/* Queue Stats */}
+                    <div className="grid md:grid-cols-4 gap-4">
+                      <div className="bg-gray-100 border border-gray-300 rounded-lg p-4">
+                        <p className="text-sm text-gray-600 font-medium">Total in Queue</p>
+                        <p className="text-3xl font-bold text-gray-800">{queue.length}</p>
+                      </div>
+                      <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                        <p className="text-sm text-gray-600 font-medium">Priority Cases</p>
+                        <p className="text-3xl font-bold text-red-600">
+                          {queue.filter(p => p.priority === 'Priority Case').length}
+                        </p>
+                      </div>
+                      <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+                        <p className="text-sm text-gray-600 font-medium">Urgent</p>
+                        <p className="text-3xl font-bold text-orange-600">
+                          {queue.filter(p => p.priority === 'Urgent').length}
+                        </p>
+                      </div>
+                      <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                        <p className="text-sm text-gray-600 font-medium">Regular</p>
+                        <p className="text-3xl font-bold text-green-600">
+                          {queue.filter(p => p.priority === 'Regular').length}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Queue List */}
+                    <div className="bg-white rounded-xl shadow-md p-6">
+                      <h3 className="text-lg font-bold text-gray-800 mb-4">Current Queue</h3>
+                      {queue.length === 0 ? (
+                        <div className="text-center py-12 text-gray-500">
+                          <Clock className="w-16 h-16 mx-auto mb-4 text-gray-300" />
+                          <p className="text-lg">No patients in queue</p>
+                          <p className="text-sm">Add patients to the queue to get started</p>
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          {queue.map((item, index) => {
+                            const apptSlot = item.appointmentTime ? CLINIC_SLOTS.find(s => s.value === item.appointmentTime) : null;
+                            const apptDateFmt = item.appointmentDate
+                              ? new Date(item.appointmentDate + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' })
+                              : null;
+                            const statusColors = {
+                              'Accepted':  'bg-green-100 text-green-700 border-green-300',
+                              'Rejected':  'bg-red-100 text-red-700 border-red-300',
+                              'Waiting':   'bg-yellow-100 text-yellow-700 border-yellow-300',
+                              'Completed': 'bg-blue-100 text-blue-700 border-blue-300',
+                            };
+                            const statusBadge = statusColors[item.status] || 'bg-gray-100 text-gray-600 border-gray-300';
+                            return (
+                              <div key={item.id} className={`border-2 rounded-xl p-4 ${priorityLevels[item.priority]?.bgLight || 'bg-gray-50'} ${priorityLevels[item.priority]?.border || 'border-gray-200'} ${item.status === 'Rejected' ? 'opacity-70' : ''}`}>
+                                <div className="flex justify-between items-start gap-4">
+                                  {/* LEFT: Patient info */}
+                                  <div className="flex-1 min-w-0">
+                                    {/* Top row: number + name + status badge */}
+                                    <div className="flex items-center gap-3 mb-2 flex-wrap">
+                                      <span className="text-3xl font-bold text-gray-700">#{index + 1}</span>
+                                      <div>
+                                        <p className="font-bold text-gray-800 text-lg leading-tight">{item.name}</p>
+                                        <p className="text-xs text-gray-500">ID: {item.patientId} | Age: {item.age} | Sex: {item.sex}</p>
+                                      </div>
+                                      {item.status && (
+                                        <span className={`ml-1 px-2.5 py-0.5 rounded-full text-xs font-bold border ${statusBadge}`}>
+                                          {item.status === 'Accepted' ? '✓ Accepted' : item.status === 'Rejected' ? '✗ Rejected' : item.status}
+                                        </span>
+                                      )}
+                                      {item.selfBooked && (
+                                        <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-purple-100 text-purple-700 border border-purple-300">Self-Booked</span>
+                                      )}
+                                    </div>
+
+                                    {/* Details grid */}
+                                    <div className="grid md:grid-cols-2 gap-x-6 gap-y-1 ml-12 text-sm text-gray-600">
+                                      <p><span className="font-medium">Service:</span> {item.service}</p>
+                                      <p><span className="font-medium">Priority:</span> {item.priority}</p>
+                                      <p><span className="font-medium">Category:</span> {item.serviceCategory}</p>
+                                      <p><span className="font-medium">Queued at:</span> {new Date(item.timeQueued).toLocaleTimeString()}</p>
+                                    </div>
+                                    <div className="ml-12 mt-1 text-sm text-gray-600">
+                                      <p><span className="font-medium">Reason for Visit:</span> {item.chiefComplaint}</p>
+                                    </div>
+
+                                    {/* ── Appointment Date & Time ── */}
+                                    {apptDateFmt ? (
+                                      <div className="ml-12 mt-3 flex items-center gap-2 bg-white bg-opacity-80 border border-blue-200 rounded-lg px-3 py-2 w-fit">
+                                        <span className="text-lg">📅</span>
+                                        <div>
+                                          <p className="text-xs text-blue-500 font-semibold uppercase tracking-wide leading-none">Scheduled Appointment</p>
+                                          <p className="text-sm font-bold text-gray-800 leading-tight">{apptDateFmt}</p>
+                                          <p className="text-xs text-blue-700 font-semibold leading-tight">
+                                            🕐 {apptSlot ? `${apptSlot.label} (Slot ${apptSlot.slot})` : item.appointmentTime}
+                                          </p>
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <div className="ml-12 mt-3 flex items-center gap-2 bg-gray-50 border border-dashed border-gray-300 rounded-lg px-3 py-1.5 w-fit">
+                                        <span className="text-sm">🚶</span>
+                                        <p className="text-xs text-gray-400 italic">Walk-in — no scheduled appointment</p>
+                                      </div>
+                                    )}
+
+                                    {/* Rejection reason display */}
+                                    {item.status === 'Rejected' && item.rejectedReason && (
+                                      <div className="ml-12 mt-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                                        <p className="text-xs font-semibold text-red-600 uppercase tracking-wide">Rejection Reason</p>
+                                        <p className="text-sm text-red-700">{item.rejectedReason}</p>
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  {/* RIGHT: Action buttons */}
+                                  <div className="flex flex-col gap-2 min-w-[110px]">
+                                    {item.status !== 'Rejected' && item.status !== 'Completed' && (
+                                      <>
+                                        {item.status !== 'Accepted' && (
+                                          <button
+                                            onClick={() => acceptAppointment(item)}
+                                            className="flex items-center justify-center gap-1.5 bg-blue-500 hover:bg-blue-600 text-white px-3 py-2 rounded-lg text-xs font-bold transition-colors w-full"
+                                          >
+                                            <CheckCircle className="w-3.5 h-3.5" />
+                                            Accept
+                                          </button>
+                                        )}
+                                        <button
+                                          onClick={() => markAsServed(item)}
+                                          className="flex items-center justify-center gap-1.5 bg-green-500 hover:bg-green-600 text-white px-3 py-2 rounded-lg text-xs font-bold transition-colors w-full"
+                                        >
+                                          <CheckCircle className="w-3.5 h-3.5" />
+                                          Served
+                                        </button>
+                                        <button
+                                          onClick={() => openRejectModal(item)}
+                                          className="flex items-center justify-center gap-1.5 bg-orange-500 hover:bg-orange-600 text-white px-3 py-2 rounded-lg text-xs font-bold transition-colors w-full"
+                                        >
+                                          <XCircle className="w-3.5 h-3.5" />
+                                          Reject
+                                        </button>
+                                      </>
+                                    )}
+                                    <button
+                                      onClick={() => removeFromQueue(item)}
+                                      className="flex items-center justify-center gap-1.5 bg-red-500 hover:bg-red-600 text-white px-3 py-2 rounded-lg text-xs font-bold transition-colors w-full"
+                                    >
+                                      <Trash className="w-3.5 h-3.5" />
+                                      Remove
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {/* ── Reject Reason Modal ── */}
+                      {rejectTarget && (
+                        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+                            <div className="bg-gradient-to-r from-orange-500 to-red-500 rounded-t-2xl px-6 py-4">
+                              <h3 className="text-lg font-bold text-white">Reject Appointment</h3>
+                              <p className="text-orange-100 text-sm mt-0.5">This will notify the patient of the rejection.</p>
+                            </div>
+                            <div className="p-6">
+                              <div className="bg-orange-50 border border-orange-200 rounded-lg px-4 py-3 mb-4">
+                                <p className="font-bold text-gray-800">{rejectTarget.name}</p>
+                                <p className="text-xs text-gray-500">ID: {rejectTarget.patientId}</p>
+                                {rejectTarget.appointmentDate && (
+                                  <p className="text-sm text-orange-700 mt-1 font-medium">
+                                    📅 {new Date(rejectTarget.appointmentDate + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                                    {rejectTarget.appointmentTime && ` — ${CLINIC_SLOTS.find(s=>s.value===rejectTarget.appointmentTime)?.label || rejectTarget.appointmentTime}`}
+                                  </p>
+                                )}
+                              </div>
+                              <label className="block text-sm font-semibold text-gray-700 mb-2">
+                                Reason for Rejection <span className="text-red-500">*</span>
+                              </label>
+                              <textarea
+                                value={rejectReason}
+                                onChange={(e) => { setRejectReason(e.target.value); setRejectError(''); }}
+                                rows={4}
+                                placeholder="e.g. Slot conflict, clinic closed, patient record incomplete..."
+                                className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent resize-none text-sm"
+                              />
+                              {rejectError && <p className="text-xs text-red-500 mt-1">{rejectError}</p>}
+                              <div className="flex gap-3 mt-4">
+                                <button onClick={closeRejectModal}
+                                  className="flex-1 py-2.5 border-2 border-gray-300 text-gray-700 rounded-xl font-semibold hover:bg-gray-50 transition-colors text-sm">
+                                  Cancel
+                                </button>
+                                <button onClick={confirmReject}
+                                  className="flex-1 py-2.5 bg-gradient-to-r from-orange-500 to-red-500 text-white rounded-xl font-bold hover:from-orange-600 hover:to-red-600 transition-all text-sm">
+                                  Confirm Rejection
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* PATIENTS TAB */}
+                {activeTab === 'patients' && (
+                  <div className="space-y-6">
+                    <div className="flex justify-between items-center">
+                      <h2 className="text-2xl font-bold text-gray-800">Registered Patients</h2>
+                      <div className="flex space-x-3">
+                        <button
+                          onClick={exportPatients}
+                          className="flex items-center space-x-2 bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg font-semibold transition-colors"
+                        >
+                          <Download className="w-4 h-4" />
+                          <span>Export</span>
+                        </button>
+                        <button
+                          onClick={() => setShowRegisterPatient(true)}
+                          className="flex items-center space-x-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:from-blue-600 hover:to-blue-700 transition-all transform hover:scale-105 shadow-md"
+                        >
+                          <UserPlus className="w-5 h-5" />
+                          <span>Register New Patient</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Search Bar */}
+                    <div className="bg-white rounded-xl shadow-md p-4">
+                      <div className="relative">
+                        <Search className="w-5 h-5 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+                        <input
+                          type="text"
+                          placeholder="Search by Patient ID, Name, or Contact..."
+                          value={searchTerm}
+                          onChange={(e) => setSearchTerm(e.target.value)}
+                          className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Patients List */}
+                    <div className="bg-white rounded-xl shadow-md overflow-hidden">
+                      <div className="overflow-x-auto">
+                        <table className="w-full">
+                          <thead className="bg-gray-50 border-b">
+                            <tr>
+                              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Patient ID</th>
+                              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Name</th>
+                              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Age/Sex</th>
+                              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Contact</th>
+                              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Address</th>
+                              <th className="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-200">
+                            {registeredPatients
+                              .filter(patient => 
+                                searchTerm === '' ||
+                                patient.patientId.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                                `${patient.firstName} ${patient.lastName}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                                patient.contact.includes(searchTerm)
+                              )
+                              .map((patient) => (
+                                <tr key={patient.id} className="hover:bg-gray-50 transition-colors">
+                                  <td className="px-6 py-4 whitespace-nowrap">
+                                    <span className="text-sm font-medium text-gray-900">{patient.patientId}</span>
+                                  </td>
+                                  <td className="px-6 py-4 whitespace-nowrap">
+                                    <div>
+                                      <p className="text-sm font-semibold text-gray-900">
+                                        {patient.firstName} {patient.middleName} {patient.lastName}
+                                      </p>
+                                    </div>
+                                  </td>
+                                  <td className="px-6 py-4 whitespace-nowrap">
+                                    <span className="text-sm text-gray-600">{patient.age} / {patient.sex}</span>
+                                  </td>
+                                  <td className="px-6 py-4 whitespace-nowrap">
+                                    <span className="text-sm text-gray-600">{patient.contact}</span>
+                                  </td>
+                                  <td className="px-6 py-4">
+                                    <span className="text-sm text-gray-600">{patient.address}</span>
+                                  </td>
+                                  <td className="px-6 py-4 whitespace-nowrap">
+                                    <div className="flex space-x-2">
+                                      <button
+                                        onClick={() => setSelectedPatient(patient)}
+                                        className="text-blue-600 hover:text-blue-800 font-medium text-sm"
+                                      >
+                                        View
+                                      </button>
+                                      <button
+                                        onClick={() => setEditingPatient(patient)}
+                                        className="text-green-600 hover:text-green-800 font-medium text-sm"
+                                      >
+                                        Edit
+                                      </button>
+                                      <button
+                                        onClick={() => deletePatient(patient.id)}
+                                        className="text-red-600 hover:text-red-800 font-medium text-sm"
+                                      >
+                                        Delete
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      {registeredPatients.filter(patient => 
+                        searchTerm === '' ||
+                        patient.patientId.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                        `${patient.firstName} ${patient.lastName}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                        patient.contact.includes(searchTerm)
+                      ).length === 0 && (
+                        <div className="text-center py-12 text-gray-500">
+                          <Users className="w-16 h-16 mx-auto mb-4 text-gray-300" />
+                          <p className="text-lg">No patients found</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                {/* VISIT LOG TAB */}
+                {activeTab === 'visitlog' && (
+                  <div className="space-y-6">
+                    <div className="flex justify-between items-center">
+                      <h2 className="text-2xl font-bold text-gray-800">Visit Log</h2>
+                      <button
+                        onClick={exportVisitLog}
+                        className="flex items-center space-x-2 bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg font-semibold transition-colors"
+                      >
+                        <Download className="w-4 h-4" />
+                        <span>Export Visit Log</span>
+                      </button>
+                    </div>
+
+                    {/* Visit Log List */}
+                    <div className="bg-white rounded-xl shadow-md p-6">
+                      <div className="space-y-4">
+                        {visitLog.length === 0 ? (
+                          <div className="text-center py-12 text-gray-500">
+                            <List className="w-16 h-16 mx-auto mb-4 text-gray-300" />
+                            <p className="text-lg">No visits recorded</p>
+                          </div>
+                        ) : (
+                          visitLog
+                            .sort((a, b) => new Date(b.visitDate) - new Date(a.visitDate))
+                            .map((visit) => (
+                              <div key={visit.id} className="border rounded-lg p-4 hover:shadow-md transition-shadow">
+                                <div className="flex justify-between items-start mb-3">
+                                  <div>
+                                    <p className="font-semibold text-gray-800 text-lg">{visit.name}</p>
+                                    <p className="text-sm text-gray-600">Patient ID: {visit.patientId} | Age: {visit.age} | Sex: {visit.sex}</p>
+                                  </div>
+                                  <div className="text-right">
+                                    <p className="text-sm font-medium text-gray-800">{new Date(visit.visitDate).toLocaleDateString()}</p>
+                                    <p className="text-xs text-gray-500">{new Date(visit.timeServed).toLocaleTimeString()}</p>
+                                  </div>
+                                </div>
+                                <div className="grid md:grid-cols-2 gap-4 mb-3">
+                                  <div>
+                                    <p className="text-sm text-gray-600">
+                                      <span className="font-medium">Service:</span> {visit.service}
+                                    </p>
+                                    <p className="text-sm text-gray-600">
+                                      <span className="font-medium">Category:</span> {visit.serviceCategory}
+                                    </p>
+                                    <p className="text-sm text-gray-600">
+                                      <span className="font-medium">Priority:</span> 
+                                      <span className={`ml-2 px-2 py-1 rounded-full text-xs font-semibold ${priorityLevels[visit.priority].color} text-white`}>
+                                        {visit.priority}
+                                      </span>
+                                    </p>
+                                  </div>
+                                  <div>
+                                    <p className="text-sm text-gray-600">
+                                      <span className="font-medium">Contact:</span> {visit.contact}
+                                    </p>
+                                    <p className="text-sm text-gray-600">
+                                      <span className="font-medium">Address:</span> {visit.address}
+                                    </p>
+                                  </div>
+                                </div>
+                                <div className="pt-3 border-t">
+                                  <p className="text-sm text-gray-700 mb-2">
+                                    <span className="font-medium">Reason for Visit:</span> {visit.chiefComplaint}
+                                  </p>
+                                  {visit.diagnosis && (
+                                    <p className="text-sm text-gray-700 mb-2">
+                                      <span className="font-medium">Diagnosis:</span> {visit.diagnosis}
+                                    </p>
+                                  )}
+                                  {visit.treatment && (
+                                    <p className="text-sm text-gray-700 mb-2">
+                                      <span className="font-medium">Treatment:</span> {visit.treatment}
+                                    </p>
+                                  )}
+                                  {visit.prescription && (
+                                    <p className="text-sm text-gray-700 mb-2">
+                                      <span className="font-medium">Prescription:</span> {visit.prescription}
+                                    </p>
+                                  )}
+                                  {visit.notes && (
+                                    <p className="text-sm text-gray-700">
+                                      <span className="font-medium">Notes:</span> {visit.notes}
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                            ))
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* ANALYTICS TAB */}
+                {activeTab === 'analytics' && (
+                  <div className="space-y-6">
+                    {/* Header with Report Export Options */}
+                    <div className="flex justify-between items-center">
+                      <h2 className="text-2xl font-bold text-gray-800">Data Analytics Dashboard</h2>
+                      <div className="flex gap-2">
+                        <select
+                          value={analyticsTimeRange}
+                          onChange={(e) => setAnalyticsTimeRange(e.target.value)}
+                          className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        >
+                          <option value="daily">Daily Report</option>
+                          <option value="weekly">Weekly Report</option>
+                          <option value="monthly">Monthly Report</option>
+                          <option value="yearly">Yearly Report</option>
+                        </select>
+                        <button
+                          onClick={exportAnalytics}
+                          className="flex items-center space-x-2 bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg font-semibold transition-colors"
+                        >
+                          <Download className="w-4 h-4" />
+                          <span>Export Report</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Top Metrics Cards */}
+                    <div className="grid md:grid-cols-4 gap-6">
+                      {(() => {
+                        const data = getAnalyticsData();
+                        const avgDailyVisits = data.length > 0 ? (data.length / 7).toFixed(1) : 0;
+                        const totalAppointments = queue.filter(q => q.appointmentDate).length;
+                        
+                        return (
+                          <>
+                            <div className="bg-white rounded-xl shadow-md p-6">
+                              <p className="text-gray-600 text-sm font-medium mb-2">Total Visits</p>
+                              <p className="text-4xl font-bold text-blue-600">{data.length}</p>
+                            </div>
+                            <div className="bg-white rounded-xl shadow-md p-6">
+                              <p className="text-gray-600 text-sm font-medium mb-2">Avg. Daily Visits</p>
+                              <p className="text-4xl font-bold text-green-600">{avgDailyVisits}</p>
+                            </div>
+                            <div className="bg-white rounded-xl shadow-md p-6">
+                              <p className="text-gray-600 text-sm font-medium mb-2">Total Appointments</p>
+                              <p className="text-4xl font-bold text-purple-600">{totalAppointments}</p>
+                            </div>
+                            <div className="bg-white rounded-xl shadow-md p-6">
+                              <p className="text-gray-600 text-sm font-medium mb-2">Registered Patients</p>
+                              <p className="text-4xl font-bold text-gray-800">{registeredPatients.length}</p>
+                            </div>
+                          </>
+                        );
+                      })()}
+                    </div>
+
+                    {/* Charts Row 1 */}
+                    <div className="grid md:grid-cols-2 gap-6">
+                      {/* Priority Distribution */}
+                      <div className="bg-white rounded-xl shadow-md p-6">
+                        <h3 className="text-lg font-bold text-gray-800 mb-4">Priority Distribution</h3>
+                        {(() => {
+                          const data = getAnalyticsData();
+                          const priorityCounts = {
+                            'Emergency': data.filter(v => v.priority === 'Priority Case').length,
+                            'Urgent': data.filter(v => v.priority === 'Urgent').length,
+                            'Regular': data.filter(v => v.priority === 'Regular').length
+                          };
+                          const maxCount = Math.max(...Object.values(priorityCounts), 1);
+                          
+                          return (
+                            <div className="space-y-4">
+                              <div className="flex items-end justify-around h-48 border-b border-gray-200">
+                                {Object.entries(priorityCounts).map(([priority, count]) => (
+                                  <div key={priority} className="flex flex-col items-center w-24">
+                                    <div className="text-sm font-semibold text-gray-700 mb-2">{count}</div>
+                                    <div 
+                                      className={`w-16 rounded-t ${
+                                        priority === 'Emergency' ? 'bg-red-500' :
+                                        priority === 'Urgent' ? 'bg-orange-500' : 'bg-green-500'
+                                      }`}
+                                      style={{ height: `${(count / maxCount) * 160}px` }}
+                                    ></div>
+                                  </div>
+                                ))}
+                              </div>
+                              <div className="flex justify-center gap-4 text-xs">
+                                <div className="flex items-center gap-1">
+                                  <div className="w-4 h-4 bg-red-500 rounded"></div>
+                                  <span>Emergency</span>
+                                </div>
+                                <div className="flex items-center gap-1">
+                                  <div className="w-4 h-4 bg-orange-500 rounded"></div>
+                                  <span>Urgent</span>
+                                </div>
+                                <div className="flex items-center gap-1">
+                                  <div className="w-4 h-4 bg-green-500 rounded"></div>
+                                  <span>Regular</span>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </div>
+
+                      {/* Service Category Breakdown */}
+                      <div className="bg-white rounded-xl shadow-md p-6">
+                        <h3 className="text-lg font-bold text-gray-800 mb-4">Service Category Breakdown</h3>
+                        {(() => {
+                          const data = getAnalyticsData();
+                          const categoryCounts = {};
+                          Object.keys(SERVICE_CATEGORIES).forEach(category => {
+                            categoryCounts[category] = data.filter(v => v.serviceCategory === category).length;
+                          });
+                          const maxCount = Math.max(...Object.values(categoryCounts), 1);
+                          const topCategories = Object.entries(categoryCounts)
+                            .sort((a, b) => b[1] - a[1])
+                            .slice(0, 5);
+                          
+                          return (
+                            <div className="space-y-3">
+                              {topCategories.map(([category, count]) => (
+                                <div key={category}>
+                                  <div className="flex justify-between text-sm mb-1">
+                                    <span className="text-gray-700 truncate">{category}</span>
+                                    <span className="font-semibold">{count}</span>
+                                  </div>
+                                  <div className="w-full bg-gray-200 rounded-full h-3">
+                                    <div
+                                      className="bg-blue-500 h-3 rounded-full"
+                                      style={{ width: `${(count / maxCount) * 100}%` }}
+                                    ></div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    </div>
+
+                    {/* Charts Row 2 */}
+                    <div className="grid md:grid-cols-2 gap-6">
+                      {/* Daily Visits (Last 7 Days) */}
+                      <div className="bg-white rounded-xl shadow-md p-6">
+                        <h3 className="text-lg font-bold text-gray-800 mb-4">Daily Visits (Last 7 Days)</h3>
+                        {(() => {
+                          const last7Days = [];
+                          for (let i = 6; i >= 0; i--) {
+                            const date = new Date();
+                            date.setDate(date.getDate() - i);
+                            const dateStr = date.toISOString().split('T')[0];
+                            const count = visitLog.filter(v => v.visitDate === dateStr).length;
+                            last7Days.push({
+                              date: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+                              count: count
+                            });
+                          }
+                          const maxCount = Math.max(...last7Days.map(d => d.count), 1);
+                          
+                          return (
+                            <div className="space-y-2">
+                              <div className="flex items-end justify-around h-40 border-b border-l border-gray-200">
+                                {last7Days.map((day, index) => (
+                                  <div key={index} className="flex flex-col items-center" style={{ width: `${100 / 7}%` }}>
+                                    <div className="text-xs font-semibold text-gray-700 mb-1">{day.count}</div>
+                                    {index > 0 && (
+                                      <svg className="absolute" style={{ width: `${100 / 7}%`, height: '160px' }}>
+                                        <line
+                                          x1="0"
+                                          y1={`${160 - (last7Days[index - 1].count / maxCount) * 140}px`}
+                                          x2="100%"
+                                          y2={`${160 - (day.count / maxCount) * 140}px`}
+                                          stroke="#CC0000"
+                                          strokeWidth="2"
+                                        />
+                                      </svg>
+                                    )}
+                                    <div 
+                                      className="w-2 h-2 bg-blue-500 rounded-full relative z-10"
+                                      style={{ marginTop: `${160 - (day.count / maxCount) * 140}px` }}
+                                    ></div>
+                                  </div>
+                                ))}
+                              </div>
+                              <div className="flex justify-around text-xs text-gray-600">
+                                {last7Days.map((day, index) => (
+                                  <div key={index} className="text-center" style={{ width: `${100 / 7}%` }}>
+                                    {day.date}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </div>
+
+                      {/* Age Distribution */}
+                      <div className="bg-white rounded-xl shadow-md p-6">
+                        <h3 className="text-lg font-bold text-gray-800 mb-4">Age Distribution</h3>
+                        {(() => {
+                          const ageGroups = {
+                            '0-17': 0,
+                            '18-35': 0,
+                            '36-50': 0,
+                            '51-65': 0,
+                            '65+': 0
+                          };
+                          
+                          registeredPatients.forEach(patient => {
+                            const age = patient.age;
+                            if (age <= 17) ageGroups['0-17']++;
+                            else if (age <= 35) ageGroups['18-35']++;
+                            else if (age <= 50) ageGroups['36-50']++;
+                            else if (age <= 65) ageGroups['51-65']++;
+                            else ageGroups['65+']++;
+                          });
+                          
+                          const maxCount = Math.max(...Object.values(ageGroups), 1);
+                          
+                          return (
+                            <div className="flex items-end justify-around h-48 border-b border-gray-200">
+                              {Object.entries(ageGroups).map(([group, count]) => (
+                                <div key={group} className="flex flex-col items-center w-16">
+                                  <div className="text-sm font-semibold text-gray-700 mb-2">{count}</div>
+                                  <div 
+                                    className="w-12 bg-purple-500 rounded-t"
+                                    style={{ height: `${(count / maxCount) * 160}px` }}
+                                  ></div>
+                                  <div className="text-xs text-gray-600 mt-2">{group}</div>
+                                </div>
+                              ))}
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    </div>
+
+                    {/* Service Statistics */}
+                    <div className="bg-white rounded-xl shadow-md p-6">
+                      <h3 className="text-lg font-bold text-gray-800 mb-6">Service Statistics</h3>
+                      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                        {Object.keys(SERVICE_CATEGORIES).map(category => {
+                          const count = getAnalyticsData().filter(v => v.serviceCategory === category).length;
+                          return (
+                            <div key={category} className="bg-gray-50 rounded-lg p-4 text-center">
+                              <p className="text-3xl font-bold text-blue-600 mb-2">{count}</p>
+                              <p className="text-xs text-gray-600">{category}</p>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* REPORTS TAB */}
+                {activeTab === 'reports' && (
+                  <div className="space-y-6">
+                    <h2 className="text-2xl font-bold text-gray-800">Generate Reports</h2>
+
+                    {/* Report Types Grid */}
+                    <div className="grid md:grid-cols-2 gap-6">
+                      {/* Daily Report */}
+                      <div className="bg-white rounded-xl shadow-md p-6 border-l-4 border-blue-500">
+                        <div className="flex items-start justify-between mb-4">
+                          <div className="flex items-center gap-3">
+                            <div className="bg-blue-100 p-3 rounded-lg">
+                              <Calendar className="w-6 h-6 text-blue-600" />
+                            </div>
+                            <div>
+                              <h3 className="text-lg font-bold text-gray-800">Daily Report</h3>
+                              <p className="text-sm text-gray-600">Today's clinic activities and statistics</p>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="space-y-3">
+                          <div className="bg-gray-50 rounded-lg p-3">
+                            <p className="text-xs text-gray-600 mb-1">Report Date</p>
+                            <p className="font-semibold text-gray-800">{new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2 text-sm">
+                            <div className="bg-blue-50 rounded p-2 text-center">
+                              <p className="text-xl font-bold text-blue-600">
+                                {visitLog.filter(v => new Date(v.visitDate).toDateString() === new Date().toDateString()).length}
+                              </p>
+                              <p className="text-xs text-gray-600">Today's Visits</p>
+                            </div>
+                            <div className="bg-blue-50 rounded p-2 text-center">
+                              <p className="text-xl font-bold text-blue-600">
+                                {queue.length}
+                              </p>
+                              <p className="text-xs text-gray-600">In Queue</p>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => {
+                              setAnalyticsTimeRange('daily');
+                              exportAnalytics();
+                            }}
+                            className="w-full bg-blue-500 hover:bg-blue-600 text-white py-3 rounded-lg font-semibold transition-colors flex items-center justify-center gap-2"
+                          >
+                            <Download className="w-4 h-4" />
+                            <span>Download Daily Report</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Weekly Report */}
+                      <div className="bg-white rounded-xl shadow-md p-6 border-l-4 border-green-500">
+                        <div className="flex items-start justify-between mb-4">
+                          <div className="flex items-center gap-3">
+                            <div className="bg-green-100 p-3 rounded-lg">
+                              <Calendar className="w-6 h-6 text-green-600" />
+                            </div>
+                            <div>
+                              <h3 className="text-lg font-bold text-gray-800">Weekly Report</h3>
+                              <p className="text-sm text-gray-600">Last 7 days summary and trends</p>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="space-y-3">
+                          <div className="bg-gray-50 rounded-lg p-3">
+                            <p className="text-xs text-gray-600 mb-1">Report Period</p>
+                            <p className="font-semibold text-gray-800">
+                              {(() => {
+                                const endDate = new Date();
+                                const startDate = new Date();
+                                startDate.setDate(startDate.getDate() - 6);
+                                return `${startDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
+                              })()}
+                            </p>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2 text-sm">
+                            <div className="bg-green-50 rounded p-2 text-center">
+                              <p className="text-xl font-bold text-green-600">
+                                {(() => {
+                                  const weekAgo = new Date();
+                                  weekAgo.setDate(weekAgo.getDate() - 6);
+                                  return visitLog.filter(v => new Date(v.visitDate) >= weekAgo).length;
+                                })()}
+                              </p>
+                              <p className="text-xs text-gray-600">Weekly Visits</p>
+                            </div>
+                            <div className="bg-green-50 rounded p-2 text-center">
+                              <p className="text-xl font-bold text-green-600">
+                                {(() => {
+                                  const weekAgo = new Date();
+                                  weekAgo.setDate(weekAgo.getDate() - 6);
+                                  const weekVisits = visitLog.filter(v => new Date(v.visitDate) >= weekAgo).length;
+                                  return (weekVisits / 7).toFixed(1);
+                                })()}
+                              </p>
+                              <p className="text-xs text-gray-600">Daily Average</p>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => {
+                              setAnalyticsTimeRange('weekly');
+                              exportAnalytics();
+                            }}
+                            className="w-full bg-green-500 hover:bg-green-600 text-white py-3 rounded-lg font-semibold transition-colors flex items-center justify-center gap-2"
+                          >
+                            <Download className="w-4 h-4" />
+                            <span>Download Weekly Report</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Monthly Report */}
+                      <div className="bg-white rounded-xl shadow-md p-6 border-l-4 border-purple-500">
+                        <div className="flex items-start justify-between mb-4">
+                          <div className="flex items-center gap-3">
+                            <div className="bg-purple-100 p-3 rounded-lg">
+                              <Calendar className="w-6 h-6 text-purple-600" />
+                            </div>
+                            <div>
+                              <h3 className="text-lg font-bold text-gray-800">Monthly Report</h3>
+                              <p className="text-sm text-gray-600">Current month comprehensive data</p>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="space-y-3">
+                          <div className="bg-gray-50 rounded-lg p-3">
+                            <p className="text-xs text-gray-600 mb-1">Report Month</p>
+                            <p className="font-semibold text-gray-800">
+                              {new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                            </p>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2 text-sm">
+                            <div className="bg-purple-50 rounded p-2 text-center">
+                              <p className="text-xl font-bold text-purple-600">
+                                {(() => {
+                                  const now = new Date();
+                                  const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+                                  return visitLog.filter(v => new Date(v.visitDate) >= firstDay).length;
+                                })()}
+                              </p>
+                              <p className="text-xs text-gray-600">Monthly Visits</p>
+                            </div>
+                            <div className="bg-purple-50 rounded p-2 text-center">
+                              <p className="text-xl font-bold text-purple-600">
+                                {(() => {
+                                  const now = new Date();
+                                  const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+                                  const newPatients = registeredPatients.filter(p => 
+                                    new Date(p.registrationDate || p.registeredDate) >= firstDay
+                                  ).length;
+                                  return newPatients;
+                                })()}
+                              </p>
+                              <p className="text-xs text-gray-600">New Patients</p>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => {
+                              setAnalyticsTimeRange('monthly');
+                              exportAnalytics();
+                            }}
+                            className="w-full bg-purple-500 hover:bg-purple-600 text-white py-3 rounded-lg font-semibold transition-colors flex items-center justify-center gap-2"
+                          >
+                            <Download className="w-4 h-4" />
+                            <span>Download Monthly Report</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Yearly Report */}
+                      <div className="bg-white rounded-xl shadow-md p-6 border-l-4 border-orange-500">
+                        <div className="flex items-start justify-between mb-4">
+                          <div className="flex items-center gap-3">
+                            <div className="bg-orange-100 p-3 rounded-lg">
+                              <Calendar className="w-6 h-6 text-orange-600" />
+                            </div>
+                            <div>
+                              <h3 className="text-lg font-bold text-gray-800">Yearly Report</h3>
+                              <p className="text-sm text-gray-600">Annual statistics and insights</p>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="space-y-3">
+                          <div className="bg-gray-50 rounded-lg p-3">
+                            <p className="text-xs text-gray-600 mb-1">Report Year</p>
+                            <p className="font-semibold text-gray-800">{new Date().getFullYear()}</p>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2 text-sm">
+                            <div className="bg-orange-50 rounded p-2 text-center">
+                              <p className="text-xl font-bold text-orange-600">
+                                {(() => {
+                                  const now = new Date();
+                                  const firstDay = new Date(now.getFullYear(), 0, 1);
+                                  return visitLog.filter(v => new Date(v.visitDate) >= firstDay).length;
+                                })()}
+                              </p>
+                              <p className="text-xs text-gray-600">Yearly Visits</p>
+                            </div>
+                            <div className="bg-orange-50 rounded p-2 text-center">
+                              <p className="text-xl font-bold text-orange-600">
+                                {(() => {
+                                  const now = new Date();
+                                  const firstDay = new Date(now.getFullYear(), 0, 1);
+                                  const yearVisits = visitLog.filter(v => new Date(v.visitDate) >= firstDay).length;
+                                  const monthsPassed = now.getMonth() + 1;
+                                  return monthsPassed > 0 ? (yearVisits / monthsPassed).toFixed(0) : 0;
+                                })()}
+                              </p>
+                              <p className="text-xs text-gray-600">Monthly Average</p>
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => {
+                              setAnalyticsTimeRange('yearly');
+                              exportAnalytics();
+                            }}
+                            className="w-full bg-orange-500 hover:bg-orange-600 text-white py-3 rounded-lg font-semibold transition-colors flex items-center justify-center gap-2"
+                          >
+                            <Download className="w-4 h-4" />
+                            <span>Download Yearly Report</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Additional Export Options */}
+                    <div className="bg-white rounded-xl shadow-md p-6">
+                      <h3 className="text-lg font-bold text-gray-800 mb-4">Additional Exports</h3>
+                      <div className="grid md:grid-cols-3 gap-4">
+                        <button
+                          onClick={exportPatients}
+                          className="flex items-center justify-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-800 py-3 px-4 rounded-lg font-semibold transition-colors"
+                        >
+                          <Users className="w-4 h-4" />
+                          <span>Export All Patients</span>
+                        </button>
+                        <button
+                          onClick={exportVisitLog}
+                          className="flex items-center justify-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-800 py-3 px-4 rounded-lg font-semibold transition-colors"
+                        >
+                          <List className="w-4 h-4" />
+                          <span>Export Visit Log</span>
+                        </button>
+                        <button
+                          onClick={() => {
+                            const queueData = queue.map(q => ({
+                              'Queue #': q.queueNumber,
+                              'Patient ID': q.patientId,
+                              'Name': q.name,
+                              'Age': q.age,
+                              'Sex': q.sex,
+                              'Service': q.service,
+                              'Priority': q.priority,
+                              'Status': q.status,
+                              'Time Queued': new Date(q.timeQueued).toLocaleString()
+                            }));
+                            exportToExcel(queueData, 'HealthTrack_Current_Queue');
+                          }}
+                          className="flex items-center justify-center gap-2 bg-gray-100 hover:bg-gray-200 text-gray-800 py-3 px-4 rounded-lg font-semibold transition-colors"
+                        >
+                          <Clock className="w-4 h-4" />
+                          <span>Export Current Queue</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Report Information */}
+                    <div className="bg-blue-50 border border-blue-200 rounded-xl p-6">
+                      <h3 className="text-lg font-bold text-blue-900 mb-3">📊 About Reports</h3>
+                      <ul className="space-y-2 text-sm text-blue-800">
+                        <li className="flex items-start gap-2">
+                          <span className="text-blue-600 mt-0.5">•</span>
+                          <span><strong>Daily Reports</strong> include today's visit statistics, queue status, and patient flow</span>
+                        </li>
+                        <li className="flex items-start gap-2">
+                          <span className="text-blue-600 mt-0.5">•</span>
+                          <span><strong>Weekly Reports</strong> show 7-day trends, daily averages, and service utilization patterns</span>
+                        </li>
+                        <li className="flex items-start gap-2">
+                          <span className="text-blue-600 mt-0.5">•</span>
+                          <span><strong>Monthly Reports</strong> provide comprehensive month-to-date analytics and new patient registration</span>
+                        </li>
+                        <li className="flex items-start gap-2">
+                          <span className="text-blue-600 mt-0.5">•</span>
+                          <span><strong>Yearly Reports</strong> summarize annual performance with month-by-month breakdowns</span>
+                        </li>
+                        <li className="flex items-start gap-2">
+                          <span className="text-blue-600 mt-0.5">•</span>
+                          <span>All reports are exported in <strong>Excel format (.xlsx)</strong> with multiple sheets for easy analysis</span>
+                        </li>
+                      </ul>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+
+                {activeTab === 'accounts' && userRole === 'admin' && (
+                  <div className="space-y-6">
+                    <div className="bg-white rounded-xl shadow-md p-6">
+                      <div className="flex items-center justify-between mb-6">
+                        <div>
+                          <h2 className="text-xl font-bold text-gray-800">Account Management</h2>
+                          <p className="text-sm text-gray-500 mt-1">Manage clinic staff and admin accounts. Residents register themselves via the public portal.</p>
+                        </div>
+                        <button
+                          onClick={() => { setShowAdminAddAccount(true); setAdminAccountError(''); setAdminAccountSuccess(''); setAdminNewAccount({ username: '', password: '', confirmPassword: '', role: 'staff', firstName: '', middleInitial: '', lastName: '', email: '' }); }}
+                          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl font-semibold text-sm transition-colors"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                          Add Clinic Account
+                        </button>
+                      </div>
+
+                      {/* Account type legend */}
+                      <div className="grid grid-cols-3 gap-4 mb-6">
+                        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-center">
+                          <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center mx-auto mb-2">
+                            <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
+                          </div>
+                          <p className="font-bold text-blue-700 text-sm">Admin</p>
+                          <p className="text-xs text-blue-500 mt-1">Full system access — clinic admin only</p>
+                          <p className="text-2xl font-bold text-blue-600 mt-2">{users.filter(a => a.role === 'admin').length}</p>
+                        </div>
+                        <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-center">
+                          <div className="w-10 h-10 bg-green-600 rounded-full flex items-center justify-center mx-auto mb-2">
+                            <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                          </div>
+                          <p className="font-bold text-green-700 text-sm">Staff</p>
+                          <p className="text-xs text-green-500 mt-1">Queue & patient management</p>
+                          <p className="text-2xl font-bold text-green-600 mt-2">{users.filter(a => a.role === 'staff').length}</p>
+                        </div>
+                        <div className="bg-purple-50 border border-purple-200 rounded-xl p-4 text-center">
+                          <div className="w-10 h-10 bg-purple-600 rounded-full flex items-center justify-center mx-auto mb-2">
+                            <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+                          </div>
+                          <p className="font-bold text-purple-700 text-sm">Resident</p>
+                          <p className="text-xs text-purple-500 mt-1">Self-registered via public portal</p>
+                          <p className="text-2xl font-bold text-purple-600 mt-2">{users.filter(a => a.role === 'resident').length}</p>
+                        </div>
+                      </div>
+
+                      {/* Account list */}
+                      <div className="space-y-2">
+                        <h3 className="font-semibold text-gray-700 mb-3">All Accounts</h3>
+                        {users.map(acc => {
+                          const roleColors = {
+                            admin:    { bg: 'bg-blue-100',   text: 'text-blue-700',   dot: 'bg-blue-500' },
+                            staff:    { bg: 'bg-green-100',  text: 'text-green-700',  dot: 'bg-green-500' },
+                            resident: { bg: 'bg-purple-100', text: 'text-purple-700', dot: 'bg-purple-500' }
+                          };
+                          const rc = roleColors[acc.role] || roleColors.resident;
+                          return (
+                            <div key={acc.id} className="flex items-center justify-between bg-gray-50 border border-gray-200 rounded-xl px-4 py-3">
+                              <div className="flex items-center gap-3">
+                                <div className={`w-9 h-9 rounded-full flex items-center justify-center ${rc.bg}`}>
+                                  <span className={`text-base font-bold ${rc.text}`}>{acc.fullName?.charAt(0) || acc.username?.charAt(0) || '?'}</span>
+                                </div>
+                                <div>
+                                  <p className="font-semibold text-gray-800 text-sm">{acc.fullName}</p>
+                                  <p className="text-xs text-gray-500">@{acc.username}</p>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-3">
+                                <span className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${rc.bg} ${rc.text}`}>
+                                  <span className={`w-1.5 h-1.5 rounded-full ${rc.dot}`}></span>
+                                  {acc.role.charAt(0).toUpperCase() + acc.role.slice(1)}
+                                </span>
+                                <span className="text-xs text-gray-400">{acc.createdAt ? new Date(acc.createdAt).toLocaleDateString('en-PH') : '—'}</span>
+                                {acc.username !== currentUser?.username && (
+                                  <button
+                                    onClick={() => { setDeleteAccountTarget(acc); setDeleteAccountError(''); }}
+                                    className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                                    title="Delete account"
+                                  >
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+
+                {activeTab === 'auditlog' && userRole === 'admin' && (() => {
+                  // Audit log displayed from backend /api/audit
+                  // We use a local state for the audit entries fetched once when tab opens
+                  const [auditEntries, setAuditEntries] = React.useState([]);
+                  React.useEffect(() => {
+                    api('GET', '/audit').then(rows => {
+                      setAuditEntries(Array.isArray(rows) ? rows.slice().reverse() : []);
+                    }).catch(() => {});
+                  }, []);
+                  const actionColors = {
+                    LOGIN:            { bg: 'bg-green-50',  text: 'text-green-700',  border: 'border-green-200',  icon: '🔑' },
+                    LOGOUT:           { bg: 'bg-gray-50',   text: 'text-gray-600',   border: 'border-gray-200',   icon: '🚪' },
+                    REGISTER:         { bg: 'bg-blue-50',   text: 'text-blue-700',   border: 'border-blue-200',   icon: '👤' },
+                    QUEUE_ACCEPTED:   { bg: 'bg-green-50',  text: 'text-green-700',  border: 'border-green-200',  icon: '✅' },
+                    QUEUE_REJECTED:   { bg: 'bg-red-50',    text: 'text-red-700',    border: 'border-red-200',    icon: '❌' },
+                    QUEUE_SERVED:     { bg: 'bg-blue-50',   text: 'text-blue-700',   border: 'border-blue-200',   icon: '✔️' },
+                    QUEUE_REMOVED:    { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-200', icon: '🗑️' },
+                    ADD_QUEUE:        { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200', icon: '📋' },
+                    DELETE_PATIENT:   { bg: 'bg-red-50',    text: 'text-red-700',    border: 'border-red-200',    icon: '⚠️' },
+                    DELETE_USER:      { bg: 'bg-red-50',    text: 'text-red-700',    border: 'border-red-200',    icon: '🚫' },
+                    PASSWORD_CHANGED: { bg: 'bg-yellow-50', text: 'text-yellow-700', border: 'border-yellow-200', icon: '🔒' },
+                    ACCOUNT_CREATED:  { bg: 'bg-indigo-50', text: 'text-indigo-700', border: 'border-indigo-200', icon: '🆕' },
+                  };
+                  return (
+                    <div className="space-y-6">
+                      <div className="bg-white rounded-xl shadow-md p-6">
+                        <div className="flex items-center justify-between mb-6">
+                          <div>
+                            <h2 className="text-xl font-bold text-gray-800">Audit Log</h2>
+                            <p className="text-sm text-gray-500 mt-1">Complete record of all system actions — who did what and when</p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="bg-gray-100 text-gray-600 text-xs px-3 py-1.5 rounded-full font-medium">{auditEntries.length} entries</span>
+                            <button
+                              onClick={() => api('DELETE', '/audit').then(() => setAuditEntries([])).catch(() => {})}
+                              className="text-xs text-red-500 hover:text-red-700 px-3 py-1.5 border border-red-200 rounded-lg hover:bg-red-50 transition-colors"
+                            >Clear Log</button>
+                          </div>
+                        </div>
+
+                        {auditEntries.length === 0 ? (
+                          <div className="text-center py-12">
+                            <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                              <List className="w-8 h-8 text-gray-300" />
+                            </div>
+                            <p className="text-gray-500 font-medium">No audit entries yet</p>
+                            <p className="text-gray-400 text-sm mt-1">Actions taken in the system will appear here</p>
+                          </div>
+                        ) : (
+                          <div className="space-y-2 max-h-[600px] overflow-y-auto pr-1">
+                            {auditEntries.map((entry, i) => {
+                              const ac = actionColors[entry.action] || { bg: 'bg-gray-50', text: 'text-gray-600', border: 'border-gray-200', icon: '📌' };
+                              return (
+                                <div key={i} className={`flex items-start gap-3 border rounded-xl px-4 py-3 ${ac.bg} ${ac.border}`}>
+                                  <span className="text-xl flex-shrink-0 mt-0.5">{ac.icon}</span>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                                      <span className={`text-sm font-bold ${ac.text}`}>{entry.action.replace(/_/g,' ')}</span>
+                                      <span className="text-xs text-gray-400 flex-shrink-0">
+                                        {new Date(entry.timestamp).toLocaleString('en-PH', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' })}
+                                      </span>
+                                    </div>
+                                    <p className="text-xs text-gray-600 mt-0.5">
+                                      <span className="font-medium">By:</span> {entry.username || 'System'} ({entry.role || 'unknown'})
+                                      {entry.details ? <span className="ml-2 text-gray-500">— {entry.details}</span> : null}
+                                    </p>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
+              {/* ── Delete Account Confirmation Modal ── */}
+              {deleteAccountTarget && (
+                <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50">
+                  <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm">
+                    <div className="p-6 text-center">
+                      <div className="w-14 h-14 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <svg className="w-7 h-7 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                      </div>
+                      <h2 className="text-lg font-bold text-gray-800 mb-1">Delete Account</h2>
+                      <p className="text-sm text-gray-500 mb-1">Are you sure you want to delete</p>
+                      <p className="text-sm font-semibold text-gray-800 mb-1">{deleteAccountTarget.fullName}</p>
+                      <p className="text-xs text-gray-400 mb-4">@{deleteAccountTarget.username} · {deleteAccountTarget.role}</p>
+                      <p className="text-xs text-red-500 mb-4">This action cannot be undone.</p>
+                      {deleteAccountError && <p className="text-xs text-red-500 mb-3">{deleteAccountError}</p>}
+                      <div className="flex gap-3">
+                        <button
+                          onClick={() => { setDeleteAccountTarget(null); setDeleteAccountError(''); }}
+                          className="flex-1 px-4 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors"
+                        >Cancel</button>
+                        <button
+                          onClick={handleDeleteAccount}
+                          className="flex-1 px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-sm font-semibold transition-colors"
+                        >Delete</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ── Admin Add Clinic Account Modal ── */}
+              {showAdminAddAccount && (
+                <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50">
+                  <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+                    <div className="flex items-center justify-between px-6 py-4 border-b">
+                      <div>
+                        <h2 className="text-lg font-bold text-gray-800">Add Clinic Account</h2>
+                        <p className="text-xs text-gray-500 mt-0.5">Create an admin or staff account for clinic personnel</p>
+                      </div>
+                      <button onClick={() => setShowAdminAddAccount(false)} className="text-gray-400 hover:text-gray-600 text-2xl leading-none">×</button>
+                    </div>
+                    <div className="p-6 space-y-4">
+                      {/* Role selector — admin/staff only */}
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-2">Account Role <span className="text-red-500">*</span></label>
+                        <div className="grid grid-cols-2 gap-3">
+                          {[
+                            { value: 'admin', label: 'Admin', desc: 'Full system access', color: '#CC0000', bg: '#fff0f0' },
+                            { value: 'staff', label: 'Staff', desc: 'Queue & patients', color: '#111827', bg: '#f3f4f6' }
+                          ].map(r => (
+                            <button
+                              key={r.value}
+                              type="button"
+                              onClick={() => setAdminNewAccount({...adminNewAccount, role: r.value})}
+                              className="p-3 rounded-xl border-2 text-center transition-all"
+                              style={adminNewAccount.role === r.value
+                                ? { borderColor: r.color, backgroundColor: r.bg, color: r.color }
+                                : { borderColor: '#e5e7eb', color: '#6b7280' }}
+                            >
+                              <p className="font-bold text-sm">{r.label}</p>
+                              <p className="text-xs opacity-75 mt-0.5">{r.desc}</p>
+                            </button>
+                          ))}
+                        </div>
+                        <div className="mt-2 flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                          <svg className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                          <p className="text-xs text-amber-700">Only create accounts for verified clinic personnel. Residents register via the public portal.</p>
+                        </div>
+                      </div>
+
+                      {/* Name fields */}
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">First Name <span className="text-red-500">*</span></label>
+                          <input value={adminNewAccount.firstName} onChange={e => setAdminNewAccount({...adminNewAccount, firstName: e.target.value})}
+                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="First name" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">Last Name <span className="text-red-500">*</span></label>
+                          <input value={adminNewAccount.lastName} onChange={e => setAdminNewAccount({...adminNewAccount, lastName: e.target.value})}
+                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="Last name" />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">M.I.</label>
+                          <input value={adminNewAccount.middleInitial} maxLength={1}
+                            onChange={e => setAdminNewAccount({...adminNewAccount, middleInitial: e.target.value.toUpperCase()})}
+                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="A" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">Email</label>
+                          <input value={adminNewAccount.email} onChange={e => setAdminNewAccount({...adminNewAccount, email: e.target.value})}
+                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="clinic@email.com" />
+                        </div>
+                      </div>
+
+                      {/* Username & Password */}
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">Username <span className="text-red-500">*</span></label>
+                        <input value={adminNewAccount.username} onChange={e => setAdminNewAccount({...adminNewAccount, username: e.target.value})}
+                          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="e.g. drjuandelacruz" />
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">Password <span className="text-red-500">*</span></label>
+                          <input type="password" value={adminNewAccount.password} onChange={e => setAdminNewAccount({...adminNewAccount, password: e.target.value})}
+                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="Min 8 chars" />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-600 mb-1">Confirm Password <span className="text-red-500">*</span></label>
+                          <input type="password" value={adminNewAccount.confirmPassword} onChange={e => setAdminNewAccount({...adminNewAccount, confirmPassword: e.target.value})}
+                            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent" placeholder="Repeat password" />
+                        </div>
+                      </div>
+
+                      {adminAccountError && (
+                        <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                          <svg className="w-4 h-4 text-red-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                          <p className="text-sm text-red-600">{adminAccountError}</p>
+                        </div>
+                      )}
+                      {adminAccountSuccess && (
+                        <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
+                          <svg className="w-4 h-4 text-green-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                          <p className="text-sm text-green-600">{adminAccountSuccess}</p>
+                        </div>
+                      )}
+
+                      <div className="flex gap-3 pt-2">
+                        <button onClick={() => setShowAdminAddAccount(false)}
+                          className="flex-1 border border-gray-300 text-gray-600 py-2.5 rounded-xl font-semibold text-sm hover:bg-gray-50 transition-colors">
+                          Cancel
+                        </button>
+                        <button
+                          onClick={() => {
+                            setAdminAccountError('');
+                            setAdminAccountSuccess('');
+                            const { username, password, confirmPassword, role, firstName, lastName, middleInitial, email } = adminNewAccount;
+                            if (!firstName.trim() || !lastName.trim()) { setAdminAccountError('First and last name are required.'); return; }
+                            if (!username.trim() || username.trim().length < 3) { setAdminAccountError('Username must be at least 3 characters.'); return; }
+                            const pwErr = validatePassword(password);
+                            if (pwErr) { setAdminAccountError(pwErr); return; }
+                            if (password !== confirmPassword) { setAdminAccountError('Passwords do not match.'); return; }
+                            if (!['admin','staff'].includes(role)) { setAdminAccountError('Invalid role for clinic account.'); return; }
+                            // POST to /api/auth/register with admin JWT (backend enforces admin-only for staff/admin roles)
+                            api('POST', '/auth/register', {
+                              username, password, role,
+                              firstName: firstName.trim(), middleInitial: middleInitial.trim(), lastName: lastName.trim(),
+                              email: email.trim() || undefined,
+                            }).then(data => {
+                              const newUser = normalizeUser(data.user || {});
+                              setUsers(prev => [newUser, ...prev]);
+                              writeAudit('ACCOUNT_CREATED', `Created ${role} account: @${username.trim().toLowerCase()}`);
+                              setAdminAccountSuccess(`${role.charAt(0).toUpperCase()+role.slice(1)} account "@${username.trim().toLowerCase()}" created successfully.`);
+                              setAdminNewAccount({ username:'', password:'', confirmPassword:'', role:'staff', firstName:'', middleInitial:'', lastName:'', email:'' });
+                            }).catch(err => setAdminAccountError(err.message || 'Failed to create account.'));
+                          }}
+                          className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-xl font-semibold text-sm transition-colors"
+                        >
+                          Create Account
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+              {/* MODALS */}
+              {/* Register Patient Modal */}
+              {showRegisterPatient && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+                  <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+                    <div className="sticky top-0 bg-white border-b px-6 py-4 flex justify-between items-center">
+                      <h2 className="text-2xl font-bold text-gray-800">Register New Patient</h2>
+                      <button
+                        onClick={() => setShowRegisterPatient(false)}
+                        className="text-gray-500 hover:text-gray-700 text-2xl"
+                      >
+                        ×
+                      </button>
+                    </div>
+                    <div className="p-6">
+                      <div className="grid md:grid-cols-2 gap-4">
+                        {/* Personal Information */}
+                        <div className="md:col-span-2">
+                          <h3 className="text-lg font-semibold text-gray-800 mb-4 pb-2 border-b">Personal Information</h3>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">
+                            Last Name <span className="text-red-500">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            value={newPatient.lastName}
+                            onChange={(e) => setNewPatient({...newPatient, lastName: e.target.value})}
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">
+                            First Name <span className="text-red-500">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            value={newPatient.firstName}
+                            onChange={(e) => setNewPatient({...newPatient, firstName: e.target.value})}
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">
+                            Middle Name
+                          </label>
+                          <input
+                            type="text"
+                            value={newPatient.middleName}
+                            onChange={(e) => setNewPatient({...newPatient, middleName: e.target.value})}
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">
+                            Date of Birth <span className="text-red-500">*</span>
+                          </label>
+                          <input
+                            type="date"
+                            value={newPatient.dateOfBirth}
+                            onChange={(e) => setNewPatient({...newPatient, dateOfBirth: e.target.value})}
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">
+                            Sex <span className="text-red-500">*</span>
+                          </label>
+                          <select
+                            value={newPatient.sex}
+                            onChange={(e) => setNewPatient({...newPatient, sex: e.target.value})}
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          >
+                            <option value="">Select</option>
+                            <option value="Male">Male</option>
+                            <option value="Female">Female</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">
+                            Civil Status
+                          </label>
+                          <select
+                            value={newPatient.civilStatus}
+                            onChange={(e) => setNewPatient({...newPatient, civilStatus: e.target.value})}
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          >
+                            <option value="">Select</option>
+                            <option value="Single">Single</option>
+                            <option value="Married">Married</option>
+                            <option value="Widowed">Widowed</option>
+                            <option value="Separated">Separated</option>
+                          </select>
+                        </div>
+
+                        {/* Contact Information */}
+                        <div className="md:col-span-2 mt-4">
+                          <h3 className="text-lg font-semibold text-gray-800 mb-4 pb-2 border-b">Contact Information</h3>
+                        </div>
+                        <div className="md:col-span-2">
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">
+                            Address <span className="text-red-500">*</span>
+                          </label>
+                          <input
+                            type="text"
+                            value={newPatient.address}
+                            onChange={(e) => setNewPatient({...newPatient, address: e.target.value})}
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">
+                            Contact Number <span className="text-red-500">*</span>
+                          </label>
+                          <input
+                            type="tel"
+                            value={newPatient.contact}
+                            onChange={(e) => setNewPatient({...newPatient, contact: sanitizePhone(e.target.value)})}
+                            placeholder="09XXXXXXXXX"
+                            maxLength={16}
+                            className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${phoneClass(newPatient.contact)}`}
+                          />
+                          <PhoneMsg val={newPatient.contact} />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">
+                            Occupation
+                          </label>
+                          <input
+                            type="text"
+                            value={newPatient.occupation}
+                            onChange={(e) => setNewPatient({...newPatient, occupation: e.target.value})}
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          />
+                        </div>
+
+                        {/* Emergency Contact */}
+                        <div className="md:col-span-2 mt-4">
+                          <h3 className="text-lg font-semibold text-gray-800 mb-4 pb-2 border-b">Emergency Contact</h3>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">
+                            Emergency Contact Person
+                          </label>
+                          <input
+                            type="text"
+                            value={newPatient.emergencyContactPerson}
+                            onChange={(e) => setNewPatient({...newPatient, emergencyContactPerson: e.target.value})}
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">
+                            Emergency Contact Number
+                          </label>
+                          <input
+                            type="tel"
+                            value={newPatient.emergencyContactNumber}
+                            onChange={(e) => setNewPatient({...newPatient, emergencyContactNumber: sanitizePhone(e.target.value)})}
+                            placeholder="09XXXXXXXXX"
+                            maxLength={16}
+                            className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${phoneClass(newPatient.emergencyContactNumber)}`}
+                          />
+                          <PhoneMsg val={newPatient.emergencyContactNumber} />
+                        </div>
+
+                        {/* Medical Information */}
+                        <div className="md:col-span-2 mt-4">
+                          <h3 className="text-lg font-semibold text-gray-800 mb-4 pb-2 border-b">Medical Information</h3>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">
+                            PhilHealth Number
+                          </label>
+                          <input
+                            type="text"
+                            value={newPatient.philHealthNumber}
+                            onChange={(e) => setNewPatient({...newPatient, philHealthNumber: e.target.value})}
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">
+                            Allergies
+                          </label>
+                          <input
+                            type="text"
+                            value={newPatient.allergies}
+                            onChange={(e) => setNewPatient({...newPatient, allergies: e.target.value})}
+                            placeholder="e.g., Penicillin, Peanuts"
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          />
+                        </div>
+                        <div className="md:col-span-2">
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">
+                            Chronic Conditions
+                          </label>
+                          <input
+                            type="text"
+                            value={newPatient.chronicConditions}
+                            onChange={(e) => setNewPatient({...newPatient, chronicConditions: e.target.value})}
+                            placeholder="e.g., Hypertension, Diabetes"
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          />
+                        </div>
+                        <div className="md:col-span-2">
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">
+                            Current Medications
+                          </label>
+                          <textarea
+                            value={newPatient.currentMedications}
+                            onChange={(e) => setNewPatient({...newPatient, currentMedications: e.target.value})}
+                            placeholder="List current medications"
+                            rows={3}
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex justify-end space-x-3 mt-6 pt-4 border-t">
+                        <button
+                          onClick={() => setShowRegisterPatient(false)}
+                          className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-semibold transition-colors"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={registerPatient}
+                          className="px-6 py-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg hover:from-blue-600 hover:to-blue-700 font-semibold transition-all transform hover:scale-105"
+                        >
+                          Register Patient
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Add to Queue Modal */}
+              {showAddToQueue && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+                  <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full">
+                    <div className="bg-gradient-to-r from-orange-500 to-orange-600 text-white px-6 py-4 rounded-t-xl flex justify-between items-center">
+                      <h2 className="text-2xl font-bold">Add Patient to Queue</h2>
+                      <button
+                        onClick={() => setShowAddToQueue(false)}
+                        className="text-white hover:text-gray-200 text-2xl"
+                      >
+                        ×
+                      </button>
+                    </div>
+                    <div className="p-6">
+                      <div className="space-y-4">
+                        <div>
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">
+                            Select Patient <span className="text-red-500">*</span>
+                          </label>
+                          <select
+                            value={queuePatient.patientId}
+                            onChange={(e) => setQueuePatient({...queuePatient, patientId: e.target.value})}
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                          >
+                            <option value="">-- Select Patient --</option>
+                            {registeredPatients.map(patient => (
+                              <option key={patient.id} value={patient.patientId}>
+                                {patient.patientId} - {patient.firstName} {patient.lastName} (Age: {patient.age}, Sex: {patient.sex})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">
+                            Service Category <span className="text-red-500">*</span>
+                          </label>
+                          <select
+                            value={queuePatient.serviceCategory}
+                            onChange={(e) => {
+                              setQueuePatient({
+                                ...queuePatient, 
+                                serviceCategory: e.target.value,
+                                serviceType: '', // Reset service type when category changes
+                                priority: 'Regular' // Reset priority
+                              });
+                            }}
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                          >
+                            <option value="">-- Select Service Category --</option>
+                            {Object.keys(SERVICE_CATEGORIES).map(category => (
+                              <option key={category} value={category}>{category}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">
+                            Service Type <span className="text-red-500">*</span>
+                          </label>
+                          <select
+                            value={queuePatient.serviceType}
+                            onChange={(e) => {
+                              const selectedService = SERVICE_CATEGORIES[queuePatient.serviceCategory]?.services
+                                .find(s => s.name === e.target.value);
+                              setQueuePatient({
+                                ...queuePatient, 
+                                serviceType: e.target.value,
+                                priority: selectedService?.priority || 'Regular' // Auto-populate priority
+                              });
+                            }}
+                            disabled={!queuePatient.serviceCategory}
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
+                          >
+                            <option value="">
+                              {queuePatient.serviceCategory ? '-- Select Service Type --' : 'Please select a service category first'}
+                            </option>
+                            {queuePatient.serviceCategory && 
+                              SERVICE_CATEGORIES[queuePatient.serviceCategory]?.services.map(service => (
+                                <option key={service.name} value={service.name}>{service.name}</option>
+                              ))
+                            }
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">
+                            Priority Level <span className="text-red-500">*</span>
+                          </label>
+                          <select
+                            value={queuePatient.priority}
+                            onChange={(e) => setQueuePatient({...queuePatient, priority: e.target.value})}
+                            disabled={!queuePatient.serviceType}
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
+                          >
+                            <option value="">
+                              {queuePatient.serviceType ? '-- Select Priority Level --' : 'Please select a service type first'}
+                            </option>
+                            <option value="Priority Case">Priority Case</option>
+                            <option value="Urgent">Urgent</option>
+                            <option value="Regular">Regular</option>
+                          </select>
+                          <p className="text-xs text-gray-500 mt-1">
+                            Priority is auto-filled based on service type, but can be changed if needed
+                          </p>
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">
+                            Reason for Visit <span className="text-red-500">*</span>
+                          </label>
+                          <textarea
+                            value={queuePatient.chiefComplaint}
+                            onChange={(e) => setQueuePatient({...queuePatient, chiefComplaint: e.target.value})}
+                            placeholder=""
+                            rows={4}
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex justify-end space-x-3 mt-6 pt-4 border-t">
+                        <button
+                          onClick={() => setShowAddToQueue(false)}
+                          className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-semibold transition-colors"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={addToQueue}
+                          className="px-6 py-2 bg-gradient-to-r from-orange-500 to-orange-600 text-white rounded-lg hover:from-orange-600 hover:to-orange-700 font-semibold transition-all transform hover:scale-105"
+                        >
+                          Add to Queue
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* View Patient Details Modal */}
+              {selectedPatient && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+                  <div className="bg-white rounded-xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+                    <div className="bg-gradient-to-r from-blue-500 to-indigo-600 text-white px-6 py-4 rounded-t-xl flex justify-between items-center">
+                      <h2 className="text-2xl font-bold">Patient Details</h2>
+                      <button
+                        onClick={() => setSelectedPatient(null)}
+                        className="text-white hover:text-gray-200 text-2xl"
+                      >
+                        ×
+                      </button>
+                    </div>
+                    <div className="p-6">
+                      <div className="grid md:grid-cols-2 gap-6">
+                        <div>
+                          <h3 className="text-lg font-semibold text-gray-800 mb-3 pb-2 border-b">Personal Information</h3>
+                          <div className="space-y-2">
+                            <p className="text-sm"><span className="font-medium text-gray-600">Patient ID:</span> <span className="text-gray-800">{selectedPatient.patientId}</span></p>
+                            <p className="text-sm"><span className="font-medium text-gray-600">Name:</span> <span className="text-gray-800">{selectedPatient.firstName} {selectedPatient.middleName} {selectedPatient.lastName}</span></p>
+                            <p className="text-sm"><span className="font-medium text-gray-600">Date of Birth:</span> <span className="text-gray-800">{new Date(selectedPatient.dateOfBirth).toLocaleDateString()}</span></p>
+                            <p className="text-sm"><span className="font-medium text-gray-600">Age:</span> <span className="text-gray-800">{selectedPatient.age}</span></p>
+                            <p className="text-sm"><span className="font-medium text-gray-600">Sex:</span> <span className="text-gray-800">{selectedPatient.sex}</span></p>
+                            <p className="text-sm"><span className="font-medium text-gray-600">Civil Status:</span> <span className="text-gray-800">{selectedPatient.civilStatus || 'N/A'}</span></p>
+                            <p className="text-sm"><span className="font-medium text-gray-600">Occupation:</span> <span className="text-gray-800">{selectedPatient.occupation || 'N/A'}</span></p>
+                          </div>
+                        </div>
+
+                        <div>
+                          <h3 className="text-lg font-semibold text-gray-800 mb-3 pb-2 border-b">Contact Information</h3>
+                          <div className="space-y-2">
+                            <p className="text-sm"><span className="font-medium text-gray-600">Address:</span> <span className="text-gray-800">{selectedPatient.address}</span></p>
+                            <p className="text-sm"><span className="font-medium text-gray-600">Contact:</span> <span className="text-gray-800">{selectedPatient.contact}</span></p>
+                            <p className="text-sm"><span className="font-medium text-gray-600">Emergency Contact:</span> <span className="text-gray-800">{selectedPatient.emergencyContactPerson || 'N/A'}</span></p>
+                            <p className="text-sm"><span className="font-medium text-gray-600">Emergency Number:</span> <span className="text-gray-800">{selectedPatient.emergencyContactNumber || 'N/A'}</span></p>
+                          </div>
+                        </div>
+
+                        <div className="md:col-span-2">
+                          <h3 className="text-lg font-semibold text-gray-800 mb-3 pb-2 border-b">Medical Information</h3>
+                          <div className="space-y-2">
+                            <p className="text-sm"><span className="font-medium text-gray-600">PhilHealth Number:</span> <span className="text-gray-800">{selectedPatient.philHealthNumber || 'N/A'}</span></p>
+                            <p className="text-sm"><span className="font-medium text-gray-600">Allergies:</span> <span className="text-gray-800">{selectedPatient.allergies || 'None'}</span></p>
+                            <p className="text-sm"><span className="font-medium text-gray-600">Chronic Conditions:</span> <span className="text-gray-800">{selectedPatient.chronicConditions || 'None'}</span></p>
+                            <p className="text-sm"><span className="font-medium text-gray-600">Current Medications:</span> <span className="text-gray-800">{selectedPatient.currentMedications || 'None'}</span></p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex justify-end mt-6 pt-4 border-t">
+                        <button
+                          onClick={() => setSelectedPatient(null)}
+                          className="px-6 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-semibold transition-colors"
+                        >
+                          Close
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ===== THEME CUSTOMIZER PANEL ===== */}
+              {activeTab === 'theme' && userRole === 'admin' && (() => {
+                const PRESETS = [
+                  { name: 'Barangay Red', primary: '#CC0000', accent: '#990000', bg: '#f8fafc' },
+                  { name: 'Crimson',      primary: '#B00000', accent: '#660000', bg: '#fff5f5' },
+                  { name: 'Bright Scarlet',primary: '#E60000', accent: '#990000', bg: '#ffffff' },
+                  { name: 'Deep Maroon',  primary: '#8A0000', accent: '#1a1a1a', bg: '#fff0f0' },
+                  { name: 'Ink & Red',    primary: '#CC0000', accent: '#111827', bg: '#f9fafb' },
+                  { name: 'Charcoal',     primary: '#1a1a1a', accent: '#CC0000', bg: '#f8fafc' },
+                  { name: 'Classic',      primary: '#A30000', accent: '#000000', bg: '#ffffff' },
+                  { name: 'Cherry',       primary: '#D32027', accent: '#7a0000', bg: '#fff5f5' },
+                ];
+                return (
+                  <div className="max-w-3xl mx-auto">
+                    {/* Header */}
+                    <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden mb-6">
+                      <div className="px-6 py-5 border-b border-gray-100" style={{background:'linear-gradient(to right,var(--ht-primary),var(--ht-accent))'}}>
+                        <h2 className="text-xl font-bold text-white">🎨 Theme Customizer</h2>
+                        <p className="text-sm text-white" style={{opacity:.85}}>Personalize the app colors for Barangay Upper Bicutan Health Clinics</p>
+                      </div>
+
+                      {/* Live Preview Bar */}
+                      <div className="px-6 py-4 bg-gray-50 border-b border-gray-100">
+                        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Live Preview</p>
+                        <div className="flex items-center gap-3 flex-wrap">
+                          <div className="h-10 flex-1 rounded-lg min-w-[120px]" style={{background:`linear-gradient(to right,var(--ht-primary),var(--ht-accent))`}}></div>
+                          <div className="h-10 w-10 rounded-lg flex-shrink-0" style={{background:'var(--ht-primary)'}}></div>
+                          <div className="h-10 w-10 rounded-lg flex-shrink-0" style={{background:'var(--ht-accent)'}}></div>
+                          <div className="h-10 w-10 rounded-lg flex-shrink-0 border border-gray-300" style={{background:'var(--ht-bg)'}}></div>
+                          <button className="px-4 py-2 rounded-lg text-white text-sm font-semibold" style={{background:'var(--ht-primary)'}}>Button</button>
+                          <button className="px-4 py-2 rounded-lg text-white text-sm font-semibold" style={{background:'linear-gradient(to right,var(--ht-primary),var(--ht-accent))'}}>Gradient</button>
+                        </div>
+                      </div>
+
+                      {/* Color Pickers */}
+                      <div className="px-6 py-5 grid grid-cols-3 gap-5">
+                        <div>
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">Primary Color</label>
+                          <div className="flex items-center gap-3">
+                            <input type="color" value={theme.primary}
+                              onChange={e => saveTheme({...theme, primary: e.target.value})}
+                              className="w-12 h-10 rounded-lg border border-gray-300 cursor-pointer p-0.5"
+                            />
+                            <code className="text-sm bg-gray-100 px-2 py-1 rounded font-mono">{theme.primary}</code>
+                          </div>
+                          <p className="text-xs text-gray-400 mt-1.5">Headers, buttons, nav active</p>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">Accent Color</label>
+                          <div className="flex items-center gap-3">
+                            <input type="color" value={theme.accent}
+                              onChange={e => saveTheme({...theme, accent: e.target.value})}
+                              className="w-12 h-10 rounded-lg border border-gray-300 cursor-pointer p-0.5"
+                            />
+                            <code className="text-sm bg-gray-100 px-2 py-1 rounded font-mono">{theme.accent}</code>
+                          </div>
+                          <p className="text-xs text-gray-400 mt-1.5">Gradient end, highlights</p>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">Background Color</label>
+                          <div className="flex items-center gap-3">
+                            <input type="color" value={theme.bg}
+                              onChange={e => saveTheme({...theme, bg: e.target.value})}
+                              className="w-12 h-10 rounded-lg border border-gray-300 cursor-pointer p-0.5"
+                            />
+                            <code className="text-sm bg-gray-100 px-2 py-1 rounded font-mono">{theme.bg}</code>
+                          </div>
+                          <p className="text-xs text-gray-400 mt-1.5">Page background</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Preset Themes */}
+                    <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6 mb-6">
+                      <h3 className="text-base font-bold text-gray-800 mb-4">Quick Presets</h3>
+                      <div className="grid grid-cols-4 gap-3">
+                        {PRESETS.map(p => (
+                          <button key={p.name}
+                            onClick={() => saveTheme({primary: p.primary, accent: p.accent, bg: p.bg})}
+                            className="group rounded-xl border-2 overflow-hidden transition-all hover:scale-105"
+                            style={{borderColor: theme.primary === p.primary && theme.accent === p.accent ? p.primary : '#e5e7eb'}}
+                          >
+                            <div className="h-8" style={{background:`linear-gradient(to right,${p.primary},${p.accent})`}}></div>
+                            <div className="h-5" style={{background: p.bg}}></div>
+                            <div className="px-2 py-1.5 bg-white border-t border-gray-100">
+                              <p className="text-xs font-semibold text-gray-700 truncate">{p.name}</p>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Reset */}
+                    <div className="bg-amber-50 border border-amber-200 rounded-xl px-5 py-4 flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-semibold text-amber-800">Reset to Default Taguig Theme</p>
+                        <p className="text-xs text-amber-600 mt-0.5">Restores the original City of Taguig color scheme</p>
+                      </div>
+                      <button onClick={resetTheme}
+                        className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold rounded-lg transition-colors">
+                        Reset to Default
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* ===== SERVE PATIENT MODAL — Diagnosis & Notes Required ===== */}
+              {serveModalTarget && (
+                <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.55)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:9999,padding:'16px'}}>
+                  <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg">
+                    {/* Header */}
+                    <div className="px-6 py-4 border-b border-gray-100" style={{background:'linear-gradient(to right,var(--ht-primary),var(--ht-accent))'}}>
+                      <h2 className="text-lg font-bold text-white">Mark Patient as Served</h2>
+                      <p className="text-sm text-white" style={{opacity:.85}}>Complete clinical notes before closing this queue entry</p>
+                    </div>
+                    {/* Patient Info */}
+                    <div className="px-6 py-3 bg-gray-50 border-b border-gray-100 flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm flex-shrink-0" style={{background:'var(--ht-primary)'}}>
+                        {serveModalTarget.name?.split(' ').map(n=>n[0]).join('').slice(0,2).toUpperCase()}
+                      </div>
+                      <div>
+                        <p className="font-semibold text-gray-800 text-sm">{serveModalTarget.name}</p>
+                        <p className="text-xs text-gray-500">{serveModalTarget.service} · {serveModalTarget.priority} Priority · Queue #{serveModalTarget.queueNumber}</p>
+                      </div>
+                      <div className="ml-auto text-right">
+                        <p className="text-xs text-gray-400">Chief Complaint</p>
+                        <p className="text-xs font-medium text-gray-700">{serveModalTarget.chiefComplaint || 'N/A'}</p>
+                      </div>
+                    </div>
+                    {/* Form */}
+                    <div className="px-6 py-5 space-y-4">
+                      {serveError && (
+                        <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                          <svg className="w-4 h-4 text-red-500 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
+                          <p className="text-sm text-red-700">{serveError}</p>
+                        </div>
+                      )}
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 mb-1">Diagnosis <span className="text-red-500">*</span></label>
+                        <textarea
+                          value={serveForm.diagnosis}
+                          onChange={e => setServeForm({...serveForm, diagnosis: e.target.value})}
+                          className="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm resize-none focus:ring-2 focus:border-transparent"
+                          style={{'--tw-ring-color':'var(--ht-primary)'}}
+                          rows={2} placeholder="Enter diagnosis (required)"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 mb-1">Treatment / Prescription</label>
+                        <input
+                          type="text"
+                          value={serveForm.treatment}
+                          onChange={e => setServeForm({...serveForm, treatment: e.target.value})}
+                          className="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:border-transparent"
+                          placeholder="Treatment given (optional)"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-semibold text-gray-700 mb-1">Clinical Notes <span className="text-red-500">*</span></label>
+                        <textarea
+                          value={serveForm.notes}
+                          onChange={e => setServeForm({...serveForm, notes: e.target.value})}
+                          className="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm resize-none focus:ring-2 focus:border-transparent"
+                          rows={3} placeholder="Enter clinical notes and observations (required)"
+                        />
+                      </div>
+                      <p className="text-xs text-gray-400">Fields marked <span className="text-red-500">*</span> are required before marking as served.</p>
+                    </div>
+                    {/* Actions */}
+                    <div className="px-6 py-4 border-t border-gray-100 flex gap-3 justify-end">
+                      <button
+                        onClick={() => { setServeModalTarget(null); setServeError(''); }}
+                        className="px-5 py-2.5 border border-gray-300 rounded-xl text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors"
+                      >Cancel</button>
+                      <button
+                        onClick={confirmServe}
+                        className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white transition-colors"
+                        style={{background:'var(--ht-primary)'}}
+                      >✓ Confirm Served & Save to Visit Log</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Edit Patient Modal */}
+              {editingPatient && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+                  <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+                    <div className="sticky top-0 bg-white border-b px-6 py-4 flex justify-between items-center">
+                      <h2 className="text-2xl font-bold text-gray-800">Edit Patient Information</h2>
+                      <button
+                        onClick={() => setEditingPatient(null)}
+                        className="text-gray-500 hover:text-gray-700 text-2xl"
+                      >
+                        ×
+                      </button>
+                    </div>
+                    <div className="p-6">
+                      <div className="grid md:grid-cols-2 gap-4">
+                        {/* Same fields as Register Patient, but populated with editingPatient data */}
+                        <div className="md:col-span-2">
+                          <h3 className="text-lg font-semibold text-gray-800 mb-4 pb-2 border-b">Personal Information</h3>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">Last Name</label>
+                          <input
+                            type="text"
+                            value={editingPatient.lastName}
+                            onChange={(e) => setEditingPatient({...editingPatient, lastName: e.target.value})}
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">First Name</label>
+                          <input
+                            type="text"
+                            value={editingPatient.firstName}
+                            onChange={(e) => setEditingPatient({...editingPatient, firstName: e.target.value})}
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">Middle Name</label>
+                          <input
+                            type="text"
+                            value={editingPatient.middleName}
+                            onChange={(e) => setEditingPatient({...editingPatient, middleName: e.target.value})}
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">Date of Birth</label>
+                          <input
+                            type="date"
+                            value={editingPatient.dateOfBirth}
+                            onChange={(e) => setEditingPatient({...editingPatient, dateOfBirth: e.target.value})}
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">Sex</label>
+                          <select
+                            value={editingPatient.sex}
+                            onChange={(e) => setEditingPatient({...editingPatient, sex: e.target.value})}
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          >
+                            <option value="Male">Male</option>
+                            <option value="Female">Female</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">Civil Status</label>
+                          <select
+                            value={editingPatient.civilStatus}
+                            onChange={(e) => setEditingPatient({...editingPatient, civilStatus: e.target.value})}
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          >
+                            <option value="">Select</option>
+                            <option value="Single">Single</option>
+                            <option value="Married">Married</option>
+                            <option value="Widowed">Widowed</option>
+                            <option value="Separated">Separated</option>
+                          </select>
+                        </div>
+
+                        <div className="md:col-span-2 mt-4">
+                          <h3 className="text-lg font-semibold text-gray-800 mb-4 pb-2 border-b">Contact Information</h3>
+                        </div>
+                        <div className="md:col-span-2">
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">Address</label>
+                          <input
+                            type="text"
+                            value={editingPatient.address}
+                            onChange={(e) => setEditingPatient({...editingPatient, address: e.target.value})}
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">Contact Number</label>
+                          <input
+                            type="tel"
+                            value={editingPatient.contact}
+                            onChange={(e) => setEditingPatient({...editingPatient, contact: sanitizePhone(e.target.value)})}
+                            placeholder="09XXXXXXXXX"
+                            maxLength={16}
+                            className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${phoneClass(editingPatient.contact)}`}
+                          />
+                          <PhoneMsg val={editingPatient.contact} />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">Occupation</label>
+                          <input
+                            type="text"
+                            value={editingPatient.occupation}
+                            onChange={(e) => setEditingPatient({...editingPatient, occupation: e.target.value})}
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          />
+                        </div>
+
+                        <div className="md:col-span-2 mt-4">
+                          <h3 className="text-lg font-semibold text-gray-800 mb-4 pb-2 border-b">Emergency Contact</h3>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">Emergency Contact Person</label>
+                          <input
+                            type="text"
+                            value={editingPatient.emergencyContactPerson}
+                            onChange={(e) => setEditingPatient({...editingPatient, emergencyContactPerson: e.target.value})}
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">Emergency Contact Number</label>
+                          <input
+                            type="tel"
+                            value={editingPatient.emergencyContactNumber}
+                            onChange={(e) => setEditingPatient({...editingPatient, emergencyContactNumber: sanitizePhone(e.target.value)})}
+                            placeholder="09XXXXXXXXX"
+                            maxLength={16}
+                            className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${phoneClass(editingPatient.emergencyContactNumber)}`}
+                          />
+                          <PhoneMsg val={editingPatient.emergencyContactNumber} />
+                        </div>
+
+                        <div className="md:col-span-2 mt-4">
+                          <h3 className="text-lg font-semibold text-gray-800 mb-4 pb-2 border-b">Medical Information</h3>
+                        </div>
+                        <div>
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">PhilHealth Number</label>
+                          <input
+                            type="text"
+                            value={editingPatient.philHealthNumber}
+                            onChange={(e) => setEditingPatient({...editingPatient, philHealthNumber: e.target.value})}
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">Allergies</label>
+                          <input
+                            type="text"
+                            value={editingPatient.allergies}
+                            onChange={(e) => setEditingPatient({...editingPatient, allergies: e.target.value})}
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          />
+                        </div>
+                        <div className="md:col-span-2">
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">Chronic Conditions</label>
+                          <input
+                            type="text"
+                            value={editingPatient.chronicConditions}
+                            onChange={(e) => setEditingPatient({...editingPatient, chronicConditions: e.target.value})}
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          />
+                        </div>
+                        <div className="md:col-span-2">
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">Current Medications</label>
+                          <textarea
+                            value={editingPatient.currentMedications}
+                            onChange={(e) => setEditingPatient({...editingPatient, currentMedications: e.target.value})}
+                            rows={3}
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex justify-end space-x-3 mt-6 pt-4 border-t">
+                        <button
+                          onClick={() => setEditingPatient(null)}
+                          className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-semibold transition-colors"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={updatePatient}
+                          className="px-6 py-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg hover:from-blue-600 hover:to-blue-700 font-semibold transition-all transform hover:scale-105"
+                        >
+                          Update Patient
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        }
+
+        // ==================== RENDER APP ====================
+        ReactDOM.render(<HealthTrackApp />, document.getElementById('root'));
