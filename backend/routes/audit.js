@@ -45,15 +45,14 @@ router.get('/', requireAdmin, async (req, res) => {
     const offset = (page - 1) * limit;
 
     const result = await db.query(
-SELECT
+      `SELECT
     log_id, username, action, target_table, target_id,
     details, ip_address, created_at, role
   FROM audit_log
   ORDER BY created_at DESC
-  LIMIT $1 OFFSET $2
+  LIMIT $1 OFFSET $2`,
       [limit, offset]
     );
-
     const countResult = await db.query('SELECT COUNT(*) FROM audit_log');
     const total = parseInt(countResult.rows[0].count);
 
