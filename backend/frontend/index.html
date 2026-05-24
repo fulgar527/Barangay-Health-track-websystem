@@ -1,1 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HealthTrack: A Web-Based Patient Information System with Queueing System for Barangay Health Clinics</title>
+    
+    <!-- Supabase Client -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    
+    <!-- External Libraries -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
 
+    <!-- ===== WHITE / RED / BLACK PALETTE LOCK =====
+         Every Tailwind colour family is remapped onto a single red ramp.
+         Greens, blues, purples, oranges, ambers, yellows, pinks, indigos, etc.
+         all resolve to red shades. Grays stay neutral (read as black/white). -->
+    <script>
+      (function () {
+        var red = {
+          50:  '#fff1f1',
+          100: '#ffdcdc',
+          200: '#ffbdbd',
+          300: '#ff8f8f',
+          400: '#f55050',
+          500: '#e01313',
+          600: '#cc0000',
+          700: '#a80000',
+          800: '#8a0000',
+          900: '#6b0000',
+          950: '#3d0000'
+        };
+        tailwind.config = {
+          theme: {
+            extend: {
+              colors: {
+                red: red,
+                blue: red,
+                sky: red,
+                cyan: red,
+                indigo: red,
+                violet: red,
+                purple: red,
+                fuchsia: red,
+                pink: red,
+                rose: red,
+                green: red,
+                emerald: red,
+                teal: red,
+                lime: red,
+                amber: red,
+                yellow: red,
+                orange: red
+              }
+            }
+          }
+        };
+      })();
+    </script>
+
+    <!-- Custom Styles -->
+    <link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="responsive.css">
+</head>
+<body>
+    <div id="root"></div>
+
+    <!-- Capstone Disclaimer Banner -->
+    <div class="capstone-disclaimer">
+      FOR CAPSTONE PROJECT USE ONLY &nbsp;|&nbsp; HealthTrack: A Web-Based Patient Information System &nbsp;|&nbsp; Barangay Upper Bicutan Health Clinics, City of Taguig &nbsp;|&nbsp; NOT FOR ACTUAL CLINICAL USE
+    </div>
+
+    <!-- Supabase Configuration (will be injected at runtime) -->
+    <script>
+      window.SUPABASE_CONFIG = {
+        url: '', // Will be set from environment or inline
+        anonKey: '' // Will be set from environment or inline
+      };
+    </script>
+
+    <!-- Main Application Script -->
+    <script type="text/babel" src="app.js"></script>
+
+<script>
+function toggleSidebar(){
+  var s = document.getElementById("sidebar");
+  if(s) s.classList.toggle("active");
+}
+</script>
+
+</body>
+</html>
