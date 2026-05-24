@@ -1,22 +1,13 @@
-// PM2 process configuration for Hostinger Node.js VPS
 module.exports = {
-  apps: [
-    {
-      name: 'healthtrack',
-      script: 'server.js',
-      instances: 1,
-      autorestart: true,
-      watch: false,
-      max_memory_restart: '256M',
-      // `env` applies always (fallback), `env_production` overrides when --env production is passed
-      env: {
-        NODE_ENV: 'production',
-        PORT: process.env.PORT || 3000
-      },
-      env_production: {
-        NODE_ENV: 'production',
-        PORT: process.env.PORT || 3000
-      }
+  apps: [{
+    name: 'healthtrack',
+    script: 'server.js',
+    env: {
+      SUPABASE_URL: 'https://rfxomnrzlqiopfexnlfx.supabase.co',
+      SUPABASE_ANON_KEY: 'sb_publishable_gDKVGPRUV6pYd2qwEPAzzg_nbbV6Y66',
+      DATABASE_URL: 'postgresql://postgres:Cuty0urs3lf!@db.rfxomnrzlqiopfexnlfx.supabase.co:5432/postgres',
+      NODE_ENV: 'production',
+      PORT: 3000
     }
-  ]
+  }]
 };
