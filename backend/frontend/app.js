@@ -1008,7 +1008,20 @@ contactNumber: pendingAccount.contactNumber || '',
             }
             return age;
           };
+          
+          // Add this useEffect near your other registration-related effects
+useEffect(() => {
+  if (!newPatient.dateOfBirth) return;
+  const age = calculateAge(newPatient.dateOfBirth);
 
+  if (age < 18) {
+    setNewPatient(prev => ({
+      ...prev,
+      civilStatus: 'Single',
+      occupation: age < 6 ? 'N/A' : prev.occupation,
+    }));
+  }
+}, [newPatient.dateOfBirth]);
           // Register new patient — POST to /api/patients
           const registerPatient = async () => {
             if (!newPatient.lastName || !newPatient.firstName || !newPatient.dateOfBirth || !newPatient.sex || !newPatient.address || !newPatient.contact) {
@@ -1023,6 +1036,16 @@ contactNumber: pendingAccount.contactNumber || '',
               alert('Emergency Contact Number must contain digits only — no letters allowed.');
               return;
             }
+            // Age-based validation
+const age = calculateAge(newPatient.dateOfBirth);
+if (age < 18 && newPatient.civilStatus && !['Single'].includes(newPatient.civilStatus)) {
+  alert('A minor (under 18) cannot have a civil status other than Single.');
+  return;
+}
+if (age < 6 && newPatient.occupation && newPatient.occupation !== 'N/A') {
+  alert('Occupation is not applicable for children under 6 years old.');
+  return;
+}
             try {
               const row = await api('POST', '/patients', {
                 lastName: newPatient.lastName, firstName: newPatient.firstName,
