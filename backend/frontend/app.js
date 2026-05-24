@@ -4961,7 +4961,25 @@ if (age < 6 && newPatient.occupation && newPatient.occupation !== 'N/A') {
                           </label>
                           <select
                             value={queuePatient.patientId}
-                            onChange={(e) => setQueuePatient({...queuePatient, patientId: e.target.value})}
+                            onChange={(e) => {
+  const pid = e.target.value;
+  const appt = queue.find(q =>
+    q.patientId === pid &&
+    q.selfBooked &&
+    ['Waiting', 'Accepted'].includes(q.status)
+  );
+  if (appt) {
+    setQueuePatient({
+      patientId: pid,
+      serviceCategory: appt.serviceCategory || '',
+      serviceType: appt.service || '',
+      priority: appt.priority || 'Regular',
+      chiefComplaint: appt.chiefComplaint || '',
+    });
+  } else {
+    setQueuePatient({ patientId: pid, serviceCategory: '', serviceType: '', priority: 'Regular', chiefComplaint: '' });
+  }
+}}
                             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
                           >
                             <option value="">-- Select Patient --</option>
