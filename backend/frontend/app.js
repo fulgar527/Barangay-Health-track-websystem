@@ -711,6 +711,7 @@ function normalizeUser(u) {
           const [queue, setQueue] = useState([]);
           const [visitLog, setVisitLog] = useState([]);
           const [users, setUsers] = useState([]);        // admin account management
+          const [auditEntries, setAuditEntries] = useState([]);
           const [loadingData, setLoadingData] = useState(false);
           const [syncStatus, setSyncStatus] = useState(''); // 'syncing'|'ok'|'error'
           
