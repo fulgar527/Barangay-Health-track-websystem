@@ -718,6 +718,56 @@ contactNumber: pendingAccount.contactNumber || '',
 
           // ── Clinic Appointment Slots (1-hour, 8 AM–5 PM, lunch 12–1 PM blocked) ──
           const CLINIC_SLOTS = [
+            // Dynamic Philippine Holidays — works for any year
+const getPhHolidays = (year) => {
+  // Easter calculation (Anonymous Gregorian algorithm)
+  const easter = (y) => {
+    const a=y%19, b=Math.floor(y/100), c=y%100;
+    const d=Math.floor(b/4), e=b%4, f=Math.floor((b+8)/25);
+    const g=Math.floor((b-f+1)/3), h=(19*a+b-d-g+15)%30;
+    const i=Math.floor(c/4), k=c%4, l=(32+2*e+2*i-h-k)%7;
+    const m=Math.floor((a+11*h+22*l)/451);
+    const month=Math.floor((h+l-7*m+114)/31);
+    const day=((h+l-7*m+114)%31)+1;
+    return new Date(y, month-1, day);
+  };
+
+  const fmt = (d) => d.toISOString().split('T')[0];
+  const addDays = (d, n) => { const r=new Date(d); r.setDate(r.getDate()+n); return r; };
+
+  // Last Monday of a given month
+  const lastMonday = (y, month) => {
+    const d = new Date(y, month+1, 0); // last day of month
+    while (d.getDay() !== 1) d.setDate(d.getDate()-1);
+    return d;
+  };
+
+  const easterDate = easter(year);
+
+  return [
+    { date: `${year}-01-01`, name: "New Year's Day" },
+    { date: fmt(addDays(easterDate, -3)), name: 'Maundy Thursday' },
+    { date: fmt(addDays(easterDate, -2)), name: 'Good Friday' },
+    { date: fmt(addDays(easterDate, -1)), name: 'Black Saturday' },
+    { date: `${year}-04-09`, name: 'Araw ng Kagitingan' },
+    { date: `${year}-05-01`, name: 'Labor Day' },
+    { date: `${year}-06-12`, name: 'Independence Day' },
+    { date: fmt(lastMonday(year, 7)), name: 'National Heroes Day' },
+    { date: `${year}-11-01`, name: "All Saints' Day" },
+    { date: `${year}-11-30`, name: 'Bonifacio Day' },
+    { date: `${year}-12-24`, name: 'Christmas Eve' },
+    { date: `${year}-12-25`, name: 'Christmas Day' },
+    { date: `${year}-12-30`, name: 'Rizal Day' },
+    { date: `${year}-12-31`, name: "New Year's Eve" },
+  ];
+};
+
+const isHoliday = (dateStr) => {
+  if (!dateStr) return null;
+  const year = parseInt(dateStr.split('-')[0]);
+  const holidays = getPhHolidays(year);
+  return holidays.find(h => h.date === dateStr);
+};
             { value: '08:00', label: '8:00 AM – 9:00 AM',   slot: 1 },
             { value: '09:00', label: '9:00 AM – 10:00 AM',  slot: 2 },
             { value: '10:00', label: '10:00 AM – 11:00 AM', slot: 3 },
