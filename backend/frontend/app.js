@@ -712,6 +712,13 @@ function normalizeUser(u) {
           const [visitLog, setVisitLog] = useState([]);
           const [users, setUsers] = useState([]);        // admin account management
           const [auditEntries, setAuditEntries] = useState([]);
+          useEffect(() => {
+    if (activeTab === 'auditlog' && userRole === 'admin') {
+      api('GET', '/audit').then(rows => {
+        setAuditEntries(Array.isArray(rows) ? rows.slice().reverse() : []);
+      }).catch(() => {});
+    }
+  }, [activeTab]);
           const [loadingData, setLoadingData] = useState(false);
           const [syncStatus, setSyncStatus] = useState(''); // 'syncing'|'ok'|'error'
           
@@ -4312,11 +4319,7 @@ function normalizeUser(u) {
                   // Audit log displayed from backend /api/audit
                   // We use a local state for the audit entries fetched once when tab opens
                  
-                  React.useEffect(() => {
-                    api('GET', '/audit').then(rows => {
-                      setAuditEntries(Array.isArray(rows) ? rows.slice().reverse() : []);
-                    }).catch(() => {});
-                  }, []);
+                  
                   const actionColors = {
                     LOGIN:            { bg: 'bg-green-50',  text: 'text-green-700',  border: 'border-green-200',  icon: '🔑' },
                     LOGOUT:           { bg: 'bg-gray-50',   text: 'text-gray-600',   border: 'border-gray-200',   icon: '🚪' },
