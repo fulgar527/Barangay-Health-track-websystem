@@ -469,6 +469,32 @@ function normalizeUser(u) {
             const match = DEFAULT_ACCOUNTS.find(
               a => a.username === loginUsername.trim().toLowerCase() && a.password === loginPassword
             );
+                
+              if (!match) {
+              // Try API login for registered accounts
+              try {
+                const data = await api('POST', '/auth/login', {
+                  username: loginUsername.trim(), password: loginPassword
+                });
+                setToken(data.token);
+                const user = {
+                  id: data.user.userId, userId: data.user.userId,
+                  username: data.user.username, role: data.user.role,
+                  fullName: data.user.fullName, email: data.user.email,
+                };
+                setLoginAttempts(0); setLockoutUntil(null);
+                setCurrentUser(user); setUserRole(user.role);
+                try { sessionStorage.setItem('ht_user', JSON.stringify(user)); } catch {}
+                if (user.role === 'resident') setResidentView('queue');
+                else setActiveTab('dashboard');
+                setLoginUsername(''); setLoginPassword('');
+                setLoginError(''); setShowPassword(false);
+                setLastActivity(Date.now());
+                return;
+              } catch (err) {
+                // API login failed, fall through to error handling below
+              }
+            }
 
             if (match) {
               const user = {
