@@ -1829,6 +1829,29 @@ contactNumber: pendingAccount.contactNumber || '',
                             })()}
                             <p className="text-xs text-gray-400 mt-1">Must be 18–85 years old to register</p>
                           </div>
+                          <div className="grid grid-cols-2 gap-2">
+  <div>
+    <label className="block text-sm font-medium text-gray-700 mb-1">Sex <span className="text-red-500">*</span></label>
+    <select value={newAccount.sex} onChange={(e) => setNewAccount({...newAccount, sex: e.target.value})}
+      className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+      <option value="">Select</option>
+      <option value="Male">Male</option>
+      <option value="Female">Female</option>
+    </select>
+  </div>
+  <div>
+    <label className="block text-sm font-medium text-gray-700 mb-1">Contact No. <span className="text-red-500">*</span></label>
+    <input type="tel" value={newAccount.contactNumber} onChange={(e) => setNewAccount({...newAccount, contactNumber: e.target.value})}
+      className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+      placeholder="09XXXXXXXXX" />
+  </div>
+</div>
+<div>
+  <label className="block text-sm font-medium text-gray-700 mb-1">Address <span className="text-red-500">*</span></label>
+  <input type="text" value={newAccount.address} onChange={(e) => setNewAccount({...newAccount, address: e.target.value})}
+    className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+    placeholder="Barangay, City/Municipality" />
+</div>
 
                           {/* Contact Method for Confirmation */}
                           <div>
