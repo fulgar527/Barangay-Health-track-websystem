@@ -2654,6 +2654,36 @@ function normalizeUser(u) {
                   )}
 
                   {/* Booking View */}
+              
+    // Auto-fill booking from user profile + existing patient record
+    if (!residentBooking.firstName && currentUser) {
+      const nameParts = (currentUser.fullName || '').split(' ');
+      const existingPatient = registeredPatients.find(p =>
+        p.firstName.toLowerCase() === (nameParts[0] || '').toLowerCase() &&
+        p.lastName.toLowerCase() === (nameParts[nameParts.length-1] || '').toLowerCase()
+      );
+      if (existingPatient) {
+        setResidentBooking(prev => ({...prev,
+          firstName: existingPatient.firstName || '', lastName: existingPatient.lastName || '',
+          middleName: existingPatient.middleName || '', dateOfBirth: existingPatient.dateOfBirth || '',
+          sex: existingPatient.sex || '', civilStatus: existingPatient.civilStatus || '',
+          address: existingPatient.address || '', contactNumber: existingPatient.contact || existingPatient.contactNumber || '',
+          occupation: existingPatient.occupation || '',
+          emergencyContactPerson: existingPatient.emergencyContactPerson || '',
+          emergencyContactNumber: existingPatient.emergencyContactNumber || '',
+          philHealthNumber: existingPatient.philHealthNumber || '',
+          allergies: existingPatient.allergies || '',
+          chronicConditions: existingPatient.chronicConditions || '',
+          currentMedications: existingPatient.currentMedications || '',
+        }));
+      } else {
+        setResidentBooking(prev => ({...prev,
+          firstName: nameParts[0] || '', lastName: nameParts[nameParts.length-1] || '',
+        }));
+      }
+    }
+    return null;
+  })()}
                   {residentView === 'booking' && (
                     <div className="max-w-3xl mx-auto p-4">
                       <div className="bg-white rounded-xl shadow-lg overflow-hidden">
