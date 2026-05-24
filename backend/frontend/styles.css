@@ -1,0 +1,142 @@
+:root {
+  --ht-primary: #CC0000;
+  --ht-primary-dark: #990000;
+  --ht-primary-light: #fff0f0;
+  --ht-accent: #990000;
+  --ht-bg: #f8fafc;
+}
+
+/* HealthTrack Custom Styles */
+
+body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+        'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+        sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+/* ── Responsive Table Wrapper ── */
+.table-scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+/*
+ * ROOT CAUSE FIX:
+ * overflow-x: hidden on html/body was blocking .nav-scroll
+ * from scrolling on iOS Safari and Android Chrome.
+ * overflow: clip prevents page overflow WITHOUT blocking child scrolling.
+ */
+html {
+    max-width: 100%;
+    overflow-x: clip;
+}
+
+body {
+    max-width: 100%;
+    position: relative;
+    /* NO overflow-x: hidden — it breaks child scroll containers on iOS */
+}
+
+/* ── Nav scrollable on mobile, fits naturally on desktop ── */
+.nav-scroll {
+    display: block;
+    width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scroll-behavior: smooth;
+    scrollbar-width: none;          /* Firefox */
+    -ms-overflow-style: none;       /* IE/Edge */
+    overscroll-behavior-x: contain; /* don't bubble swipes to page */
+    touch-action: pan-x;            /* allow horizontal pan on touch */
+    -webkit-tap-highlight-color: transparent;
+}
+
+.nav-scroll::-webkit-scrollbar {    /* Chrome/Safari */
+    display: none;
+    width: 0;
+    height: 0;
+}
+
+.nav-scroll > div {
+    display: flex !important;
+    flex-wrap: nowrap !important;
+    min-width: max-content !important;
+}
+
+.nav-scroll button {
+    flex-shrink: 0 !important;
+    white-space: nowrap !important;
+    touch-action: manipulation !important;
+    -webkit-user-select: none !important;
+    user-select: none !important;
+    cursor: pointer;
+}
+
+/* ── Bottom safe area for mobile ── */
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+    .pb-safe { padding-bottom: calc(1rem + env(safe-area-inset-bottom)); }
+}
+
+/* ── Mobile modal fullscreen ── */
+@media (max-width: 640px) {
+    .modal-mobile {
+        width: 100% !important;
+        max-width: 100% !important;
+        margin: 0 !important;
+        border-radius: 1rem 1rem 0 0 !important;
+        max-height: 92vh;
+        overflow-y: auto;
+    }
+    .modal-wrap {
+        align-items: flex-end !important;
+        padding: 0 !important;
+    }
+}
+
+/* ── Touch-friendly tap targets ── */
+@media (max-width: 768px) {
+    button { min-height: 40px; }
+}
+
+@media print {
+    .no-print {
+        display: none !important;
+    }
+}
+
+/* ===== CAPSTONE DISCLAIMER BANNER ===== */
+.capstone-disclaimer {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 9999;
+  background: linear-gradient(to right, #111827, #CC0000);
+  color: #ffffff;
+  text-align: center;
+  padding: 5px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  border-top: 2px solid #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  box-shadow: 0 -2px 10px rgba(0,0,0,0.2);
+}
+.capstone-disclaimer::before,
+.capstone-disclaimer::after {
+  content: "⚠";
+  font-size: 12px;
+  opacity: 0.9;
+}
+
+/* Push page content above fixed disclaimer */
+#root {
+  padding-bottom: 30px;
+}
