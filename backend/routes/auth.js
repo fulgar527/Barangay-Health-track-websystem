@@ -97,6 +97,16 @@ router.post('/register', async (req, res) => {
     );
 
     const user = result.rows[0];
+    // Auto-create patient record so booking form auto-fills
+    try {
+      const age = req.body.birthday ? Math.floor((Date.now() - new Date(req.body.birthday)) / 31557600000) : 0;
+      await db.query(
+        `INSERT INTO patients (first_name, last_name, middle_name, date_of_birth, age, sex, address, contact_number, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+         ON CONFLICT DO NOTHING`,
+        [firstName.trim(), lastName.trim(), middleInitial || null, req.body.birthday || null, age, req.body.sex || null, req.body.address || null, req.body.contactNumber || mobile || null]
+      );
+    } catch(e) { console.error('Auto-create patient:', e.message); }
     res.status(201).json({
       message: 'Account created successfully.',
       user: {
