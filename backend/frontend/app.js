@@ -776,7 +776,7 @@ contactNumber: pendingAccount.contactNumber || '',
         }));
       }
     } 
-      }, [residentView]);
+      }, [residentView, registeredPatients.length]);
           useEffect(() => {
     if (activeTab === 'auditlog' && userRole === 'admin') {
       api('GET', '/audit').then(rows => {
