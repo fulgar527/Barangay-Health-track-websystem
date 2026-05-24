@@ -746,6 +746,36 @@ contactNumber: pendingAccount.contactNumber || '',
           const [users, setUsers] = useState([]);        // admin account management
           const [auditEntries, setAuditEntries] = useState([]);
           useEffect(() => {
+           if (residentView === 'booking' && currentUser && !residentBooking.firstName) {
+      const fullName = (currentUser.fullName || '').trim();
+      const existing = registeredPatients.find(p => {
+        const patientFull = (p.firstName + ' ' + (p.middleName ? p.middleName + ' ' : '') + p.lastName).toLowerCase().trim();
+        return patientFull === fullName.toLowerCase() ||
+          (p.firstName.toLowerCase() === fullName.split(' ')[0].toLowerCase() &&
+           fullName.toLowerCase().includes(p.lastName.toLowerCase()));
+      });
+      if (existing) {
+        setResidentBooking(prev => ({...prev,
+          firstName: existing.firstName || '', lastName: existing.lastName || '',
+          middleName: existing.middleName || '', dateOfBirth: existing.dateOfBirth || '',
+          sex: existing.sex || '', civilStatus: existing.civilStatus || '',
+          address: existing.address || '', contactNumber: existing.contact || '',
+          occupation: existing.occupation || '',
+          emergencyContactPerson: existing.emergencyContactPerson || '',
+          emergencyContactNumber: existing.emergencyContactNumber || '',
+          philHealthNumber: existing.philHealthNumber || '',
+          allergies: existing.allergies || '',
+          chronicConditions: existing.chronicConditions || '',
+          currentMedications: existing.currentMedications || '',
+        }));
+      } else {
+        const parts = fullName.split(' ');
+        setResidentBooking(prev => ({...prev,
+          firstName: parts[0] || '',
+          lastName: parts[parts.length-1] || '',
+        }));
+      }
+    } 
       }, [residentView]);
           useEffect(() => {
     if (activeTab === 'auditlog' && userRole === 'admin') {
