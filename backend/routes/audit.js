@@ -47,7 +47,7 @@ router.get('/', requireAdmin, async (req, res) => {
     const result = await db.query(
       `SELECT
     log_id, username, action, target_table, target_id,
-    details, ip_address, created_at, role
+    details, ip_address, created_at
   FROM audit_log
   ORDER BY created_at DESC
   LIMIT $1 OFFSET $2`,
