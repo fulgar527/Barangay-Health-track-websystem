@@ -210,9 +210,7 @@ app.get('/health', async (req, res) => {
 });
 
 // Auth info endpoint (returns current user if authenticated)
-app.get('/api/auth/me', requireAuth, (req, res) => {
-  res.json({ user: req.user });
-});
+app.use('/api/auth', require('./routes/auth'));
 
 // Business logic routes (all require authentication)
 app.use('/api/patients', requireAuth, require('./routes/patients'));
