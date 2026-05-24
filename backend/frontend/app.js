@@ -1459,6 +1459,42 @@ contactNumber: pendingAccount.contactNumber || '',
             }
             if (residentBooking.emergencyContactNumber && /[a-zA-Z]/.test(residentBooking.emergencyContactNumber)) {
               alert('Emergency Contact Number must contain digits only — no letters allowed.'); return;
+              // Age range validation for service categories
+            const patientAge = (() => {
+              if (!residentBooking.dateOfBirth) return null;
+              const today = new Date(), dob = new Date(residentBooking.dateOfBirth);
+              let age = today.getFullYear() - dob.getFullYear();
+              const m = today.getMonth() - dob.getMonth();
+              if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) age--;
+              return age;
+            })();
+
+            if (residentBooking.serviceCategory === 'Child Health Services') {
+              if (patientAge !== null && patientAge > 17) {
+                alert('Child Health Services are only available for patients aged 0-17 years old.'); return;
+              }
+              if (patientAge !== null && patientAge < 18) {
+                if (!window.confirm('This patient is a minor. By proceeding, you confirm that you are the parent or legal guardian booking on behalf of this child.\n\nDo you want to continue?')) return;
+              }
+            }
+
+            if (residentBooking.serviceCategory === 'Senior Citizen Health Services') {
+              if (patientAge !== null && patientAge < 60) {
+                alert('Senior Citizen Health Services are only available for patients aged 60 and above.'); return;
+              }
+            }
+
+            if (residentBooking.serviceCategory === 'Maternal Care') {
+              if (patientAge !== null && patientAge < 15) {
+                alert('Maternal Care services require the patient to be at least 15 years old.'); return;
+              }
+            }
+
+            if (residentBooking.serviceCategory === 'Family Planning') {
+              if (patientAge !== null && patientAge < 18) {
+                alert('Family Planning services are only available for patients aged 18 and above.'); return;
+              }
+            }
             }
             const selectedDate = new Date(residentBooking.appointmentDate + 'T00:00:00');
             const todayDate = new Date(); todayDate.setHours(0,0,0,0);
