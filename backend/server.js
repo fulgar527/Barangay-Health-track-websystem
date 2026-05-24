@@ -1,6 +1,6 @@
 process.env.SUPABASE_URL = process.env.SUPABASE_URL || 'https://rfxomnrzlqiopfexnlfx.supabase.co';
 process.env.SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'sb_publishable_gDKVGPRUV6pYd2qwEPAzzg_nbbV6Y66';
-process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgresql://postgres:Cuty0urs3lf2026d@db.rfxomnrzlqiopfexnlfx.supabase.co:5432/postgres';
+process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgresql://postgres.rfxomnrzlqiopfexnlfx:Cuty0urs3lf2026@aws-1-ap-northeast-1.pooler.supabase.com:6543/postgres';
 process.env.NODE_ENV = process.env.NODE_ENV || 'production';
 process.env.PORT = process.env.PORT || '3000';
 const express = require('express');
