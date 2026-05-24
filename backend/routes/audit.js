@@ -28,7 +28,7 @@ const requireAdmin = (req, res, next) => {
 const logAudit = async (dbClient, userId, action, targetTable, targetId, details, ipAddress) => {
   try {
     await dbClient.query(
-      `INSERT INTO audit_log (user_id, action, target_table, target_id, details, ip_address)
+      `INSERT INTO audit_log (username, action, target_table, target_id, details, ip_address)
        VALUES ($1, $2, $3, $4, $5, $6)`,
       [userId || null, action, targetTable || null, String(targetId || ''), JSON.stringify(details || {}), ipAddress || null]
     );
@@ -45,14 +45,12 @@ router.get('/', requireAdmin, async (req, res) => {
     const offset = (page - 1) * limit;
 
     const result = await db.query(
-      `SELECT
-         a.log_id, a.action, a.target_table, a.target_id,
-         a.details, a.ip_address, a.created_at,
-         u.username, u.full_name, u.role
-       FROM audit_log a
-       LEFT JOIN users u ON a.user_id = u.user_id
-       ORDER BY a.created_at DESC
-       LIMIT $1 OFFSET $2`,
+SELECT
+    log_id, username, action, target_table, target_id,
+    details, ip_address, created_at, role
+  FROM audit_log
+  ORDER BY created_at DESC
+  LIMIT $1 OFFSET $2
       [limit, offset]
     );
 
