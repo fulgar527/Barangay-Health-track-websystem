@@ -405,11 +405,11 @@ function normalizeUser(u) {
           const [showCreateAccount, setShowCreateAccount] = useState(false);
           const [showPassword, setShowPassword] = useState(false);
           const [showRegPassword, setShowRegPassword] = useState(false);
-          const [newAccount, setNewAccount] = useState({
-            username: '', password: '', confirmPassword: '', role: 'resident',
-            firstName: '', middleInitial: '', lastName: '',
-            birthday: '',
-            email: '', mobile: '', contactMethod: 'email'
+         const [newAccount, setNewAccount] = useState({
+         username: '', password: '', confirmPassword: '', role: 'resident',
+         firstName: '', middleInitial: '', lastName: '',
+         birthday: '', sex: '', address: '', contactNumber: '',
+         email: '', mobile: '', contactMethod: 'email'
           });
           const [registerError, setRegisterError] = useState('');
           const [registerSuccess, setRegisterSuccess] = useState('');
@@ -645,6 +645,9 @@ function normalizeUser(u) {
               _lastName: lastName.trim(),
               role: safeRole, fullName,
               birthday: birthday,
+              sex: newAccount.sex,
+              address: newAccount.address,
+              contactNumber: newAccount.contactNumber,
               email: contactMethod === 'email' ? email.trim() : '',
               mobile: contactMethod === 'mobile' ? mobile.trim() : '',
               createdAt: new Date().toISOString()
@@ -669,6 +672,10 @@ function normalizeUser(u) {
               await api('POST', '/auth/register', {
                 username:  pendingAccount.username,
                 password:  pendingAccount._plainPassword,
+                birthday:  pendingAccount.birthday || '',
+sex:       pendingAccount.sex || '',
+address:   pendingAccount.address || '',
+contactNumber: pendingAccount.contactNumber || '',
                 role:      'resident',
                 firstName: pendingAccount._firstName,
                 middleInitial: pendingAccount._middleInitial || '',
