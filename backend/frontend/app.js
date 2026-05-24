@@ -4405,7 +4405,7 @@ function normalizeUser(u) {
                                     </div>
                                     <p className="text-xs text-gray-600 mt-0.5">
                                       <span className="font-medium">By:</span> {entry.username || 'System'} ({entry.role || 'unknown'})
-                                      {entry.details ? <span className="ml-2 text-gray-500">— {entry.details}</span> : null}
+                                      {entry.details ? <span className="ml-2 text-gray-500">— {typeof entry.details === 'string' ? entry.details : JSON.stringify(entry.details)}</span> : null}
                                     </p>
                                   </div>
                                 </div>
