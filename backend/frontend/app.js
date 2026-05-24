@@ -739,34 +739,7 @@ function normalizeUser(u) {
           const [users, setUsers] = useState([]);        // admin account management
           const [auditEntries, setAuditEntries] = useState([]);
           useEffect(() => {
-    if (residentView === 'booking' && currentUser && !residentBooking.firstName) {
-      const nameParts = (currentUser.fullName || '').split(' ');
-      const existing = registeredPatients.find(p =>
-        p.firstName.toLowerCase() === (nameParts[0] || '').toLowerCase() &&
-        p.lastName.toLowerCase() === (nameParts[nameParts.length-1] || '').toLowerCase()
-      );
-      if (existing) {
-        setResidentBooking(prev => ({...prev,
-          firstName: existing.firstName || '', lastName: existing.lastName || '',
-          middleName: existing.middleName || '', dateOfBirth: existing.dateOfBirth || '',
-          sex: existing.sex || '', civilStatus: existing.civilStatus || '',
-          address: existing.address || '', contactNumber: existing.contact || '',
-          occupation: existing.occupation || '',
-          emergencyContactPerson: existing.emergencyContactPerson || '',
-          emergencyContactNumber: existing.emergencyContactNumber || '',
-          philHealthNumber: existing.philHealthNumber || '',
-          allergies: existing.allergies || '',
-          chronicConditions: existing.chronicConditions || '',
-          currentMedications: existing.currentMedications || '',
-        }));
-      } else {
-        setResidentBooking(prev => ({...prev,
-          firstName: nameParts[0] || '',
-          lastName: nameParts[nameParts.length-1] || '',
-        }));
-      }
-    }
-  }, [residentView]);
+      }, [residentView]);
           useEffect(() => {
     if (activeTab === 'auditlog' && userRole === 'admin') {
       api('GET', '/audit').then(rows => {
