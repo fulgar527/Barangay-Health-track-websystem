@@ -4311,7 +4311,7 @@ function normalizeUser(u) {
                 {activeTab === 'auditlog' && userRole === 'admin' && (() => {
                   // Audit log displayed from backend /api/audit
                   // We use a local state for the audit entries fetched once when tab opens
-                  const [auditEntries, setAuditEntries] = React.useState([]);
+                 
                   React.useEffect(() => {
                     api('GET', '/audit').then(rows => {
                       setAuditEntries(Array.isArray(rows) ? rows.slice().reverse() : []);
