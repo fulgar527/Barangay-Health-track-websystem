@@ -1,4 +1,3 @@
-
 // ==================== API LAYER ====================
 // All data operations go through the Express backend.
 // LocalStorage is ONLY used for: theme preference.
@@ -717,44 +716,6 @@ contactNumber: pendingAccount.contactNumber || '',
           };
 
           // ── Clinic Appointment Slots (1-hour, 8 AM–5 PM, lunch 12–1 PM blocked) ──
-       const CLINIC_SLOTS = [
-  { value: '08:00', label: '8:00 AM – 9:00 AM',   slot: 1 },
-  { value: '09:00', label: '9:00 AM – 10:00 AM',  slot: 2 },
-  { value: '10:00', label: '10:00 AM – 11:00 AM', slot: 3 },
-  { value: '11:00', label: '11:00 AM – 12:00 PM', slot: 4 },
-  { value: '12:00', label: '12:00 PM – 1:00 PM',  slot: 5, lunch: true },
-  { value: '13:00', label: '1:00 PM – 2:00 PM',   slot: 6 },
-  { value: '14:00', label: '2:00 PM – 3:00 PM',   slot: 7 },
-  { value: '15:00', label: '3:00 PM – 4:00 PM',   slot: 8 },
-  { value: '16:00', label: '4:00 PM – 5:00 PM',   slot: 9 },
-];
-
-  const fmt = (d) => d.toISOString().split('T')[0];
-  const addDays = (d, n) => { const r=new Date(d); r.setDate(r.getDate()+n); return r; };
-  const lastMonday = (y, month) => {
-    const d = new Date(y, month+1, 0);
-    while (d.getDay() !== 1) d.setDate(d.getDate()-1);
-    return d;
-  };
-  const easterDate = easter(year);
-  return [
-    { date: `${year}-01-01`, name: "New Year's Day" },
-    { date: fmt(addDays(easterDate, -3)), name: 'Maundy Thursday' },
-    { date: fmt(addDays(easterDate, -2)), name: 'Good Friday' },
-    { date: fmt(addDays(easterDate, -1)), name: 'Black Saturday' },
-    { date: `${year}-04-09`, name: 'Araw ng Kagitingan' },
-    { date: `${year}-05-01`, name: 'Labor Day' },
-    { date: `${year}-06-12`, name: 'Independence Day' },
-    { date: fmt(lastMonday(year, 7)), name: 'National Heroes Day' },
-    { date: `${year}-11-01`, name: "All Saints' Day" },
-    { date: `${year}-11-30`, name: 'Bonifacio Day' },
-    { date: `${year}-12-24`, name: 'Christmas Eve' },
-    { date: `${year}-12-25`, name: 'Christmas Day' },
-    { date: `${year}-12-30`, name: 'Rizal Day' },
-    { date: `${year}-12-31`, name: "New Year's Eve" },
-  ];
-};
-
           const CLINIC_SLOTS = [
             { value: '08:00', label: '8:00 AM – 9:00 AM',   slot: 1 },
             { value: '09:00', label: '9:00 AM – 10:00 AM',  slot: 2 },
@@ -766,24 +727,51 @@ contactNumber: pendingAccount.contactNumber || '',
             { value: '15:00', label: '3:00 PM – 4:00 PM',   slot: 8 },
             { value: '16:00', label: '4:00 PM – 5:00 PM',   slot: 9 },
           ];
+
           // Dynamic Philippine Holidays — works for any year
-const getPhHolidays = (year) => {
-  const easter = (y) => {
-    const a=y%19, b=Math.floor(y/100), c=y%100;
-    const d=Math.floor(b/4), e=b%4, f=Math.floor((b+8)/25);
-    const g=Math.floor((b-f+1)/3), h=(19*a+b-d-g+15)%30;
-    const i=Math.floor(c/4), k=c%4, l=(32+2*e+2*i-h-k)%7;
-    const m=Math.floor((a+11*h+22*l)/451);
-    const month=Math.floor((h+l-7*m+114)/31);
-    const day=((h+l-7*m+114)%31)+1;
-    return new Date(y, month-1, day);
-  };
+          const getPhHolidays = (year) => {
+            const easter = (y) => {
+              const a=y%19, b=Math.floor(y/100), c=y%100;
+              const d=Math.floor(b/4), e=b%4, f=Math.floor((b+8)/25);
+              const g=Math.floor((b-f+1)/3), h=(19*a+b-d-g+15)%30;
+              const i=Math.floor(c/4), k=c%4, l=(32+2*e+2*i-h-k)%7;
+              const m=Math.floor((a+11*h+22*l)/451);
+              const month=Math.floor((h+l-7*m+114)/31);
+              const day=((h+l-7*m+114)%31)+1;
+              return new Date(y, month-1, day);
+            };
+            const fmt = (d) => d.toISOString().split('T')[0];
+            const addDays = (d, n) => { const r=new Date(d); r.setDate(r.getDate()+n); return r; };
+            const lastMonday = (y, month) => {
+              const d = new Date(y, month+1, 0);
+              while (d.getDay() !== 1) d.setDate(d.getDate()-1);
+              return d;
+            };
+            const easterDate = easter(year);
+            return [
+              { date: `${year}-01-01`, name: "New Year's Day" },
+              { date: fmt(addDays(easterDate, -3)), name: 'Maundy Thursday' },
+              { date: fmt(addDays(easterDate, -2)), name: 'Good Friday' },
+              { date: fmt(addDays(easterDate, -1)), name: 'Black Saturday' },
+              { date: `${year}-04-09`, name: 'Araw ng Kagitingan' },
+              { date: `${year}-05-01`, name: 'Labor Day' },
+              { date: `${year}-06-12`, name: 'Independence Day' },
+              { date: fmt(lastMonday(year, 7)), name: 'National Heroes Day' },
+              { date: `${year}-11-01`, name: "All Saints' Day" },
+              { date: `${year}-11-30`, name: 'Bonifacio Day' },
+              { date: `${year}-12-24`, name: 'Christmas Eve' },
+              { date: `${year}-12-25`, name: 'Christmas Day' },
+              { date: `${year}-12-30`, name: 'Rizal Day' },
+              { date: `${year}-12-31`, name: "New Year's Eve" },
+            ];
+          };
+
           const isHoliday = (dateStr) => {
-  if (!dateStr) return null;
-  const year = parseInt(dateStr.split('-')[0]);
-  const holidays = getPhHolidays(year);
-  return holidays.find(h => h.date === dateStr);
-};
+            if (!dateStr) return null;
+            const year = parseInt(dateStr.split('-')[0]);
+            const holidays = getPhHolidays(year);
+            return holidays.find(h => h.date === dateStr);
+          };
 
           // Returns Set of booked time-values for a given date (excluding an optional appointment id)
           const getBookedSlots = (date, excludeId = null) => {
