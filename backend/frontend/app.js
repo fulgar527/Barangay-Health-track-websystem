@@ -224,8 +224,8 @@ function normalizeUser(u) {
             </svg>
         );
 
-        // ==================== SERVICES CONFIGURATION ====================
-        const SERVICE_CATEGORIES = {
+        // ==================== SERVICES CONFIGURATION (DEFAULT — overridden by DB) ====================
+        const DEFAULT_SERVICE_CATEGORIES = {
           'Maternal Care': {
             urgency: 'Non-Urgent',
             services: [
@@ -312,10 +312,10 @@ function normalizeUser(u) {
 
         // Legacy SERVICES object for backward compatibility
         const SERVICES = {};
-        Object.keys(SERVICE_CATEGORIES).forEach(category => {
-          SERVICE_CATEGORIES[category].services.forEach(service => {
+        Object.keys(DEFAULT_SERVICE_CATEGORIES).forEach(category => {
+          DEFAULT_SERVICE_CATEGORIES[category].services.forEach(service => {
             SERVICES[service.name] = {
-              category: SERVICE_CATEGORIES[category].urgency,
+              category: DEFAULT_SERVICE_CATEGORIES[category].urgency,
               priority: service.priority
             };
           });
@@ -323,6 +323,44 @@ function normalizeUser(u) {
 
         // ==================== MAIN APP COMPONENT ====================
         function HealthTrackApp() {
+          // ==================== DYNAMIC SERVICE CATEGORIES ====================
+          const [serviceConfig, setServiceConfig] = useState(DEFAULT_SERVICE_CATEGORIES);
+          const [settingsTab, setSettingsTab] = useState('categories'); // 'categories'
+          const [editingCategory, setEditingCategory] = useState(null);
+          const [showAddCategory, setShowAddCategory] = useState(false);
+          const [newCategory, setNewCategory] = useState({ name: '', urgency: 'Non-Urgent', services: [{ name: '', priority: 'Regular' }] });
+          const [settingsError, setSettingsError] = useState('');
+          const [settingsSuccess, setSettingsSuccess] = useState('');
+
+          // Convert API response to serviceConfig format
+          const apiToConfig = (apiData) => {
+            const config = {};
+            apiData.forEach(cat => {
+              if (cat.is_active !== false) {
+                config[cat.category_name] = {
+                  urgency: cat.urgency || 'Non-Urgent',
+                  dbId: cat.id,
+                  services: (cat.services || [])
+                    .filter(s => s.is_active !== false)
+                    .map(s => ({ name: s.service_name, priority: s.default_priority || 'Regular', dbId: s.id }))
+                };
+              }
+            });
+            return config;
+          };
+
+          // Load service categories from API
+          const loadServiceCategories = async () => {
+            try {
+              const data = await api('GET', '/service-categories');
+              if (Array.isArray(data) && data.length > 0) {
+                setServiceConfig(apiToConfig(data));
+              }
+            } catch (err) {
+              console.log('Using default service categories (API unavailable):', err.message);
+            }
+          };
+
           // ==================== PHONE NUMBER HELPER ====================
           const sanitizePhone = (val) => {
             return val.replace(/[^0-9+]/g, '').replace(/(.)\+/g, '$1');
@@ -981,7 +1019,7 @@ contactNumber: pendingAccount.contactNumber || '',
           useEffect(() => {
             if (!userRole) return;
             setLoadingData(true);
-            const tasks = [loadPatients(), loadQueue(), loadVisitLog()];
+            const tasks = [loadPatients(), loadQueue(), loadVisitLog(), loadServiceCategories()];
             if (userRole === 'admin') tasks.push(loadUsers());
             Promise.all(tasks).finally(() => setLoadingData(false));
           }, [userRole]);
@@ -1135,7 +1173,7 @@ if (age < 6 && newPatient.occupation && newPatient.occupation !== 'N/A') {
               return;
             }
             const priority = queuePatient.priority ||
-              SERVICE_CATEGORIES[queuePatient.serviceCategory]?.services
+              serviceConfig[queuePatient.serviceCategory]?.services
                 .find(s => s.name === queuePatient.serviceType)?.priority || 'Regular';
             try {
               const row = await api('POST', '/queue', {
@@ -1440,7 +1478,7 @@ if (age < 6 && newPatient.occupation && newPatient.occupation !== 'N/A') {
 
             // Service Category Breakdown
             summaryData.push({ 'Section': 'SERVICE CATEGORY BREAKDOWN', 'Value': '' });
-            Object.keys(SERVICE_CATEGORIES).forEach(category => {
+            Object.keys(serviceConfig).forEach(category => {
               const count = data.filter(v => v.serviceCategory === category).length;
               summaryData.push({ 'Metric': category, 'Value': count });
             });
@@ -1612,7 +1650,7 @@ if (age < 6 && newPatient.occupation && newPatient.occupation !== 'N/A') {
               }
 
               const priority = residentBooking.priorityLevel ||
-                SERVICE_CATEGORIES[residentBooking.serviceCategory]?.services
+                serviceConfig[residentBooking.serviceCategory]?.services
                   .find(s => s.name === residentBooking.serviceType)?.priority || 'Regular';
 
               const qRow = await api('POST', '/queue', {
@@ -2724,7 +2762,7 @@ if (age < 6 && newPatient.occupation && newPatient.occupation !== 'N/A') {
                                       className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                                     >
                                       <option value="">Select service category</option>
-                                      {Object.keys(SERVICE_CATEGORIES).map(cat => (
+                                      {Object.keys(serviceConfig).map(cat => (
                                         <option key={cat} value={cat}>{cat}</option>
                                       ))}
                                     </select>
@@ -2737,7 +2775,7 @@ if (age < 6 && newPatient.occupation && newPatient.occupation !== 'N/A') {
                                     <select
                                       value={editingAppointment.newServiceType}
                                       onChange={(e) => {
-                                        const svc = SERVICE_CATEGORIES[editingAppointment.newServiceCategory]?.services.find(s => s.name === e.target.value);
+                                        const svc = serviceConfig[editingAppointment.newServiceCategory]?.services.find(s => s.name === e.target.value);
                                         setEditingAppointment({
                                           ...editingAppointment,
                                           newServiceType: e.target.value,
@@ -2748,7 +2786,7 @@ if (age < 6 && newPatient.occupation && newPatient.occupation !== 'N/A') {
                                       className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent disabled:bg-gray-100"
                                     >
                                       <option value="">{editingAppointment.newServiceCategory ? 'Select service type' : 'Select a category first'}</option>
-                                      {editingAppointment.newServiceCategory && SERVICE_CATEGORIES[editingAppointment.newServiceCategory]?.services.map(s => (
+                                      {editingAppointment.newServiceCategory && serviceConfig[editingAppointment.newServiceCategory]?.services.map(s => (
                                         <option key={s.name} value={s.name}>{s.name}</option>
                                       ))}
                                     </select>
@@ -3055,7 +3093,7 @@ if (age < 6 && newPatient.occupation && newPatient.occupation !== 'N/A') {
                                 className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
                               >
                                 <option value="">Select service category</option>
-                                {Object.keys(SERVICE_CATEGORIES).map(category => (
+                                {Object.keys(serviceConfig).map(category => (
                                   <option key={category} value={category}>{category}</option>
                                 ))}
                               </select>
@@ -3069,7 +3107,7 @@ if (age < 6 && newPatient.occupation && newPatient.occupation !== 'N/A') {
                               <select
                                 value={residentBooking.serviceType}
                                 onChange={(e) => {
-                                  const selectedService = SERVICE_CATEGORIES[residentBooking.serviceCategory]?.services
+                                  const selectedService = serviceConfig[residentBooking.serviceCategory]?.services
                                     .find(s => s.name === e.target.value);
                                   setResidentBooking({
                                     ...residentBooking, 
@@ -3084,7 +3122,7 @@ if (age < 6 && newPatient.occupation && newPatient.occupation !== 'N/A') {
                                   {residentBooking.serviceCategory ? 'Select service type' : 'Please select a service category first'}
                                 </option>
                                 {residentBooking.serviceCategory && 
-                                  SERVICE_CATEGORIES[residentBooking.serviceCategory]?.services.map(service => (
+                                  serviceConfig[residentBooking.serviceCategory]?.services.map(service => (
                                     <option key={service.name} value={service.name}>{service.name}</option>
                                   ))
                                 }
@@ -3274,6 +3312,7 @@ if (age < 6 && newPatient.occupation && newPatient.occupation !== 'N/A') {
                       ...(userRole === 'admin' ? [
                         { id: 'accounts', label: 'Accounts', icon: Users },
                         { id: 'auditlog', label: 'Audit Log', icon: List },
+                        { id: 'settings', label: '⚙️ Settings', icon: Activity },
                         { id: 'theme', label: '🎨 Theme', icon: Activity }
                       ] : [])
                     ].map(tab => (
@@ -3975,7 +4014,7 @@ if (age < 6 && newPatient.occupation && newPatient.occupation !== 'N/A') {
                         {(() => {
                           const data = getAnalyticsData();
                           const categoryCounts = {};
-                          Object.keys(SERVICE_CATEGORIES).forEach(category => {
+                          Object.keys(serviceConfig).forEach(category => {
                             categoryCounts[category] = data.filter(v => v.serviceCategory === category).length;
                           });
                           const maxCount = Math.max(...Object.values(categoryCounts), 1);
@@ -4106,7 +4145,7 @@ if (age < 6 && newPatient.occupation && newPatient.occupation !== 'N/A') {
                     <div className="bg-white rounded-xl shadow-md p-6">
                       <h3 className="text-lg font-bold text-gray-800 mb-6">Service Statistics</h3>
                       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                        {Object.keys(SERVICE_CATEGORIES).map(category => {
+                        {Object.keys(serviceConfig).map(category => {
                           const count = getAnalyticsData().filter(v => v.serviceCategory === category).length;
                           return (
                             <div key={category} className="bg-gray-50 rounded-lg p-4 text-center">
@@ -5054,7 +5093,7 @@ if (age < 6 && newPatient.occupation && newPatient.occupation !== 'N/A') {
                             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
                           >
                             <option value="">-- Select Service Category --</option>
-                            {Object.keys(SERVICE_CATEGORIES).map(category => (
+                            {Object.keys(serviceConfig).map(category => (
                               <option key={category} value={category}>{category}</option>
                             ))}
                           </select>
@@ -5067,7 +5106,7 @@ if (age < 6 && newPatient.occupation && newPatient.occupation !== 'N/A') {
                           <select
                             value={queuePatient.serviceType}
                             onChange={(e) => {
-                              const selectedService = SERVICE_CATEGORIES[queuePatient.serviceCategory]?.services
+                              const selectedService = serviceConfig[queuePatient.serviceCategory]?.services
                                 .find(s => s.name === e.target.value);
                               setQueuePatient({
                                 ...queuePatient, 
@@ -5082,7 +5121,7 @@ if (age < 6 && newPatient.occupation && newPatient.occupation !== 'N/A') {
                               {queuePatient.serviceCategory ? '-- Select Service Type --' : 'Please select a service category first'}
                             </option>
                             {queuePatient.serviceCategory && 
-                              SERVICE_CATEGORIES[queuePatient.serviceCategory]?.services.map(service => (
+                              serviceConfig[queuePatient.serviceCategory]?.services.map(service => (
                                 <option key={service.name} value={service.name}>{service.name}</option>
                               ))
                             }
@@ -5203,6 +5242,268 @@ if (age < 6 && newPatient.occupation && newPatient.occupation !== 'N/A') {
                       </div>
                     </div>
                   </div>
+                </div>
+              )}
+
+              {/* ===== SETTINGS — SERVICE CATEGORY MANAGEMENT ===== */}
+              {activeTab === 'settings' && userRole === 'admin' && (
+                <div className="space-y-6">
+                  <div className="bg-white rounded-xl shadow-md p-6">
+                    <div className="flex items-center justify-between mb-6">
+                      <div>
+                        <h2 className="text-xl font-bold text-gray-800">⚙️ Service Category Settings</h2>
+                        <p className="text-sm text-gray-500 mt-1">Add, edit, or remove service categories and their service types</p>
+                      </div>
+                      <button
+                        onClick={() => { setShowAddCategory(true); setSettingsError(''); setSettingsSuccess(''); setNewCategory({ name: '', urgency: 'Non-Urgent', services: [{ name: '', priority: 'Regular' }] }); }}
+                        className="flex items-center gap-2 text-white px-4 py-2.5 rounded-xl font-semibold text-sm transition-colors" style={{background:'var(--ht-primary)'}}
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                        Add Category
+                      </button>
+                    </div>
+
+                    {settingsSuccess && (
+                      <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg px-4 py-3 mb-4">
+                        <CheckCircle className="w-4 h-4 text-green-500" />
+                        <p className="text-sm text-green-700">{settingsSuccess}</p>
+                        <button onClick={() => setSettingsSuccess('')} className="ml-auto text-green-400 hover:text-green-600">×</button>
+                      </div>
+                    )}
+
+                    {/* Category List */}
+                    <div className="space-y-4">
+                      {Object.entries(serviceConfig).map(([catName, catData]) => (
+                        <div key={catName} className="border-2 border-gray-200 rounded-xl overflow-hidden hover:border-gray-300 transition-colors">
+                          {/* Category Header */}
+                          <div className="bg-gray-50 px-5 py-3 flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <div className="w-3 h-3 rounded-full" style={{background: catData.urgency === 'Urgent' ? '#f97316' : catData.urgency === 'Mixed' ? '#eab308' : '#22c55e'}}></div>
+                              <div>
+                                <h3 className="font-bold text-gray-800">{catName}</h3>
+                                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${catData.urgency === 'Urgent' ? 'bg-orange-100 text-orange-700' : catData.urgency === 'Mixed' ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'}`}>
+                                  {catData.urgency}
+                                </span>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-gray-400">{catData.services.length} service{catData.services.length !== 1 ? 's' : ''}</span>
+                              <button
+                                onClick={() => {
+                                  setEditingCategory({
+                                    originalName: catName,
+                                    name: catName,
+                                    urgency: catData.urgency,
+                                    dbId: catData.dbId,
+                                    services: catData.services.map(s => ({ name: s.name, priority: s.priority, dbId: s.dbId }))
+                                  });
+                                  setSettingsError('');
+                                }}
+                                className="p-1.5 rounded-lg text-blue-500 hover:bg-blue-50 transition-colors" title="Edit category"
+                              >
+                                <Edit className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={async () => {
+                                  if (!window.confirm(`Delete "${catName}" and all its services? This cannot be undone.`)) return;
+                                  try {
+                                    if (catData.dbId) await api('DELETE', '/service-categories/' + catData.dbId);
+                                    const updated = { ...serviceConfig };
+                                    delete updated[catName];
+                                    setServiceConfig(updated);
+                                    setSettingsSuccess(`"${catName}" deleted successfully.`);
+                                  } catch (err) { alert('Delete failed: ' + err.message); }
+                                }}
+                                className="p-1.5 rounded-lg text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors" title="Delete category"
+                              >
+                                <Trash className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+                          {/* Services List */}
+                          <div className="px-5 py-3">
+                            <div className="space-y-1.5">
+                              {catData.services.map((svc, idx) => (
+                                <div key={idx} className="flex items-center justify-between py-1.5 px-3 bg-white rounded-lg border border-gray-100">
+                                  <span className="text-sm text-gray-700">{svc.name}</span>
+                                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${svc.priority === 'Priority Case' ? 'bg-red-100 text-red-700' : svc.priority === 'Urgent' ? 'bg-orange-100 text-orange-700' : 'bg-green-100 text-green-700'}`}>
+                                    {svc.priority}
+                                  </span>
+                                </div>
+                              ))}
+                              {catData.services.length === 0 && (
+                                <p className="text-sm text-gray-400 italic py-2">No services — click Edit to add some</p>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {Object.keys(serviceConfig).length === 0 && (
+                      <div className="text-center py-12 text-gray-500">
+                        <p className="text-lg font-medium">No service categories configured</p>
+                        <p className="text-sm mt-1">Click "Add Category" to get started</p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* ── Add Category Modal ── */}
+                  {showAddCategory && (
+                    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+                      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+                        <div className="px-6 py-4 border-b" style={{background:'linear-gradient(to right,var(--ht-primary),var(--ht-accent))'}}>
+                          <h3 className="text-lg font-bold text-white">Add New Service Category</h3>
+                        </div>
+                        <div className="p-6 space-y-4">
+                          <div>
+                            <label className="block text-sm font-semibold text-gray-700 mb-1">Category Name <span className="text-red-500">*</span></label>
+                            <input type="text" value={newCategory.name} onChange={e => setNewCategory({...newCategory, name: e.target.value})}
+                              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm" placeholder="e.g. Dental Services" />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-semibold text-gray-700 mb-1">Urgency Level</label>
+                            <select value={newCategory.urgency} onChange={e => setNewCategory({...newCategory, urgency: e.target.value})}
+                              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm">
+                              <option value="Non-Urgent">Non-Urgent</option>
+                              <option value="Mixed">Mixed</option>
+                              <option value="Urgent">Urgent</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-sm font-semibold text-gray-700 mb-2">Services</label>
+                            {newCategory.services.map((svc, idx) => (
+                              <div key={idx} className="flex items-center gap-2 mb-2">
+                                <input type="text" value={svc.name} placeholder="Service name"
+                                  onChange={e => { const s = [...newCategory.services]; s[idx].name = e.target.value; setNewCategory({...newCategory, services: s}); }}
+                                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
+                                <select value={svc.priority}
+                                  onChange={e => { const s = [...newCategory.services]; s[idx].priority = e.target.value; setNewCategory({...newCategory, services: s}); }}
+                                  className="px-2 py-2 border border-gray-300 rounded-lg text-sm w-32">
+                                  <option value="Regular">Regular</option>
+                                  <option value="Urgent">Urgent</option>
+                                  <option value="Priority Case">Priority Case</option>
+                                </select>
+                                {newCategory.services.length > 1 && (
+                                  <button onClick={() => { const s = newCategory.services.filter((_, i) => i !== idx); setNewCategory({...newCategory, services: s}); }}
+                                    className="p-1.5 text-red-400 hover:text-red-600"><Trash className="w-4 h-4" /></button>
+                                )}
+                              </div>
+                            ))}
+                            <button onClick={() => setNewCategory({...newCategory, services: [...newCategory.services, { name: '', priority: 'Regular' }]})}
+                              className="text-sm text-blue-600 hover:text-blue-700 font-medium mt-1">+ Add another service</button>
+                          </div>
+                          {settingsError && <p className="text-sm text-red-500">{settingsError}</p>}
+                          <div className="flex gap-3 pt-2">
+                            <button onClick={() => setShowAddCategory(false)} className="flex-1 border border-gray-300 text-gray-600 py-2.5 rounded-xl font-semibold text-sm">Cancel</button>
+                            <button onClick={async () => {
+                              setSettingsError('');
+                              if (!newCategory.name.trim()) { setSettingsError('Category name is required.'); return; }
+                              const validServices = newCategory.services.filter(s => s.name.trim());
+                              if (validServices.length === 0) { setSettingsError('Add at least one service.'); return; }
+                              if (serviceConfig[newCategory.name.trim()]) { setSettingsError('This category already exists.'); return; }
+                              try {
+                                await api('POST', '/service-categories', {
+                                  categoryName: newCategory.name.trim(),
+                                  urgency: newCategory.urgency,
+                                  services: validServices.map(s => ({ serviceName: s.name.trim(), defaultPriority: s.priority }))
+                                });
+                                await loadServiceCategories();
+                                setShowAddCategory(false);
+                                setSettingsSuccess(`"${newCategory.name.trim()}" added successfully!`);
+                              } catch (err) { setSettingsError(err.message || 'Failed to add category.'); }
+                            }} className="flex-1 text-white py-2.5 rounded-xl font-semibold text-sm" style={{background:'var(--ht-primary)'}}>
+                              Add Category
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ── Edit Category Modal ── */}
+                  {editingCategory && (
+                    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+                      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+                        <div className="px-6 py-4 border-b bg-gradient-to-r from-blue-600 to-indigo-600">
+                          <h3 className="text-lg font-bold text-white">Edit: {editingCategory.originalName}</h3>
+                        </div>
+                        <div className="p-6 space-y-4">
+                          <div>
+                            <label className="block text-sm font-semibold text-gray-700 mb-1">Category Name <span className="text-red-500">*</span></label>
+                            <input type="text" value={editingCategory.name}
+                              onChange={e => setEditingCategory({...editingCategory, name: e.target.value})}
+                              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-semibold text-gray-700 mb-1">Urgency Level</label>
+                            <select value={editingCategory.urgency}
+                              onChange={e => setEditingCategory({...editingCategory, urgency: e.target.value})}
+                              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                              <option value="Non-Urgent">Non-Urgent</option>
+                              <option value="Mixed">Mixed</option>
+                              <option value="Urgent">Urgent</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-sm font-semibold text-gray-700 mb-2">Services</label>
+                            {editingCategory.services.map((svc, idx) => (
+                              <div key={idx} className="flex items-center gap-2 mb-2">
+                                <input type="text" value={svc.name} placeholder="Service name"
+                                  onChange={e => { const s = [...editingCategory.services]; s[idx] = {...s[idx], name: e.target.value}; setEditingCategory({...editingCategory, services: s}); }}
+                                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
+                                <select value={svc.priority}
+                                  onChange={e => { const s = [...editingCategory.services]; s[idx] = {...s[idx], priority: e.target.value}; setEditingCategory({...editingCategory, services: s}); }}
+                                  className="px-2 py-2 border border-gray-300 rounded-lg text-sm w-32">
+                                  <option value="Regular">Regular</option>
+                                  <option value="Urgent">Urgent</option>
+                                  <option value="Priority Case">Priority Case</option>
+                                </select>
+                                <button onClick={() => { const s = editingCategory.services.filter((_, i) => i !== idx); setEditingCategory({...editingCategory, services: s}); }}
+                                  className="p-1.5 text-red-400 hover:text-red-600"><Trash className="w-4 h-4" /></button>
+                              </div>
+                            ))}
+                            <button onClick={() => setEditingCategory({...editingCategory, services: [...editingCategory.services, { name: '', priority: 'Regular' }]})}
+                              className="text-sm text-blue-600 hover:text-blue-700 font-medium mt-1">+ Add another service</button>
+                          </div>
+                          {settingsError && <p className="text-sm text-red-500">{settingsError}</p>}
+                          <div className="flex gap-3 pt-2">
+                            <button onClick={() => { setEditingCategory(null); setSettingsError(''); }}
+                              className="flex-1 border border-gray-300 text-gray-600 py-2.5 rounded-xl font-semibold text-sm">Cancel</button>
+                            <button onClick={async () => {
+                              setSettingsError('');
+                              if (!editingCategory.name.trim()) { setSettingsError('Category name is required.'); return; }
+                              const validServices = editingCategory.services.filter(s => s.name.trim());
+                              if (validServices.length === 0) { setSettingsError('Add at least one service.'); return; }
+                              try {
+                                if (editingCategory.dbId) {
+                                  await api('PUT', '/service-categories/' + editingCategory.dbId, {
+                                    categoryName: editingCategory.name.trim(),
+                                    urgency: editingCategory.urgency,
+                                    services: validServices.map(s => ({ serviceName: s.name.trim(), defaultPriority: s.priority }))
+                                  });
+                                  await loadServiceCategories();
+                                } else {
+                                  // Local-only update (no DB record yet)
+                                  const updated = { ...serviceConfig };
+                                  if (editingCategory.originalName !== editingCategory.name.trim()) delete updated[editingCategory.originalName];
+                                  updated[editingCategory.name.trim()] = {
+                                    urgency: editingCategory.urgency,
+                                    services: validServices.map(s => ({ name: s.name.trim(), priority: s.priority }))
+                                  };
+                                  setServiceConfig(updated);
+                                }
+                                setEditingCategory(null);
+                                setSettingsSuccess(`"${editingCategory.name.trim()}" updated successfully!`);
+                              } catch (err) { setSettingsError(err.message || 'Failed to update category.'); }
+                            }} className="flex-1 text-white py-2.5 rounded-xl font-semibold text-sm bg-blue-600 hover:bg-blue-700">
+                              Save Changes
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
