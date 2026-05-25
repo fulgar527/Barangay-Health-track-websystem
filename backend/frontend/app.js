@@ -1556,13 +1556,18 @@ if (age < 6 && newPatient.occupation && newPatient.occupation !== 'N/A') {
 
           // ==================== RESIDENT PORTAL FUNCTIONS ====================
           const submitResidentBooking = async () => {
+            // Auto-fill name from currentUser if not already set
+            if (!residentBooking.firstName && currentUser?.fullName) {
+              const parts = currentUser.fullName.trim().split(' ');
+              residentBooking.firstName = parts[0] || '';
+              residentBooking.lastName = parts[parts.length - 1] || '';
+              if (parts.length > 2) residentBooking.middleName = parts.slice(1, -1).join(' ');
+            }
+
             // Validate required fields — personal info is auto-filled from registration
             if (!residentBooking.appointmentDate || !residentBooking.appointmentTime ||
                 !residentBooking.serviceCategory || !residentBooking.serviceType) {
               alert('Please fill in all required appointment fields (date, time, service category, and service type).'); return;
-            }
-            if (!residentBooking.firstName || !residentBooking.lastName) {
-              alert('Your patient information could not be found. Please contact clinic staff to register you first.'); return;
             }
             if (/[a-zA-Z]/.test(residentBooking.contactNumber)) {
               alert('Contact Number must contain digits only — no letters allowed.'); return;
