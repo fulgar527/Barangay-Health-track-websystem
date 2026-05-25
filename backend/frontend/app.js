@@ -1407,10 +1407,10 @@ function normalizeUser(u) {
                 !residentBooking.contactNumber || !residentBooking.address)) {
               alert('Please fill in all required personal information fields.'); return;
             }
-            if (/[a-zA-Z]/.test(residentBooking.contactNumber)) {
+            if (!myPatientRecord && /[a-zA-Z]/.test(residentBooking.contactNumber)) {
               alert('Contact Number must contain digits only — no letters allowed.'); return;
             }
-            if (residentBooking.emergencyContactNumber && /[a-zA-Z]/.test(residentBooking.emergencyContactNumber)) {
+            if (!myPatientRecord && residentBooking.emergencyContactNumber && /[a-zA-Z]/.test(residentBooking.emergencyContactNumber)) {
               alert('Emergency Contact Number must contain digits only — no letters allowed.'); return;
             }
             const selectedDate = new Date(residentBooking.appointmentDate + 'T00:00:00');
