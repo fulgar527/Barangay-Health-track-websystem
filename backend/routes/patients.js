@@ -68,8 +68,15 @@ router.post('/', async (req, res) => {
       chronicConditions, currentMedications
     } = req.body;
 
+    if (!lastName || !firstName) {
+      return res.status(400).json({ error: 'Last name and first name are required.' });
+    }
+
     const idResult = await db.query('SELECT generate_patient_id() as patient_id');
     const patientId = idResult.rows[0].patient_id;
+
+    // Convert empty strings to null (PostgreSQL rejects '' for DATE, INTEGER columns)
+    const clean = (v) => (v === '' || v === undefined) ? null : v;
 
     const result = await db.query(
       `INSERT INTO patients (
@@ -79,16 +86,16 @@ router.post('/', async (req, res) => {
         chronic_conditions, current_medications
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
       RETURNING *`,
-      [patientId, lastName, firstName, middleName, dateOfBirth, age, sex,
-       address, contactNumber, civilStatus, occupation, philhealthNumber,
-       emergencyContactPerson, emergencyContactNumber, allergies,
-       chronicConditions, currentMedications]
+      [patientId, lastName, firstName, clean(middleName), clean(dateOfBirth), age || 0, clean(sex),
+       address || 'N/A', contactNumber || 'N/A', clean(civilStatus), clean(occupation), clean(philhealthNumber),
+       clean(emergencyContactPerson), clean(emergencyContactNumber), clean(allergies),
+       clean(chronicConditions), clean(currentMedications)]
     );
 
     res.status(201).json(result.rows[0]);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Failed to create patient' });
+    console.error('Create patient error:', err);
+    res.status(500).json({ error: err.message || 'Failed to create patient' });
   }
 });
 
