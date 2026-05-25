@@ -1574,6 +1574,8 @@ if (age < 6 && newPatient.occupation && newPatient.occupation !== 'N/A') {
             if (selectedDate < todayDate) { alert('Appointment date cannot be in the past.'); return; }
             const dayOfWeek = selectedDate.getDay();
             if (dayOfWeek === 0 || dayOfWeek === 6) { alert('Clinic is open Monday to Friday only.'); return; }
+            const holiday = isHoliday(residentBooking.appointmentDate);
+            if (holiday) { alert('The clinic is closed on ' + holiday.name + ' (' + residentBooking.appointmentDate + '). Please choose another date.'); return; }
             const [hours] = residentBooking.appointmentTime.split(':').map(Number);
             if (hours < 8 || hours > 16) { alert('Please select a valid clinic slot (8 AM – 4 PM).'); return; }
             if (residentBooking.appointmentTime === '12:00') { alert('12:00 PM – 1:00 PM is the lunch break.'); return; }
