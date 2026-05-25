@@ -717,10 +717,20 @@ contactNumber: pendingAccount.contactNumber || '',
           };
 
           // ── Clinic Appointment Slots (1-hour, 8 AM–5 PM, lunch 12–1 PM blocked) ──
-          const CLINIC_SLOTS = [
-            // Dynamic Philippine Holidays — works for any year
+       const CLINIC_SLOTS = [
+  { value: '08:00', label: '8:00 AM – 9:00 AM',   slot: 1 },
+  { value: '09:00', label: '9:00 AM – 10:00 AM',  slot: 2 },
+  { value: '10:00', label: '10:00 AM – 11:00 AM', slot: 3 },
+  { value: '11:00', label: '11:00 AM – 12:00 PM', slot: 4 },
+  { value: '12:00', label: '12:00 PM – 1:00 PM',  slot: 5, lunch: true },
+  { value: '13:00', label: '1:00 PM – 2:00 PM',   slot: 6 },
+  { value: '14:00', label: '2:00 PM – 3:00 PM',   slot: 7 },
+  { value: '15:00', label: '3:00 PM – 4:00 PM',   slot: 8 },
+  { value: '16:00', label: '4:00 PM – 5:00 PM',   slot: 9 },
+];
+
+// Dynamic Philippine Holidays — works for any year
 const getPhHolidays = (year) => {
-  // Easter calculation (Anonymous Gregorian algorithm)
   const easter = (y) => {
     const a=y%19, b=Math.floor(y/100), c=y%100;
     const d=Math.floor(b/4), e=b%4, f=Math.floor((b+8)/25);
@@ -731,19 +741,14 @@ const getPhHolidays = (year) => {
     const day=((h+l-7*m+114)%31)+1;
     return new Date(y, month-1, day);
   };
-
   const fmt = (d) => d.toISOString().split('T')[0];
   const addDays = (d, n) => { const r=new Date(d); r.setDate(r.getDate()+n); return r; };
-
-  // Last Monday of a given month
   const lastMonday = (y, month) => {
-    const d = new Date(y, month+1, 0); // last day of month
+    const d = new Date(y, month+1, 0);
     while (d.getDay() !== 1) d.setDate(d.getDate()-1);
     return d;
   };
-
   const easterDate = easter(year);
-
   return [
     { date: `${year}-01-01`, name: "New Year's Day" },
     { date: fmt(addDays(easterDate, -3)), name: 'Maundy Thursday' },
