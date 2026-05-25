@@ -403,6 +403,11 @@ function normalizeUser(u) {
           const [loginPassword, setLoginPassword] = useState('');
           const [loginError, setLoginError] = useState('');
           const [showCreateAccount, setShowCreateAccount] = useState(false);
+          const [showForgotPassword, setShowForgotPassword] = useState(false);
+          const [forgotEmail, setForgotEmail] = useState('');
+          const [forgotStatus, setForgotStatus] = useState('');
+          const [forgotError, setForgotError] = useState('');
+          const [forgotLoading, setForgotLoading] = useState(false);
           const [showPassword, setShowPassword] = useState(false);
           const [showRegPassword, setShowRegPassword] = useState(false);
           const [newAccount, setNewAccount] = useState({
@@ -456,25 +461,20 @@ function normalizeUser(u) {
               return;
             }
 
-            // ── DEFAULT LOGIN (bypass API for local testing) ─────────────────
-            // Uses hardcoded credentials matching the default accounts shown on
-            // the login screen. Remove this block and restore the API call below
-            // once the backend is confirmed working on Hostinger.
+            // ── DEFAULT ACCOUNTS (for demo/defense) ──────────────────────────
             const DEFAULT_ACCOUNTS = [
               { username: 'admin',    password: 'admin123',    role: 'admin',    fullName: 'Admin User',    userId: 'local-admin' },
               { username: 'staff',    password: 'staff123',    role: 'staff',    fullName: 'Staff User',    userId: 'local-staff' },
               { username: 'resident', password: 'resident123', role: 'resident', fullName: 'Resident User', userId: 'local-resident' },
             ];
-
-            const match = DEFAULT_ACCOUNTS.find(
+            const defaultMatch = DEFAULT_ACCOUNTS.find(
               a => a.username === loginUsername.trim().toLowerCase() && a.password === loginPassword
             );
-
-            if (match) {
+            if (defaultMatch) {
               const user = {
-                id: match.userId, userId: match.userId,
-                username: match.username, role: match.role,
-                fullName: match.fullName, email: '',
+                id: defaultMatch.userId, userId: defaultMatch.userId,
+                username: defaultMatch.username, role: defaultMatch.role,
+                fullName: defaultMatch.fullName, email: '',
               };
               setToken('local-dev-token');
               setLoginAttempts(0); setLockoutUntil(null);
@@ -485,7 +485,30 @@ function normalizeUser(u) {
               setLoginUsername(''); setLoginPassword('');
               setLoginError(''); setShowPassword(false);
               setLastActivity(Date.now());
-            } else {
+              return;
+            }
+
+            // ── API LOGIN — authenticates against backend/database ───────────
+            try {
+              setLoginError('');
+              const data = await api('POST', '/auth/login', {
+                username: loginUsername.trim(), password: loginPassword
+              });
+              setToken(data.token);
+              const user = {
+                id: data.user.userId, userId: data.user.userId,
+                username: data.user.username, role: data.user.role,
+                fullName: data.user.fullName, email: data.user.email,
+              };
+              setLoginAttempts(0); setLockoutUntil(null);
+              setCurrentUser(user); setUserRole(user.role);
+              try { sessionStorage.setItem('ht_user', JSON.stringify(user)); } catch {}
+              if (user.role === 'resident') setResidentView('queue');
+              else setActiveTab('dashboard');
+              setLoginUsername(''); setLoginPassword('');
+              setLoginError(''); setShowPassword(false);
+              setLastActivity(Date.now());
+            } catch (err) {
               const newAttempts = loginAttempts + 1;
               setLoginAttempts(newAttempts);
               if (newAttempts >= MAX_ATTEMPTS) {
@@ -493,44 +516,28 @@ function normalizeUser(u) {
                 setLockoutUntil(until); setLoginAttempts(0);
                 setLoginError('Too many failed attempts. Login locked for 5 minutes.');
               } else {
-                setLoginError(`Invalid username or password. ${MAX_ATTEMPTS - newAttempts} attempt${MAX_ATTEMPTS - newAttempts !== 1 ? 's' : ''} remaining.`);
+                const msg = err.message || 'Invalid username or password.';
+                setLoginError(`${msg} ${MAX_ATTEMPTS - newAttempts} attempt${MAX_ATTEMPTS - newAttempts !== 1 ? 's' : ''} remaining.`);
               }
             }
-            // ── END DEFAULT LOGIN ─────────────────────────────────────────────
-            // To restore API login, delete everything above this line (inside the
-            // try block) and uncomment the block below:
-            //
-            // try {
-            //   setLoginError('');
-            //   const data = await api('POST', '/auth/login', {
-            //     username: loginUsername.trim(), password: loginPassword
-            //   });
-            //   setToken(data.token);
-            //   const user = {
-            //     id: data.user.userId, userId: data.user.userId,
-            //     username: data.user.username, role: data.user.role,
-            //     fullName: data.user.fullName, email: data.user.email,
-            //   };
-            //   setLoginAttempts(0); setLockoutUntil(null);
-            //   setCurrentUser(user); setUserRole(user.role);
-            //   try { sessionStorage.setItem('ht_user', JSON.stringify(user)); } catch {}
-            //   if (user.role === 'resident') setResidentView('queue');
-            //   else setActiveTab('dashboard');
-            //   setLoginUsername(''); setLoginPassword('');
-            //   setLoginError(''); setShowPassword(false);
-            //   setLastActivity(Date.now());
-            // } catch (err) {
-            //   const newAttempts = loginAttempts + 1;
-            //   setLoginAttempts(newAttempts);
-            //   if (newAttempts >= MAX_ATTEMPTS) {
-            //     const until = Date.now() + LOCKOUT_DURATION_MS;
-            //     setLockoutUntil(until); setLoginAttempts(0);
-            //     setLoginError('Too many failed attempts. Login locked for 5 minutes.');
-            //   } else {
-            //     const msg = err.message || 'Invalid username or password.';
-            //     setLoginError(`${msg} ${MAX_ATTEMPTS - newAttempts} attempt${MAX_ATTEMPTS - newAttempts !== 1 ? 's' : ''} remaining.`);
-            //   }
-            // }
+          };
+
+
+          const handleForgotPassword = async (e) => {
+            e.preventDefault();
+            if (!forgotEmail.trim()) { setForgotError('Please enter your email address.'); return; }
+            setForgotLoading(true); setForgotError(''); setForgotStatus('');
+            try {
+              const res = await fetch('/api/auth/forgot-password', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: forgotEmail.trim() })
+              });
+              const data = await res.json();
+              if (!res.ok) { setForgotError(data.error || 'Something went wrong.'); }
+              else { setForgotStatus(data.message); setForgotEmail(''); }
+            } catch { setForgotError('Network error. Please try again.'); }
+            finally { setForgotLoading(false); }
           };
 
           // ── Audit logger — writes to backend (fire-and-forget) ──────────────
@@ -1374,12 +1381,31 @@ function normalizeUser(u) {
 
           // ==================== RESIDENT PORTAL FUNCTIONS ====================
           const submitResidentBooking = async () => {
-            // Validate all required fields
-            if (!residentBooking.firstName || !residentBooking.lastName || !residentBooking.dateOfBirth ||
-                !residentBooking.sex || !residentBooking.contactNumber || !residentBooking.address ||
-                !residentBooking.appointmentDate || !residentBooking.appointmentTime ||
+            // If patient is already on file, auto-fill their data into residentBooking
+            const myPatientRecord = registeredPatients.find(p =>
+              currentUser && (
+                (p.firstName + ' ' + p.lastName).toLowerCase() === currentUser.fullName?.toLowerCase() ||
+                currentUser.username === p.patientId
+              )
+            );
+            if (myPatientRecord && !residentBooking.firstName) {
+              residentBooking.firstName = myPatientRecord.firstName;
+              residentBooking.lastName = myPatientRecord.lastName;
+              residentBooking.middleName = myPatientRecord.middleName || '';
+              residentBooking.dateOfBirth = myPatientRecord.dateOfBirth || '';
+              residentBooking.sex = myPatientRecord.sex || '';
+              residentBooking.address = myPatientRecord.address || '';
+              residentBooking.contactNumber = myPatientRecord.contactNumber || '';
+            }
+            // Validate required fields
+            if (!residentBooking.appointmentDate || !residentBooking.appointmentTime ||
                 !residentBooking.serviceCategory || !residentBooking.serviceType) {
-              alert('Please fill in all required fields'); return;
+              alert('Please fill in all required appointment fields.'); return;
+            }
+            if (!myPatientRecord && (!residentBooking.firstName || !residentBooking.lastName ||
+                !residentBooking.dateOfBirth || !residentBooking.sex ||
+                !residentBooking.contactNumber || !residentBooking.address)) {
+              alert('Please fill in all required personal information fields.'); return;
             }
             if (/[a-zA-Z]/.test(residentBooking.contactNumber)) {
               alert('Contact Number must contain digits only — no letters allowed.'); return;
@@ -1689,7 +1715,17 @@ function normalizeUser(u) {
                           </button>
                         </div>
 
-                        <div className="mt-6 text-center">
+                        <div className="mt-4 text-center">
+                          <button
+                            type="button"
+                            onClick={() => { setShowForgotPassword(true); setForgotEmail(''); setForgotError(''); setForgotStatus(''); }}
+                            className="text-sm text-gray-500 hover:text-red-700 hover:underline transition-colors"
+                          >
+                            Forgot Password?
+                          </button>
+                        </div>
+
+                        <div className="mt-4 text-center">
                           <p className="text-sm text-gray-600">
                             Don't have an account?{' '}
                             <button
@@ -1702,26 +1738,7 @@ function normalizeUser(u) {
                           </p>
                         </div>
 
-                        <div className="mt-4 p-3 bg-gray-50 rounded-lg">
-                          <p className="text-xs text-gray-500 font-semibold mb-2 text-center">Default Accounts</p>
-                          <div className="grid grid-cols-3 gap-2 text-xs text-gray-500">
-                            <div className="text-center p-1.5 bg-white rounded border">
-                              <p className="font-semibold text-blue-600">Admin</p>
-                              <p>admin</p>
-                              <p className="text-gray-400">admin123</p>
-                            </div>
-                            <div className="text-center p-1.5 bg-white rounded border">
-                              <p className="font-semibold text-green-600">Staff</p>
-                              <p>staff</p>
-                              <p className="text-gray-400">staff123</p>
-                            </div>
-                            <div className="text-center p-1.5 bg-white rounded border">
-                              <p className="font-semibold text-purple-600">Resident</p>
-                              <p>resident</p>
-                              <p className="text-gray-400">resident123</p>
-                            </div>
-                          </div>
-                        </div>
+
                       </form>
                     ) : (
                       /* ===== CREATE ACCOUNT FORM ===== */
@@ -2620,314 +2637,241 @@ function normalizeUser(u) {
                   )}
 
                   {/* Booking View */}
-                  {residentView === 'booking' && (
-                    <div className="max-w-3xl mx-auto p-4">
+                  {residentView === 'booking' && (() => {
+                    // Check if the logged-in resident already has a patient record
+                    const myPatientRecord = registeredPatients.find(p =>
+                      currentUser && (
+                        (p.firstName + ' ' + p.lastName).toLowerCase() === currentUser.fullName?.toLowerCase() ||
+                        currentUser.username === p.patientId
+                      )
+                    );
+
+                    return (
+                    <div className="max-w-2xl mx-auto p-4">
                       <div className="bg-white rounded-xl shadow-lg overflow-hidden">
-                        {/* Purple Header */}
+                        {/* Header */}
                         <div className="bg-gradient-to-r from-purple-600 to-pink-600 px-6 py-5">
-                          <h2 className="text-2xl font-bold text-white mb-2">Book Appointment</h2>
-                          <p className="text-white/90 text-sm flex items-center">
-                            <span className="mr-2">✨</span>
-                            No Patient ID required - Just your name!
+                          <h2 className="text-2xl font-bold text-white mb-1">Book Appointment</h2>
+                          <p className="text-white/90 text-sm">
+                            {myPatientRecord
+                              ? '📋 Schedule your visit — your details are already on file'
+                              : '✨ No Patient ID required - Just your name!'}
                           </p>
                         </div>
-                        
-                        {/* Form Content */}
+
                         <div className="p-6 space-y-6">
 
-                          {/* ── PERSONAL INFORMATION ── */}
+                          {/* ── IF PATIENT ON FILE: show name card ── */}
+                          {myPatientRecord ? (
+                            <div className="flex items-center justify-between bg-purple-50 border border-purple-200 rounded-xl px-4 py-3">
+                              <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-full bg-purple-600 text-white flex items-center justify-center font-bold text-lg">
+                                  {myPatientRecord.firstName?.[0]?.toUpperCase() || '?'}
+                                </div>
+                                <div>
+                                  <p className="text-xs font-semibold text-purple-500 uppercase tracking-wide mb-0.5">Booking as</p>
+                                  <p className="font-bold text-gray-800">{myPatientRecord.firstName} {myPatientRecord.lastName}</p>
+                                </div>
+                              </div>
+                              <span className="text-xs text-green-600 font-semibold bg-green-50 border border-green-200 rounded-full px-3 py-1">✓ Info on file</span>
+                            </div>
+                          ) : (
+                            /* ── IF NO RECORD: show full personal info form ── */
+                            <div>
+                              <h3 className="text-base font-bold text-gray-800 mb-3 pb-2 border-b border-gray-200">Personal Information</h3>
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                  <label className="block text-sm font-semibold text-gray-700 mb-1">Last Name <span className="text-red-500">*</span></label>
+                                  <input type="text" value={residentBooking.lastName}
+                                    onChange={(e) => setResidentBooking({...residentBooking, lastName: e.target.value})}
+                                    placeholder="Dela Cruz"
+                                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all" />
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-semibold text-gray-700 mb-1">First Name <span className="text-red-500">*</span></label>
+                                  <input type="text" value={residentBooking.firstName}
+                                    onChange={(e) => setResidentBooking({...residentBooking, firstName: e.target.value})}
+                                    placeholder="Juan"
+                                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all" />
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-semibold text-gray-700 mb-1">Middle Name</label>
+                                  <input type="text" value={residentBooking.middleName}
+                                    onChange={(e) => setResidentBooking({...residentBooking, middleName: e.target.value})}
+                                    placeholder="Santos"
+                                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all" />
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-semibold text-gray-700 mb-1">Date of Birth <span className="text-red-500">*</span></label>
+                                  <input type="date" value={residentBooking.dateOfBirth}
+                                    onChange={(e) => setResidentBooking({...residentBooking, dateOfBirth: e.target.value})}
+                                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all" />
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-semibold text-gray-700 mb-1">Sex <span className="text-red-500">*</span></label>
+                                  <select value={residentBooking.sex}
+                                    onChange={(e) => setResidentBooking({...residentBooking, sex: e.target.value})}
+                                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all">
+                                    <option value="">Select</option>
+                                    <option value="Male">Male</option>
+                                    <option value="Female">Female</option>
+                                  </select>
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-semibold text-gray-700 mb-1">Civil Status</label>
+                                  <select value={residentBooking.civilStatus}
+                                    onChange={(e) => setResidentBooking({...residentBooking, civilStatus: e.target.value})}
+                                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all">
+                                    <option value="">Select</option>
+                                    <option value="Single">Single</option>
+                                    <option value="Married">Married</option>
+                                    <option value="Widowed">Widowed</option>
+                                    <option value="Separated">Separated</option>
+                                  </select>
+                                </div>
+                              </div>
+
+                              <h3 className="text-base font-bold text-gray-800 mt-5 mb-3 pb-2 border-b border-gray-200">Contact Information</h3>
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div className="md:col-span-2">
+                                  <label className="block text-sm font-semibold text-gray-700 mb-1">Address <span className="text-red-500">*</span></label>
+                                  <input type="text" value={residentBooking.address}
+                                    onChange={(e) => setResidentBooking({...residentBooking, address: e.target.value})}
+                                    placeholder="Barangay, City/Municipality"
+                                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all" />
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-semibold text-gray-700 mb-1">Contact Number <span className="text-red-500">*</span></label>
+                                  <input type="text" value={residentBooking.contactNumber}
+                                    onChange={(e) => setResidentBooking({...residentBooking, contactNumber: sanitizePhone(e.target.value)})}
+                                    placeholder="09XXXXXXXXX"
+                                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all" />
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-semibold text-gray-700 mb-1">Occupation</label>
+                                  <input type="text" value={residentBooking.occupation}
+                                    onChange={(e) => setResidentBooking({...residentBooking, occupation: e.target.value})}
+                                    placeholder="e.g. Teacher, Farmer"
+                                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all" />
+                                </div>
+                              </div>
+
+                              <h3 className="text-base font-bold text-gray-800 mt-5 mb-3 pb-2 border-b border-gray-200">Emergency Contact</h3>
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                  <label className="block text-sm font-semibold text-gray-700 mb-1">Emergency Contact Person</label>
+                                  <input type="text" value={residentBooking.emergencyContactPerson}
+                                    onChange={(e) => setResidentBooking({...residentBooking, emergencyContactPerson: e.target.value})}
+                                    placeholder="Full name"
+                                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all" />
+                                </div>
+                                <div>
+                                  <label className="block text-sm font-semibold text-gray-700 mb-1">Emergency Contact Number</label>
+                                  <input type="text" value={residentBooking.emergencyContactNumber}
+                                    onChange={(e) => setResidentBooking({...residentBooking, emergencyContactNumber: sanitizePhone(e.target.value)})}
+                                    placeholder="09XXXXXXXXX"
+                                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all" />
+                                </div>
+                              </div>
+
+                              <h3 className="text-base font-bold text-gray-800 mt-5 mb-3 pb-2 border-b border-gray-200">Medical Information</h3>
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                  <label className="block text-sm font-semibold text-gray-700 mb-1">Allergies</label>
+                                  <input type="text" value={residentBooking.allergies}
+                                    onChange={(e) => setResidentBooking({...residentBooking, allergies: e.target.value})}
+                                    placeholder="e.g., Penicillin, Peanuts"
+                                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all" />
+                                </div>
+                                <div className="md:col-span-2">
+                                  <label className="block text-sm font-semibold text-gray-700 mb-1">Chronic Conditions</label>
+                                  <input type="text" value={residentBooking.chronicConditions}
+                                    onChange={(e) => setResidentBooking({...residentBooking, chronicConditions: e.target.value})}
+                                    placeholder="e.g., Hypertension, Diabetes"
+                                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all" />
+                                </div>
+                                <div className="md:col-span-2">
+                                  <label className="block text-sm font-semibold text-gray-700 mb-1">Current Medications</label>
+                                  <textarea value={residentBooking.currentMedications}
+                                    onChange={(e) => setResidentBooking({...residentBooking, currentMedications: e.target.value})}
+                                    placeholder="List current medications"
+                                    rows={2}
+                                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all resize-none" />
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* ── APPOINTMENT SCHEDULE (always shown) ── */}
                           <div>
-                            <h3 className="text-base font-bold text-gray-800 mb-3 pb-2 border-b border-gray-200">Personal Information</h3>
+                            <h3 className="text-base font-bold text-gray-800 mb-3 pb-2 border-b border-gray-200">Appointment Schedule</h3>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                               <div>
-                                <label className="block text-sm font-semibold text-gray-700 mb-1">Last Name <span className="text-red-500">*</span></label>
-                                <input type="text" value={residentBooking.lastName}
-                                  onChange={(e) => setResidentBooking({...residentBooking, lastName: e.target.value})}
-                                  placeholder="Dela Cruz"
+                                <label className="block text-sm font-semibold text-gray-700 mb-1">Appointment Date <span className="text-red-500">*</span></label>
+                                <input type="date" value={residentBooking.appointmentDate}
+                                  onChange={(e) => setResidentBooking({...residentBooking, appointmentDate: e.target.value, appointmentTime: ''})}
+                                  min={new Date().toISOString().split('T')[0]}
                                   className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all" />
+                                <p className="text-xs text-gray-400 mt-1">📅 Weekdays only (Mon–Fri)</p>
                               </div>
                               <div>
-                                <label className="block text-sm font-semibold text-gray-700 mb-1">First Name <span className="text-red-500">*</span></label>
-                                <input type="text" value={residentBooking.firstName}
-                                  onChange={(e) => setResidentBooking({...residentBooking, firstName: e.target.value})}
-                                  placeholder="Juan"
-                                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all" />
+                                <label className="block text-sm font-semibold text-gray-700 mb-1">Appointment Time <span className="text-red-500">*</span></label>
+                                <select value={residentBooking.appointmentTime}
+                                  onChange={(e) => setResidentBooking({...residentBooking, appointmentTime: e.target.value})}
+                                  disabled={!residentBooking.appointmentDate}
+                                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all disabled:bg-gray-100 disabled:cursor-not-allowed">
+                                  <option value="">-- Select a Time Slot --</option>
+                                  {CLINIC_SLOTS.filter(s => s.value !== '12:00').map(slot => {
+                                    const isBooked = residentBooking.appointmentDate && getBookedSlots(residentBooking.appointmentDate).has(slot.value);
+                                    return <option key={slot.value} value={slot.value} disabled={isBooked}>{slot.label}{isBooked ? ' (Full)' : ''}</option>;
+                                  })}
+                                </select>
+                                <p className="text-xs text-gray-400 mt-1">🏥 Clinic hours: 8:00 AM – 5:00 PM | 9 slots/day | Lunch 12–1 PM blocked</p>
                               </div>
-                              <div>
-                                <label className="block text-sm font-semibold text-gray-700 mb-1">Middle Name</label>
-                                <input type="text" value={residentBooking.middleName}
-                                  onChange={(e) => setResidentBooking({...residentBooking, middleName: e.target.value})}
-                                  placeholder="Santos"
-                                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all" />
-                              </div>
-                              <div>
-                                <label className="block text-sm font-semibold text-gray-700 mb-1">Date of Birth <span className="text-red-500">*</span></label>
-                                <input type="date" value={residentBooking.dateOfBirth}
-                                  onChange={(e) => setResidentBooking({...residentBooking, dateOfBirth: e.target.value})}
-                                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all" />
-                              </div>
-                              <div>
-                                <label className="block text-sm font-semibold text-gray-700 mb-1">Sex <span className="text-red-500">*</span></label>
-                                <select value={residentBooking.sex}
-                                  onChange={(e) => setResidentBooking({...residentBooking, sex: e.target.value})}
+                              <div className="md:col-span-2">
+                                <label className="block text-sm font-semibold text-gray-700 mb-1">Service Category <span className="text-red-500">*</span></label>
+                                <select value={residentBooking.serviceCategory}
+                                  onChange={(e) => setResidentBooking({...residentBooking, serviceCategory: e.target.value, serviceType: '', priorityLevel: ''})}
                                   className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all">
-                                  <option value="">Select</option>
-                                  <option value="Male">Male</option>
-                                  <option value="Female">Female</option>
+                                  <option value="">Select service category</option>
+                                  {Object.keys(SERVICE_CATEGORIES).map(cat => <option key={cat} value={cat}>{cat}</option>)}
                                 </select>
                               </div>
-                              <div>
-                                <label className="block text-sm font-semibold text-gray-700 mb-1">Civil Status</label>
-                                <select value={residentBooking.civilStatus}
-                                  onChange={(e) => setResidentBooking({...residentBooking, civilStatus: e.target.value})}
-                                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all">
-                                  <option value="">Select</option>
-                                  <option value="Single">Single</option>
-                                  <option value="Married">Married</option>
-                                  <option value="Widowed">Widowed</option>
-                                  <option value="Separated">Separated</option>
-                                  <option value="Divorced">Divorced</option>
+                              <div className="md:col-span-2">
+                                <label className="block text-sm font-semibold text-gray-700 mb-1">Service Type <span className="text-red-500">*</span></label>
+                                <select value={residentBooking.serviceType}
+                                  onChange={(e) => {
+                                    const selectedService = SERVICE_CATEGORIES[residentBooking.serviceCategory]?.services.find(s => s.name === e.target.value);
+                                    setResidentBooking({...residentBooking, serviceType: e.target.value, priorityLevel: selectedService?.priority || ''});
+                                  }}
+                                  disabled={!residentBooking.serviceCategory}
+                                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all disabled:bg-gray-100 disabled:cursor-not-allowed">
+                                  <option value="">{residentBooking.serviceCategory ? 'Select service type' : 'Please select a service category first'}</option>
+                                  {residentBooking.serviceCategory && SERVICE_CATEGORIES[residentBooking.serviceCategory]?.services.map(s => <option key={s.name} value={s.name}>{s.name}</option>)}
                                 </select>
                               </div>
-                            </div>
-                          </div>
-
-                          {/* ── CONTACT INFORMATION ── */}
-                          <div>
-                            <h3 className="text-base font-bold text-gray-800 mb-3 pb-2 border-b border-gray-200">Contact Information</h3>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                               <div className="md:col-span-2">
-                                <label className="block text-sm font-semibold text-gray-700 mb-1">Address <span className="text-red-500">*</span></label>
-                                <input type="text" value={residentBooking.address}
-                                  onChange={(e) => setResidentBooking({...residentBooking, address: e.target.value})}
-                                  placeholder="Barangay, City/Municipality"
-                                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all" />
-                              </div>
-                              <div>
-                                <label className="block text-sm font-semibold text-gray-700 mb-1">Contact Number <span className="text-red-500">*</span></label>
-                                <input type="tel" value={residentBooking.contactNumber}
-                                  onChange={(e) => setResidentBooking({...residentBooking, contactNumber: sanitizePhone(e.target.value)})}
-                                  placeholder="09XXXXXXXXX"
-                                  maxLength={16}
-                                  className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all ${phoneClass(residentBooking.contactNumber)}`} />
-                                <PhoneMsg val={residentBooking.contactNumber} />
-                              </div>
-                              <div>
-                                <label className="block text-sm font-semibold text-gray-700 mb-1">Occupation</label>
-                                <input type="text" value={residentBooking.occupation}
-                                  onChange={(e) => setResidentBooking({...residentBooking, occupation: e.target.value})}
-                                  placeholder="e.g. Teacher, Farmer"
-                                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all" />
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* ── EMERGENCY CONTACT ── */}
-                          <div>
-                            <h3 className="text-base font-bold text-gray-800 mb-3 pb-2 border-b border-gray-200">Emergency Contact</h3>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                              <div>
-                                <label className="block text-sm font-semibold text-gray-700 mb-1">Emergency Contact Person</label>
-                                <input type="text" value={residentBooking.emergencyContactPerson}
-                                  onChange={(e) => setResidentBooking({...residentBooking, emergencyContactPerson: e.target.value})}
-                                  placeholder="Full name"
-                                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all" />
-                              </div>
-                              <div>
-                                <label className="block text-sm font-semibold text-gray-700 mb-1">Emergency Contact Number</label>
-                                <input type="tel" value={residentBooking.emergencyContactNumber}
-                                  onChange={(e) => setResidentBooking({...residentBooking, emergencyContactNumber: sanitizePhone(e.target.value)})}
-                                  placeholder="09XXXXXXXXX"
-                                  maxLength={16}
-                                  className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all ${phoneClass(residentBooking.emergencyContactNumber)}`} />
-                                <PhoneMsg val={residentBooking.emergencyContactNumber} />
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* ── MEDICAL INFORMATION ── */}
-                          <div>
-                            <h3 className="text-base font-bold text-gray-800 mb-3 pb-2 border-b border-gray-200">Medical Information</h3>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                              <div>
-                                <label className="block text-sm font-semibold text-gray-700 mb-1">
-                                  PhilHealth Number
-                                  <span className="ml-1 text-xs font-normal text-gray-400">(optional)</span>
-                                </label>
-                                <input type="text" value={residentBooking.philHealthNumber}
-                                  onChange={(e) => setResidentBooking({...residentBooking, philHealthNumber: e.target.value})}
-                                  placeholder="XX-XXXXXXXXX-X"
-                                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all" />
-                              </div>
-                              <div>
-                                <label className="block text-sm font-semibold text-gray-700 mb-1">Allergies</label>
-                                <input type="text" value={residentBooking.allergies}
-                                  onChange={(e) => setResidentBooking({...residentBooking, allergies: e.target.value})}
-                                  placeholder="e.g., Penicillin, Peanuts"
-                                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all" />
+                                <label className="block text-sm font-semibold text-gray-700 mb-1">Priority Level <span className="text-red-500">*</span></label>
+                                <select value={residentBooking.priorityLevel}
+                                  onChange={(e) => setResidentBooking({...residentBooking, priorityLevel: e.target.value})}
+                                  disabled={!residentBooking.serviceType}
+                                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all disabled:bg-gray-100 disabled:cursor-not-allowed">
+                                  <option value="">{residentBooking.serviceType ? 'Select priority level' : 'Please select a service type first'}</option>
+                                  <option value="Priority Case">Priority Case</option>
+                                  <option value="Urgent">Urgent</option>
+                                  <option value="Regular">Regular</option>
+                                </select>
+                                {residentBooking.serviceType && <p className="text-xs text-gray-500 mt-1">Default priority for this service is auto-filled, but you can change it if needed.</p>}
                               </div>
                               <div className="md:col-span-2">
-                                <label className="block text-sm font-semibold text-gray-700 mb-1">Chronic Conditions</label>
-                                <input type="text" value={residentBooking.chronicConditions}
-                                  onChange={(e) => setResidentBooking({...residentBooking, chronicConditions: e.target.value})}
-                                  placeholder="e.g., Hypertension, Diabetes"
-                                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all" />
-                              </div>
-                              <div className="md:col-span-2">
-                                <label className="block text-sm font-semibold text-gray-700 mb-1">Current Medications</label>
-                                <textarea value={residentBooking.currentMedications}
-                                  onChange={(e) => setResidentBooking({...residentBooking, currentMedications: e.target.value})}
-                                  placeholder="List current medications"
-                                  rows={2}
+                                <label className="block text-sm font-semibold text-gray-700 mb-1">Reason for Visit <span className="text-red-500">*</span></label>
+                                <textarea value={residentBooking.notes}
+                                  onChange={(e) => setResidentBooking({...residentBooking, notes: e.target.value})}
+                                  rows={3}
                                   className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all resize-none" />
                               </div>
                             </div>
                           </div>
-
-                          {/* ── APPOINTMENT SCHEDULE ── */}
-                          <div>
-                            <h3 className="text-base font-bold text-gray-800 mb-3 pb-2 border-b border-gray-200">Appointment Schedule</h3>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-
-                            {/* Appointment Date */}
-                            <div>
-                              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                                Appointment Date <span className="text-red-500">*</span>
-                              </label>
-                              <input
-                                type="date"
-                                value={residentBooking.appointmentDate}
-                                onChange={(e) => setResidentBooking({...residentBooking, appointmentDate: e.target.value})}
-                                min={new Date().toISOString().split('T')[0]}
-                                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-                              />
-                              <p className="text-xs text-gray-400 mt-1">📅 Weekdays only (Mon–Fri)</p>
-                            </div>
-
-                            {/* Appointment Time */}
-                            <div>
-                              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                                Appointment Time <span className="text-red-500">*</span>
-                              </label>
-                              {(() => {
-                                const booked = getBookedSlots(residentBooking.appointmentDate);
-                                return (
-                                  <select
-                                    value={residentBooking.appointmentTime}
-                                    onChange={(e) => setResidentBooking({...residentBooking, appointmentTime: e.target.value})}
-                                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-                                  >
-                                    <option value="">-- Select a Time Slot --</option>
-                                    {CLINIC_SLOTS.map(s => {
-                                      const isBooked = booked.has(s.value);
-                                      const isLunch  = s.lunch;
-                                      const disabled = isBooked || isLunch;
-                                      return (
-                                        <option key={s.value} value={s.value} disabled={disabled}>
-                                          {`Slot ${s.slot}: ${s.label}${isLunch ? ' 🍽 Lunch Break' : isBooked ? ' ✗ Fully Booked' : ''}`}
-                                        </option>
-                                      );
-                                    })}
-                                  </select>
-                                );
-                              })()}
-                              <p className="text-xs text-gray-400 mt-1">🏥 Clinic hours: 8:00 AM – 5:00 PM | 9 slots/day | Lunch 12–1 PM blocked</p>
-                            </div>
-
-                            {/* Service Category - Full Width */}
-                            <div className="md:col-span-2">
-                              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                                Service Category <span className="text-red-500">*</span>
-                              </label>
-                              <select
-                                value={residentBooking.serviceCategory}
-                                onChange={(e) => {
-                                  setResidentBooking({
-                                    ...residentBooking, 
-                                    serviceCategory: e.target.value,
-                                    serviceType: '', // Reset service type when category changes
-                                    priorityLevel: '' // Reset priority level
-                                  });
-                                }}
-                                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-                              >
-                                <option value="">Select service category</option>
-                                {Object.keys(SERVICE_CATEGORIES).map(category => (
-                                  <option key={category} value={category}>{category}</option>
-                                ))}
-                              </select>
-                            </div>
-
-                            {/* Service Type - Full Width */}
-                            <div className="md:col-span-2">
-                              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                                Service Type <span className="text-red-500">*</span>
-                              </label>
-                              <select
-                                value={residentBooking.serviceType}
-                                onChange={(e) => {
-                                  const selectedService = SERVICE_CATEGORIES[residentBooking.serviceCategory]?.services
-                                    .find(s => s.name === e.target.value);
-                                  setResidentBooking({
-                                    ...residentBooking, 
-                                    serviceType: e.target.value,
-                                    priorityLevel: selectedService?.priority || '' // Auto-populate priority
-                                  });
-                                }}
-                                disabled={!residentBooking.serviceCategory}
-                                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all disabled:bg-gray-100 disabled:cursor-not-allowed"
-                              >
-                                <option value="">
-                                  {residentBooking.serviceCategory ? 'Select service type' : 'Please select a service category first'}
-                                </option>
-                                {residentBooking.serviceCategory && 
-                                  SERVICE_CATEGORIES[residentBooking.serviceCategory]?.services.map(service => (
-                                    <option key={service.name} value={service.name}>{service.name}</option>
-                                  ))
-                                }
-                              </select>
-                            </div>
-
-                            {/* Priority Level - Full Width */}
-                            <div className="md:col-span-2">
-                              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                                Priority Level <span className="text-red-500">*</span>
-                              </label>
-                              <select
-                                value={residentBooking.priorityLevel}
-                                onChange={(e) => setResidentBooking({...residentBooking, priorityLevel: e.target.value})}
-                                disabled={!residentBooking.serviceType}
-                                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all disabled:bg-gray-100 disabled:cursor-not-allowed"
-                              >
-                                <option value="">
-                                  {residentBooking.serviceType ? 'Select priority level' : 'Please select a service type first'}
-                                </option>
-                                <option value="Priority Case">Priority Case</option>
-                                <option value="Urgent">Urgent</option>
-                                <option value="Regular">Regular</option>
-                              </select>
-                              {residentBooking.serviceType && (
-                                <p className="text-xs text-gray-500 mt-1">
-                                  Default priority for this service is auto-filled, but you can change it if needed.
-                                </p>
-                              )}
-                            </div>
-
-                            {/* Reason for Visit - Full Width */}
-                            <div className="md:col-span-2">
-                              <label className="block text-sm font-semibold text-gray-700 mb-2">
-                                Reason for Visit <span className="text-red-500">*</span>
-                              </label>
-                              <textarea
-                                value={residentBooking.notes}
-                                onChange={(e) => setResidentBooking({...residentBooking, notes: e.target.value})}
-                                placeholder=""
-                                rows={3}
-                                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all resize-none"
-                              />
-                            </div>
-                          </div>
-                          </div>{/* end Appointment Schedule section */}
 
                           {/* Action Buttons */}
                           <div className="flex gap-3 mt-6">
@@ -2938,7 +2882,7 @@ function normalizeUser(u) {
                                   dateOfBirth: '', sex: '', civilStatus: '',
                                   address: '', contactNumber: '', occupation: '',
                                   emergencyContactPerson: '', emergencyContactNumber: '',
-                                  philHealthNumber: '', allergies: '', chronicConditions: '', currentMedications: '',
+                                  allergies: '', chronicConditions: '', currentMedications: '',
                                   appointmentDate: '', appointmentTime: '',
                                   serviceCategory: '', serviceType: '', priorityLevel: '', notes: ''
                                 });
@@ -2958,7 +2902,8 @@ function normalizeUser(u) {
                         </div>
                       </div>
                     </div>
-                  )}
+                    );
+                  })()}
 
                   {/* Visit History View */}
                   {residentView === 'history' && (
@@ -3029,6 +2974,58 @@ function normalizeUser(u) {
           // ==================== RENDER: STAFF/ADMIN DASHBOARD ====================
           return (
             <div className="min-h-screen bg-gray-50">
+
+              {/* ===== FORGOT PASSWORD MODAL ===== */}
+              {showForgotPassword && (
+                <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
+                  <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+                    <div className="flex items-center justify-between mb-4">
+                      <h2 className="text-xl font-bold text-gray-800">Forgot Password</h2>
+                      <button onClick={() => setShowForgotPassword(false)} className="text-gray-400 hover:text-gray-600 text-2xl font-bold leading-none">&times;</button>
+                    </div>
+                    {forgotStatus ? (
+                      <div className="text-center py-6">
+                        <div className="text-5xl mb-4">📧</div>
+                        <p className="text-green-700 font-semibold text-base mb-2">Email Sent!</p>
+                        <p className="text-gray-600 text-sm mb-6">{forgotStatus}</p>
+                        <button
+                          onClick={() => { setShowForgotPassword(false); setForgotStatus(''); }}
+                          className="px-6 py-2 rounded-xl text-white font-semibold" style={{background:'linear-gradient(to right,var(--ht-primary),var(--ht-accent))'}}
+                        >Back to Login</button>
+                      </div>
+                    ) : (
+                      <form onSubmit={handleForgotPassword}>
+                        <p className="text-sm text-gray-500 mb-4">Enter the email address linked to your account and we'll send you a password reset link.</p>
+                        {forgotError && (
+                          <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm mb-4">{forgotError}</div>
+                        )}
+                        <div className="mb-4">
+                          <label className="block text-sm font-semibold text-gray-700 mb-1">Email Address</label>
+                          <input
+                            type="email"
+                            value={forgotEmail}
+                            onChange={(e) => { setForgotEmail(e.target.value); setForgotError(''); }}
+                            placeholder="Enter your registered email"
+                            className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-400 focus:border-transparent"
+                            required
+                          />
+                        </div>
+                        <div className="flex gap-3">
+                          <button type="button" onClick={() => setShowForgotPassword(false)}
+                            className="flex-1 py-2.5 border border-gray-300 rounded-xl text-gray-600 font-semibold hover:bg-gray-50">
+                            Cancel
+                          </button>
+                          <button type="submit" disabled={forgotLoading}
+                            className="flex-1 py-2.5 rounded-xl text-white font-semibold disabled:opacity-60" style={{background:'linear-gradient(to right,var(--ht-primary),var(--ht-accent))'}}>
+                            {forgotLoading ? 'Sending...' : 'Send Reset Link'}
+                          </button>
+                        </div>
+                      </form>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {/* Header */}
               <div className="text-white shadow-lg" style={{background:'linear-gradient(to right,var(--ht-primary),var(--ht-primary-dark))'}}>
                 <div className="container mx-auto px-4 py-4">
@@ -4719,17 +4716,7 @@ function normalizeUser(u) {
                         <div className="md:col-span-2 mt-4">
                           <h3 className="text-lg font-semibold text-gray-800 mb-4 pb-2 border-b">Medical Information</h3>
                         </div>
-                        <div>
-                          <label className="block text-sm font-semibold text-gray-700 mb-2">
-                            PhilHealth Number
-                          </label>
-                          <input
-                            type="text"
-                            value={newPatient.philHealthNumber}
-                            onChange={(e) => setNewPatient({...newPatient, philHealthNumber: e.target.value})}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                          />
-                        </div>
+
                         <div>
                           <label className="block text-sm font-semibold text-gray-700 mb-2">
                             Allergies
@@ -4968,7 +4955,7 @@ function normalizeUser(u) {
                         <div className="md:col-span-2">
                           <h3 className="text-lg font-semibold text-gray-800 mb-3 pb-2 border-b">Medical Information</h3>
                           <div className="space-y-2">
-                            <p className="text-sm"><span className="font-medium text-gray-600">PhilHealth Number:</span> <span className="text-gray-800">{selectedPatient.philHealthNumber || 'N/A'}</span></p>
+
                             <p className="text-sm"><span className="font-medium text-gray-600">Allergies:</span> <span className="text-gray-800">{selectedPatient.allergies || 'None'}</span></p>
                             <p className="text-sm"><span className="font-medium text-gray-600">Chronic Conditions:</span> <span className="text-gray-800">{selectedPatient.chronicConditions || 'None'}</span></p>
                             <p className="text-sm"><span className="font-medium text-gray-600">Current Medications:</span> <span className="text-gray-800">{selectedPatient.currentMedications || 'None'}</span></p>
@@ -5317,15 +5304,7 @@ function normalizeUser(u) {
                         <div className="md:col-span-2 mt-4">
                           <h3 className="text-lg font-semibold text-gray-800 mb-4 pb-2 border-b">Medical Information</h3>
                         </div>
-                        <div>
-                          <label className="block text-sm font-semibold text-gray-700 mb-2">PhilHealth Number</label>
-                          <input
-                            type="text"
-                            value={editingPatient.philHealthNumber}
-                            onChange={(e) => setEditingPatient({...editingPatient, philHealthNumber: e.target.value})}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                          />
-                        </div>
+
                         <div>
                           <label className="block text-sm font-semibold text-gray-700 mb-2">Allergies</label>
                           <input
