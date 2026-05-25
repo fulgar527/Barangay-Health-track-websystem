@@ -1572,9 +1572,9 @@ if (age < 6 && newPatient.occupation && newPatient.occupation !== 'N/A') {
           };
 
           // ==================== RESIDENT PORTAL FUNCTIONS ====================
-         const submitResidentBooking = async () => {
+        const submitResidentBooking = async () => {
 
-  // Validate required fields — personal info is auto-filled from registration
+  // Validate required fields
   if (
     !residentBooking.appointmentDate ||
     !residentBooking.appointmentTime ||
@@ -1606,6 +1606,20 @@ if (age < 6 && newPatient.occupation && newPatient.occupation !== 'N/A') {
   }
 
   const bookingPayload = {
+    patientId: residentPatientId,
+    firstName: residentBooking.firstName,
+    lastName: residentBooking.lastName,
+    appointmentDate: residentBooking.appointmentDate,
+    appointmentTime: residentBooking.appointmentTime,
+    serviceCategory: residentBooking.serviceCategory,
+    serviceType: residentBooking.serviceType,
+    reasonForVisit: residentBooking.reasonForVisit,
+    priorityLevel: residentBooking.priorityLevel
+  };
+
+  console.log('Booking Payload:', bookingPayload);
+
+};
     
   const fullName =
     currentUser?.fullName ||
