@@ -832,33 +832,50 @@ contactNumber: pendingAccount.contactNumber || '',
           const [users, setUsers] = useState([]);        // admin account management
           const [auditEntries, setAuditEntries] = useState([]);
           useEffect(() => {
-           if (residentView === 'booking' && currentUser && !residentBooking.firstName) {
+           if (residentView === 'booking' && currentUser) {
       const fullName = (currentUser.fullName || '').trim();
+      // Normalize: strip periods, collapse spaces, lowercase
+      const norm = s => (s || '').toLowerCase().replace(/\./g, '').replace(/\s+/g, ' ').trim();
+      const fullNameNorm = norm(fullName);
+      const firstWord = fullNameNorm.split(' ')[0] || '';
+      const lastWord  = fullNameNorm.split(' ').slice(-1)[0] || '';
+
+      // Try to find an existing patient that matches this user
       const existing = registeredPatients.find(p => {
-        const patientFull = (p.firstName + ' ' + (p.middleName ? p.middleName + ' ' : '') + p.lastName).toLowerCase().trim();
-        return patientFull === fullName.toLowerCase() ||
-          (p.firstName.toLowerCase() === fullName.split(' ')[0].toLowerCase() &&
-           fullName.toLowerCase().includes(p.lastName.toLowerCase()));
+        const fn = norm(p.firstName), ln = norm(p.lastName), mn = norm(p.middleName);
+        const patientFull = (fn + ' ' + (mn ? mn + ' ' : '') + ln).trim();
+        // Exact full-name match (with or without middle name/initial)
+        if (patientFull === fullNameNorm) return true;
+        if ((fn + ' ' + ln) === fullNameNorm) return true;
+        // First-name + last-name fallback (handles middle initials gracefully)
+        if (fn && ln && fn === firstWord && ln === lastWord) return true;
+        return false;
       });
+
       if (existing) {
-        setResidentBooking(prev => ({...prev,
-          firstName: existing.firstName || '', lastName: existing.lastName || '',
-          middleName: existing.middleName || '', dateOfBirth: existing.dateOfBirth || '',
-          sex: existing.sex || '', civilStatus: existing.civilStatus || '',
-          address: existing.address || '', contactNumber: existing.contact || '',
-          occupation: existing.occupation || '',
-          emergencyContactPerson: existing.emergencyContactPerson || '',
-          emergencyContactNumber: existing.emergencyContactNumber || '',
-          philHealthNumber: existing.philHealthNumber || '',
-          allergies: existing.allergies || '',
-          chronicConditions: existing.chronicConditions || '',
-          currentMedications: existing.currentMedications || '',
-        }));
-      } else {
-        const parts = fullName.split(' ');
+        // Only update if we don't already have this patient's data loaded
+        if (!residentBooking.firstName || residentBooking.lastName !== existing.lastName) {
+          setResidentBooking(prev => ({...prev,
+            firstName: existing.firstName || '', lastName: existing.lastName || '',
+            middleName: existing.middleName || '', dateOfBirth: existing.dateOfBirth || '',
+            sex: existing.sex || '', civilStatus: existing.civilStatus || '',
+            address: existing.address || '', contactNumber: existing.contact || '',
+            occupation: existing.occupation || '',
+            emergencyContactPerson: existing.emergencyContactPerson || '',
+            emergencyContactNumber: existing.emergencyContactNumber || '',
+            philHealthNumber: existing.philHealthNumber || '',
+            allergies: existing.allergies || '',
+            chronicConditions: existing.chronicConditions || '',
+            currentMedications: existing.currentMedications || '',
+          }));
+          setResidentPatientId(existing.patientId || existing.id || '');
+        }
+      } else if (!residentBooking.firstName) {
+        // Fallback: parse name from user account so booking can still proceed
+        const parts = fullName.split(' ').filter(Boolean);
         setResidentBooking(prev => ({...prev,
           firstName: parts[0] || '',
-          lastName: parts[parts.length-1] || '',
+          lastName: parts.length > 1 ? parts[parts.length-1] : '',
         }));
       }
     } 
@@ -1569,6 +1586,7 @@ if (age < 6 && newPatient.occupation && newPatient.occupation !== 'N/A') {
             }
             if (residentBooking.emergencyContactNumber && /[a-zA-Z]/.test(residentBooking.emergencyContactNumber)) {
               alert('Emergency Contact Number must contain digits only — no letters allowed.'); return;
+            }
               // Age range validation for service categories
             const patientAge = (() => {
               if (!residentBooking.dateOfBirth) return null;
@@ -1604,7 +1622,6 @@ if (age < 6 && newPatient.occupation && newPatient.occupation !== 'N/A') {
               if (patientAge !== null && patientAge < 18) {
                 alert('Family Planning services are only available for patients aged 18 and above.'); return;
               }
-            }
             }
             const selectedDate = new Date(residentBooking.appointmentDate + 'T00:00:00');
             const todayDate = new Date(); todayDate.setHours(0,0,0,0);
@@ -1645,13 +1662,17 @@ if (age < 6 && newPatient.occupation && newPatient.occupation !== 'N/A') {
                 );
               }
               if (!patient) {
+                // Build safe defaults for any missing fields so backend can't 500
+                const safeDob = residentBooking.dateOfBirth || '2000-01-01';
+                const safeAge = age || Math.max(0, Math.floor((Date.now() - new Date(safeDob)) / 31557600000));
+                const safeSex = ['Male','Female'].includes(residentBooking.sex) ? residentBooking.sex : 'Male';
                 const row = await api('POST', '/patients', {
                   lastName: residentBooking.lastName, firstName: residentBooking.firstName,
                   middleName: residentBooking.middleName || null,
-                  dateOfBirth: residentBooking.dateOfBirth || null,
-                  age: age || 0,
-                  sex: residentBooking.sex || null,
-                  address: residentBooking.address || 'N/A',
+                  dateOfBirth: safeDob,
+                  age: safeAge,
+                  sex: safeSex,
+                  address: residentBooking.address || 'To be updated',
                   contactNumber: residentBooking.contactNumber || 'N/A',
                   civilStatus: residentBooking.civilStatus || null,
                   occupation: residentBooking.occupation || null,
