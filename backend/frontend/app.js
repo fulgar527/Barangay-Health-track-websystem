@@ -1571,7 +1571,7 @@ if (age < 6 && newPatient.occupation && newPatient.occupation !== 'N/A') {
     residentBooking.middleName = parts.slice(1, -1).join(' ');
   }
 }
-            }
+            
             if (/[a-zA-Z]/.test(residentBooking.contactNumber)) {
               alert('Contact Number must contain digits only — no letters allowed.'); return;
             }
