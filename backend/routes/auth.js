@@ -348,4 +348,53 @@ router.delete('/users/:id', async (req, res) => {
   }
 });
 
+
+// ══════════════════════════════════════════════════════════════════════════════
+// POST /api/auth/forgot-password — Send password reset email via Supabase
+// ══════════════════════════════════════════════════════════════════════════════
+router.post('/forgot-password', async (req, res) => {
+  try {
+    const { email, username } = req.body;
+
+    let targetEmail = email ? email.trim() : null;
+
+    // If only username provided, look up their real email
+    if (!targetEmail && username) {
+      const result = await db.query(
+        'SELECT email FROM users WHERE LOWER(username) = LOWER($1)',
+        [username.trim()]
+      );
+      if (result.rows.length > 0) {
+        const dbEmail = result.rows[0].email;
+        // Only use real emails, not the placeholder @healthtrack.local ones
+        if (dbEmail && !dbEmail.endsWith('@healthtrack.local')) {
+          targetEmail = dbEmail;
+        } else {
+          return res.status(400).json({ error: 'No email address is linked to this account. Please contact the clinic administrator to reset your password.' });
+        }
+      }
+    }
+
+    if (!targetEmail) {
+      // Don't reveal if user exists — just return generic message
+      return res.json({ message: 'If an account with that email exists, a password reset link has been sent.' });
+    }
+
+    const appUrl = process.env.APP_URL || 'https://healthtrack.fun';
+    const { error } = await supabase.auth.resetPasswordForEmail(targetEmail, {
+      redirectTo: `${appUrl}/#reset-password`
+    });
+
+    if (error) {
+      console.error('Supabase resetPasswordForEmail error:', error.message);
+    }
+
+    // Always return success to prevent email enumeration attacks
+    res.json({ message: 'A password reset link has been sent to your email address. Please check your inbox (and spam folder) and follow the instructions.' });
+  } catch (err) {
+    console.error('Forgot password error:', err);
+    res.status(500).json({ error: 'Failed to send reset email. Please try again.' });
+  }
+});
+
 module.exports = router;
