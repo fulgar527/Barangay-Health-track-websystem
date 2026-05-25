@@ -219,6 +219,22 @@ app.get('/health', async (req, res) => {
   }
 });
 
+// ── Forgot Password (no auth required — must be before auth router) ──
+app.post('/api/auth/forgot-password', async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ error: 'Email is required' });
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+      redirectTo: `${req.protocol}://${req.get('host')}/reset-password`
+    });
+    if (error) return res.status(400).json({ error: error.message });
+    res.json({ success: true, message: 'Password reset link sent' });
+  } catch (err) {
+    console.error('Forgot password error:', err);
+    res.status(500).json({ error: 'Failed to send reset link' });
+  }
+});
+
 // Auth info endpoint (returns current user if authenticated)
 app.use('/api/auth', require('./routes/auth'));
 
