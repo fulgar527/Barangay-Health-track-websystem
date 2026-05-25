@@ -1,3 +1,4 @@
+
 // ==================== API LAYER ====================
 // All data operations go through the Express backend.
 // LocalStorage is ONLY used for: theme preference.
@@ -224,8 +225,8 @@ function normalizeUser(u) {
             </svg>
         );
 
-        // ==================== SERVICES CONFIGURATION (DEFAULT — overridden by DB) ====================
-        const DEFAULT_SERVICE_CATEGORIES = {
+        // ==================== SERVICES CONFIGURATION ====================
+        const SERVICE_CATEGORIES = {
           'Maternal Care': {
             urgency: 'Non-Urgent',
             services: [
@@ -312,10 +313,10 @@ function normalizeUser(u) {
 
         // Legacy SERVICES object for backward compatibility
         const SERVICES = {};
-        Object.keys(DEFAULT_SERVICE_CATEGORIES).forEach(category => {
-          DEFAULT_SERVICE_CATEGORIES[category].services.forEach(service => {
+        Object.keys(SERVICE_CATEGORIES).forEach(category => {
+          SERVICE_CATEGORIES[category].services.forEach(service => {
             SERVICES[service.name] = {
-              category: DEFAULT_SERVICE_CATEGORIES[category].urgency,
+              category: SERVICE_CATEGORIES[category].urgency,
               priority: service.priority
             };
           });
@@ -323,44 +324,6 @@ function normalizeUser(u) {
 
         // ==================== MAIN APP COMPONENT ====================
         function HealthTrackApp() {
-          // ==================== DYNAMIC SERVICE CATEGORIES ====================
-          const [serviceConfig, setServiceConfig] = useState(DEFAULT_SERVICE_CATEGORIES);
-          const [settingsTab, setSettingsTab] = useState('categories'); // 'categories'
-          const [editingCategory, setEditingCategory] = useState(null);
-          const [showAddCategory, setShowAddCategory] = useState(false);
-          const [newCategory, setNewCategory] = useState({ name: '', urgency: 'Non-Urgent', services: [{ name: '', priority: 'Regular' }] });
-          const [settingsError, setSettingsError] = useState('');
-          const [settingsSuccess, setSettingsSuccess] = useState('');
-
-          // Convert API response to serviceConfig format
-          const apiToConfig = (apiData) => {
-            const config = {};
-            apiData.forEach(cat => {
-              if (cat.is_active !== false) {
-                config[cat.category_name] = {
-                  urgency: cat.urgency || 'Non-Urgent',
-                  dbId: cat.id,
-                  services: (cat.services || [])
-                    .filter(s => s.is_active !== false)
-                    .map(s => ({ name: s.service_name, priority: s.default_priority || 'Regular', dbId: s.id }))
-                };
-              }
-            });
-            return config;
-          };
-
-          // Load service categories from API
-          const loadServiceCategories = async () => {
-            try {
-              const data = await api('GET', '/service-categories');
-              if (Array.isArray(data) && data.length > 0) {
-                setServiceConfig(apiToConfig(data));
-              }
-            } catch (err) {
-              console.log('Using default service categories (API unavailable):', err.message);
-            }
-          };
-
           // ==================== PHONE NUMBER HELPER ====================
           const sanitizePhone = (val) => {
             return val.replace(/[^0-9+]/g, '').replace(/(.)\+/g, '$1');
@@ -440,17 +403,13 @@ function normalizeUser(u) {
           const [loginPassword, setLoginPassword] = useState('');
           const [loginError, setLoginError] = useState('');
           const [showCreateAccount, setShowCreateAccount] = useState(false);
-          const [showForgotPassword, setShowForgotPassword] = useState(false);
-          const [forgotEmail, setForgotEmail] = useState('');
-          const [forgotError, setForgotError] = useState('');
-          const [forgotSuccess, setForgotSuccess] = useState('');
           const [showPassword, setShowPassword] = useState(false);
           const [showRegPassword, setShowRegPassword] = useState(false);
-         const [newAccount, setNewAccount] = useState({
-         username: '', password: '', confirmPassword: '', role: 'resident',
-         firstName: '', middleInitial: '', lastName: '',
-         birthday: '', sex: '', address: '', contactNumber: '',
-         email: '', mobile: '', contactMethod: 'email'
+          const [newAccount, setNewAccount] = useState({
+            username: '', password: '', confirmPassword: '', role: 'resident',
+            firstName: '', middleInitial: '', lastName: '',
+            birthday: '',
+            email: '', mobile: '', contactMethod: 'email'
           });
           const [registerError, setRegisterError] = useState('');
           const [registerSuccess, setRegisterSuccess] = useState('');
@@ -510,32 +469,6 @@ function normalizeUser(u) {
             const match = DEFAULT_ACCOUNTS.find(
               a => a.username === loginUsername.trim().toLowerCase() && a.password === loginPassword
             );
-                
-              if (!match) {
-              // Try API login for registered accounts
-              try {
-                const data = await api('POST', '/auth/login', {
-                  username: loginUsername.trim(), password: loginPassword
-                });
-                setToken(data.token);
-                const user = {
-                  id: data.user.userId, userId: data.user.userId,
-                  username: data.user.username, role: data.user.role,
-                  fullName: data.user.fullName, email: data.user.email,
-                };
-                setLoginAttempts(0); setLockoutUntil(null);
-                setCurrentUser(user); setUserRole(user.role);
-                try { sessionStorage.setItem('ht_user', JSON.stringify(user)); } catch {}
-                if (user.role === 'resident') setResidentView('queue');
-                else setActiveTab('dashboard');
-                setLoginUsername(''); setLoginPassword('');
-                setLoginError(''); setShowPassword(false);
-                setLastActivity(Date.now());
-                return;
-              } catch (err) {
-                // API login failed, fall through to error handling below
-              }
-            }
 
             if (match) {
               const user = {
@@ -686,9 +619,6 @@ function normalizeUser(u) {
               _lastName: lastName.trim(),
               role: safeRole, fullName,
               birthday: birthday,
-              sex: newAccount.sex,
-              address: newAccount.address,
-              contactNumber: newAccount.contactNumber,
               email: contactMethod === 'email' ? email.trim() : '',
               mobile: contactMethod === 'mobile' ? mobile.trim() : '',
               createdAt: new Date().toISOString()
@@ -713,10 +643,6 @@ function normalizeUser(u) {
               await api('POST', '/auth/register', {
                 username:  pendingAccount.username,
                 password:  pendingAccount._plainPassword,
-                birthday:  pendingAccount.birthday || '',
-sex:       pendingAccount.sex || '',
-address:   pendingAccount.address || '',
-contactNumber: pendingAccount.contactNumber || '',
                 role:      'resident',
                 firstName: pendingAccount._firstName,
                 middleInitial: pendingAccount._middleInitial || '',
@@ -770,51 +696,6 @@ contactNumber: pendingAccount.contactNumber || '',
             { value: '16:00', label: '4:00 PM – 5:00 PM',   slot: 9 },
           ];
 
-          // Dynamic Philippine Holidays — works for any year
-          const getPhHolidays = (year) => {
-            const easter = (y) => {
-              const a=y%19, b=Math.floor(y/100), c=y%100;
-              const d=Math.floor(b/4), e=b%4, f=Math.floor((b+8)/25);
-              const g=Math.floor((b-f+1)/3), h=(19*a+b-d-g+15)%30;
-              const i=Math.floor(c/4), k=c%4, l=(32+2*e+2*i-h-k)%7;
-              const m=Math.floor((a+11*h+22*l)/451);
-              const month=Math.floor((h+l-7*m+114)/31);
-              const day=((h+l-7*m+114)%31)+1;
-              return new Date(y, month-1, day);
-            };
-            const fmt = (d) => d.toISOString().split('T')[0];
-            const addDays = (d, n) => { const r=new Date(d); r.setDate(r.getDate()+n); return r; };
-            const lastMonday = (y, month) => {
-              const d = new Date(y, month+1, 0);
-              while (d.getDay() !== 1) d.setDate(d.getDate()-1);
-              return d;
-            };
-            const easterDate = easter(year);
-            return [
-              { date: `${year}-01-01`, name: "New Year's Day" },
-              { date: fmt(addDays(easterDate, -3)), name: 'Maundy Thursday' },
-              { date: fmt(addDays(easterDate, -2)), name: 'Good Friday' },
-              { date: fmt(addDays(easterDate, -1)), name: 'Black Saturday' },
-              { date: `${year}-04-09`, name: 'Araw ng Kagitingan' },
-              { date: `${year}-05-01`, name: 'Labor Day' },
-              { date: `${year}-06-12`, name: 'Independence Day' },
-              { date: fmt(lastMonday(year, 7)), name: 'National Heroes Day' },
-              { date: `${year}-11-01`, name: "All Saints' Day" },
-              { date: `${year}-11-30`, name: 'Bonifacio Day' },
-              { date: `${year}-12-24`, name: 'Christmas Eve' },
-              { date: `${year}-12-25`, name: 'Christmas Day' },
-              { date: `${year}-12-30`, name: 'Rizal Day' },
-              { date: `${year}-12-31`, name: "New Year's Eve" },
-            ];
-          };
-
-          const isHoliday = (dateStr) => {
-            if (!dateStr) return null;
-            const year = parseInt(dateStr.split('-')[0]);
-            const holidays = getPhHolidays(year);
-            return holidays.find(h => h.date === dateStr);
-          };
-
           // Returns Set of booked time-values for a given date (excluding an optional appointment id)
           const getBookedSlots = (date, excludeId = null) => {
             if (!date) return new Set();
@@ -830,46 +711,6 @@ contactNumber: pendingAccount.contactNumber || '',
           const [queue, setQueue] = useState([]);
           const [visitLog, setVisitLog] = useState([]);
           const [users, setUsers] = useState([]);        // admin account management
-          const [auditEntries, setAuditEntries] = useState([]);
-          useEffect(() => {
-           if (residentView === 'booking' && currentUser && !residentBooking.firstName) {
-      const fullName = (currentUser.fullName || '').trim();
-      const existing = registeredPatients.find(p => {
-        const patientFull = (p.firstName + ' ' + (p.middleName ? p.middleName + ' ' : '') + p.lastName).toLowerCase().trim();
-        return patientFull === fullName.toLowerCase() ||
-          (p.firstName.toLowerCase() === fullName.split(' ')[0].toLowerCase() &&
-           fullName.toLowerCase().includes(p.lastName.toLowerCase()));
-      });
-      if (existing) {
-        setResidentBooking(prev => ({...prev,
-          firstName: existing.firstName || '', lastName: existing.lastName || '',
-          middleName: existing.middleName || '', dateOfBirth: existing.dateOfBirth || '',
-          sex: existing.sex || '', civilStatus: existing.civilStatus || '',
-          address: existing.address || '', contactNumber: existing.contact || '',
-          occupation: existing.occupation || '',
-          emergencyContactPerson: existing.emergencyContactPerson || '',
-          emergencyContactNumber: existing.emergencyContactNumber || '',
-          philHealthNumber: existing.philHealthNumber || '',
-          allergies: existing.allergies || '',
-          chronicConditions: existing.chronicConditions || '',
-          currentMedications: existing.currentMedications || '',
-        }));
-      } else {
-        const parts = fullName.split(' ');
-        setResidentBooking(prev => ({...prev,
-          firstName: parts[0] || '',
-          lastName: parts[parts.length-1] || '',
-        }));
-      }
-    } 
-      }, [residentView, registeredPatients.length, currentUser]);
-          useEffect(() => {
-    if (activeTab === 'auditlog' && userRole === 'admin') {
-      api('GET', '/audit').then(rows => {
-        setAuditEntries(Array.isArray(rows) ? rows.slice().reverse() : []);
-      }).catch(() => {});
-    }
-  }, [activeTab]);
           const [loadingData, setLoadingData] = useState(false);
           const [syncStatus, setSyncStatus] = useState(''); // 'syncing'|'ok'|'error'
           
@@ -1023,7 +864,7 @@ contactNumber: pendingAccount.contactNumber || '',
           useEffect(() => {
             if (!userRole) return;
             setLoadingData(true);
-            const tasks = [loadPatients(), loadQueue(), loadVisitLog(), loadServiceCategories()];
+            const tasks = [loadPatients(), loadQueue(), loadVisitLog()];
             if (userRole === 'admin') tasks.push(loadUsers());
             Promise.all(tasks).finally(() => setLoadingData(false));
           }, [userRole]);
@@ -1094,20 +935,7 @@ contactNumber: pendingAccount.contactNumber || '',
             }
             return age;
           };
-          
-          // Add this useEffect near your other registration-related effects
-useEffect(() => {
-  if (!newPatient.dateOfBirth) return;
-  const age = calculateAge(newPatient.dateOfBirth);
 
-  if (age < 18) {
-    setNewPatient(prev => ({
-      ...prev,
-      civilStatus: 'Single',
-      occupation: age < 6 ? 'N/A' : prev.occupation,
-    }));
-  }
-}, [newPatient.dateOfBirth]);
           // Register new patient — POST to /api/patients
           const registerPatient = async () => {
             if (!newPatient.lastName || !newPatient.firstName || !newPatient.dateOfBirth || !newPatient.sex || !newPatient.address || !newPatient.contact) {
@@ -1122,16 +950,6 @@ useEffect(() => {
               alert('Emergency Contact Number must contain digits only — no letters allowed.');
               return;
             }
-            // Age-based validation
-const age = calculateAge(newPatient.dateOfBirth);
-if (age < 18 && newPatient.civilStatus && !['Single'].includes(newPatient.civilStatus)) {
-  alert('A minor (under 18) cannot have a civil status other than Single.');
-  return;
-}
-if (age < 6 && newPatient.occupation && newPatient.occupation !== 'N/A') {
-  alert('Occupation is not applicable for children under 6 years old.');
-  return;
-}
             try {
               const row = await api('POST', '/patients', {
                 lastName: newPatient.lastName, firstName: newPatient.firstName,
@@ -1177,7 +995,7 @@ if (age < 6 && newPatient.occupation && newPatient.occupation !== 'N/A') {
               return;
             }
             const priority = queuePatient.priority ||
-              serviceConfig[queuePatient.serviceCategory]?.services
+              SERVICE_CATEGORIES[queuePatient.serviceCategory]?.services
                 .find(s => s.name === queuePatient.serviceType)?.priority || 'Regular';
             try {
               const row = await api('POST', '/queue', {
@@ -1482,7 +1300,7 @@ if (age < 6 && newPatient.occupation && newPatient.occupation !== 'N/A') {
 
             // Service Category Breakdown
             summaryData.push({ 'Section': 'SERVICE CATEGORY BREAKDOWN', 'Value': '' });
-            Object.keys(serviceConfig).forEach(category => {
+            Object.keys(SERVICE_CATEGORIES).forEach(category => {
               const count = data.filter(v => v.serviceCategory === category).length;
               summaryData.push({ 'Metric': category, 'Value': count });
             });
@@ -1556,71 +1374,24 @@ if (age < 6 && newPatient.occupation && newPatient.occupation !== 'N/A') {
 
           // ==================== RESIDENT PORTAL FUNCTIONS ====================
           const submitResidentBooking = async () => {
-            // Validate required fields — personal info is auto-filled from registration
-            if (!residentBooking.appointmentDate || !residentBooking.appointmentTime ||
+            // Validate all required fields
+            if (!residentBooking.firstName || !residentBooking.lastName || !residentBooking.dateOfBirth ||
+                !residentBooking.sex || !residentBooking.contactNumber || !residentBooking.address ||
+                !residentBooking.appointmentDate || !residentBooking.appointmentTime ||
                 !residentBooking.serviceCategory || !residentBooking.serviceType) {
-              alert('Please fill in all required appointment fields (date, time, service category, and service type).'); return;
+              alert('Please fill in all required fields'); return;
             }
-           if (!residentBooking.firstName && currentUser?.fullName) {
-  const parts = currentUser.fullName.trim().split(' ');
-
-  residentBooking.firstName = parts[0] || '';
-  residentBooking.lastName = parts[parts.length - 1] || '';
-
-  if (parts.length > 2) {
-    residentBooking.middleName = parts.slice(1, -1).join(' ');
-  }
-}
-            
             if (/[a-zA-Z]/.test(residentBooking.contactNumber)) {
               alert('Contact Number must contain digits only — no letters allowed.'); return;
             }
             if (residentBooking.emergencyContactNumber && /[a-zA-Z]/.test(residentBooking.emergencyContactNumber)) {
               alert('Emergency Contact Number must contain digits only — no letters allowed.'); return;
-              // Age range validation for service categories
-            const patientAge = (() => {
-              if (!residentBooking.dateOfBirth) return null;
-              const today = new Date(), dob = new Date(residentBooking.dateOfBirth);
-              let age = today.getFullYear() - dob.getFullYear();
-              const m = today.getMonth() - dob.getMonth();
-              if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) age--;
-              return age;
-            })();
-
-            if (residentBooking.serviceCategory === 'Child Health Services') {
-              if (patientAge !== null && patientAge > 17) {
-                alert('Child Health Services are only available for patients aged 0-17 years old.'); return;
-              }
-              if (patientAge !== null && patientAge < 18) {
-                if (!window.confirm('This patient is a minor. By proceeding, you confirm that you are the parent or legal guardian booking on behalf of this child.\n\nDo you want to continue?')) return;
-              }
-            }
-
-            if (residentBooking.serviceCategory === 'Senior Citizen Health Services') {
-              if (patientAge !== null && patientAge < 60) {
-                alert('Senior Citizen Health Services are only available for patients aged 60 and above.'); return;
-              }
-            }
-
-            if (residentBooking.serviceCategory === 'Maternal Care') {
-              if (patientAge !== null && patientAge < 15) {
-                alert('Maternal Care services require the patient to be at least 15 years old.'); return;
-              }
-            }
-
-            if (residentBooking.serviceCategory === 'Family Planning') {
-              if (patientAge !== null && patientAge < 18) {
-                alert('Family Planning services are only available for patients aged 18 and above.'); return;
-              }
-            }
             }
             const selectedDate = new Date(residentBooking.appointmentDate + 'T00:00:00');
             const todayDate = new Date(); todayDate.setHours(0,0,0,0);
             if (selectedDate < todayDate) { alert('Appointment date cannot be in the past.'); return; }
             const dayOfWeek = selectedDate.getDay();
             if (dayOfWeek === 0 || dayOfWeek === 6) { alert('Clinic is open Monday to Friday only.'); return; }
-            const holiday = isHoliday(residentBooking.appointmentDate);
-            if (holiday) { alert('The clinic is closed on ' + holiday.name + ' (' + residentBooking.appointmentDate + '). Please choose another date.'); return; }
             const [hours] = residentBooking.appointmentTime.split(':').map(Number);
             if (hours < 8 || hours > 16) { alert('Please select a valid clinic slot (8 AM – 4 PM).'); return; }
             if (residentBooking.appointmentTime === '12:00') { alert('12:00 PM – 1:00 PM is the lunch break.'); return; }
@@ -1630,37 +1401,25 @@ if (age < 6 && newPatient.occupation && newPatient.occupation !== 'N/A') {
             }
 
             try {
-              // Calculate age (handle missing DOB gracefully)
-              let age = 0;
-              if (residentBooking.dateOfBirth) {
-                const today = new Date(), birthDate = new Date(residentBooking.dateOfBirth);
-                age = today.getFullYear() - birthDate.getFullYear();
-                const m = today.getMonth() - birthDate.getMonth();
-                if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) age--;
-              }
+              // Calculate age
+              const today = new Date(), birthDate = new Date(residentBooking.dateOfBirth);
+              let age = today.getFullYear() - birthDate.getFullYear();
+              const m = today.getMonth() - birthDate.getMonth();
+              if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) age--;
 
-              // Upsert patient: check if exists by name (+ DOB if available), else create
+              // Upsert patient: check if exists by name + DOB, else create
               let patient = registeredPatients.find(p =>
                 p.firstName.toLowerCase() === residentBooking.firstName.toLowerCase() &&
                 p.lastName.toLowerCase()  === residentBooking.lastName.toLowerCase() &&
-                (!residentBooking.dateOfBirth || p.dateOfBirth === residentBooking.dateOfBirth)
+                p.dateOfBirth === residentBooking.dateOfBirth
               );
-              if (!patient) {
-                // Also try matching by name only (without DOB) as fallback
-                patient = registeredPatients.find(p =>
-                  p.firstName.toLowerCase() === residentBooking.firstName.toLowerCase() &&
-                  p.lastName.toLowerCase()  === residentBooking.lastName.toLowerCase()
-                );
-              }
               if (!patient) {
                 const row = await api('POST', '/patients', {
                   lastName: residentBooking.lastName, firstName: residentBooking.firstName,
                   middleName: residentBooking.middleName || null,
-                  dateOfBirth: residentBooking.dateOfBirth || null,
-                  age: age || 0,
-                  sex: residentBooking.sex || null,
-                  address: residentBooking.address || 'N/A',
-                  contactNumber: residentBooking.contactNumber || 'N/A',
+                  dateOfBirth: residentBooking.dateOfBirth, age,
+                  sex: residentBooking.sex, address: residentBooking.address,
+                  contactNumber: residentBooking.contactNumber,
                   civilStatus: residentBooking.civilStatus || null,
                   occupation: residentBooking.occupation || null,
                   philhealthNumber: residentBooking.philHealthNumber || null,
@@ -1675,7 +1434,7 @@ if (age < 6 && newPatient.occupation && newPatient.occupation !== 'N/A') {
               }
 
               const priority = residentBooking.priorityLevel ||
-                serviceConfig[residentBooking.serviceCategory]?.services
+                SERVICE_CATEGORIES[residentBooking.serviceCategory]?.services
                   .find(s => s.name === residentBooking.serviceType)?.priority || 'Regular';
 
               const qRow = await api('POST', '/queue', {
@@ -1928,91 +1687,7 @@ if (age < 6 && newPatient.occupation && newPatient.occupation !== 'N/A') {
                           >
                             Sign In
                           </button>
-
-                          <div className="text-right mt-2">
-                            <button type="button" onClick={() => { setShowForgotPassword(true); setForgotEmail(''); setForgotError(''); setForgotSuccess(''); }}
-                              className="text-sm text-gray-500 hover:text-blue-600 hover:underline transition-colors">
-                              Forgot Password?
-                            </button>
-                          </div>
                         </div>
-
-                        {/* Forgot Password Modal */}
-                        {showForgotPassword && (
-                          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-                            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm">
-                              <div className="p-6">
-                                <div className="text-center mb-4">
-                                  <div className="w-14 h-14 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                                    <svg className="w-7 h-7 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
-                                  </div>
-                                  <h3 className="text-lg font-bold text-gray-800">Reset Password</h3>
-                                  <p className="text-sm text-gray-500 mt-1">Enter the email address you used when creating your account</p>
-                                </div>
-
-                                <div className="space-y-4">
-                                  <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Email Address <span className="text-red-500">*</span></label>
-                                    <input
-                                      type="email"
-                                      value={forgotEmail}
-                                      onChange={(e) => { setForgotEmail(e.target.value); setForgotError(''); }}
-                                      className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                      placeholder="email@example.com"
-                                    />
-                                  </div>
-
-                                  {forgotError && (
-                                    <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-                                      <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
-                                      <p className="text-sm text-red-600">{forgotError}</p>
-                                    </div>
-                                  )}
-
-                                  {forgotSuccess && (
-                                    <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
-                                      <CheckCircle className="w-4 h-4 text-green-500 flex-shrink-0" />
-                                      <p className="text-sm text-green-700">{forgotSuccess}</p>
-                                    </div>
-                                  )}
-
-                                  <button
-                                    type="button"
-                                    onClick={async () => {
-                                      setForgotError(''); setForgotSuccess('');
-                                      if (!forgotEmail.trim()) { setForgotError('Please enter your email address.'); return; }
-                                      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(forgotEmail.trim())) { setForgotError('Please enter a valid email address.'); return; }
-                                      try {
-                                        await api('POST', '/auth/forgot-password', { email: forgotEmail.trim() });
-                                        setForgotSuccess('Password reset link sent! Check your email inbox (and spam folder).');
-                                        setForgotEmail('');
-                                      } catch (err) {
-                                        setForgotError(err.message || 'Failed to send reset link. Please try again.');
-                                      }
-                                    }}
-                                    className="w-full text-white py-2.5 rounded-xl font-semibold transition-all" style={{background:'var(--ht-primary)'}}
-                                  >
-                                    Send Reset Link
-                                  </button>
-
-                                  <button
-                                    type="button"
-                                    onClick={() => setShowForgotPassword(false)}
-                                    className="w-full text-gray-500 hover:text-gray-700 text-sm py-2"
-                                  >
-                                    ← Back to Sign In
-                                  </button>
-                                </div>
-
-                                <div className="mt-4 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                                  <p className="text-xs text-amber-700">
-                                    <span className="font-semibold">Note:</span> Password reset is only available for accounts registered with an email. Default accounts (admin/staff/resident) use fixed credentials shown on the login page.
-                                  </p>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        )}
 
                         <div className="mt-6 text-center">
                           <p className="text-sm text-gray-600">
@@ -2027,26 +1702,7 @@ if (age < 6 && newPatient.occupation && newPatient.occupation !== 'N/A') {
                           </p>
                         </div>
 
-                        <div className="mt-4 p-3 bg-gray-50 rounded-lg">
-                          <p className="text-xs text-gray-500 font-semibold mb-2 text-center">Default Accounts</p>
-                          <div className="grid grid-cols-3 gap-2 text-xs text-gray-500">
-                            <div className="text-center p-1.5 bg-white rounded border">
-                              <p className="font-semibold text-blue-600">Admin</p>
-                              <p>admin</p>
-                              <p className="text-gray-400">admin123</p>
-                            </div>
-                            <div className="text-center p-1.5 bg-white rounded border">
-                              <p className="font-semibold text-green-600">Staff</p>
-                              <p>staff</p>
-                              <p className="text-gray-400">staff123</p>
-                            </div>
-                            <div className="text-center p-1.5 bg-white rounded border">
-                              <p className="font-semibold text-purple-600">Resident</p>
-                              <p>resident</p>
-                              <p className="text-gray-400">resident123</p>
-                            </div>
-                          </div>
-                        </div>
+
                       </form>
                     ) : (
                       /* ===== CREATE ACCOUNT FORM ===== */
@@ -2111,29 +1767,6 @@ if (age < 6 && newPatient.occupation && newPatient.occupation !== 'N/A') {
                             })()}
                             <p className="text-xs text-gray-400 mt-1">Must be 18–85 years old to register</p>
                           </div>
-                          <div className="grid grid-cols-2 gap-2">
-  <div>
-    <label className="block text-sm font-medium text-gray-700 mb-1">Sex <span className="text-red-500">*</span></label>
-    <select value={newAccount.sex} onChange={(e) => setNewAccount({...newAccount, sex: e.target.value})}
-      className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
-      <option value="">Select</option>
-      <option value="Male">Male</option>
-      <option value="Female">Female</option>
-    </select>
-  </div>
-  <div>
-    <label className="block text-sm font-medium text-gray-700 mb-1">Contact No. <span className="text-red-500">*</span></label>
-    <input type="tel" value={newAccount.contactNumber} onChange={(e) => setNewAccount({...newAccount, contactNumber: e.target.value})}
-      className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-      placeholder="09XXXXXXXXX" />
-  </div>
-</div>
-<div>
-  <label className="block text-sm font-medium text-gray-700 mb-1">Address <span className="text-red-500">*</span></label>
-  <input type="text" value={newAccount.address} onChange={(e) => setNewAccount({...newAccount, address: e.target.value})}
-    className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-    placeholder="Barangay, City/Municipality" />
-</div>
 
                           {/* Contact Method for Confirmation */}
                           <div>
@@ -2453,11 +2086,8 @@ if (age < 6 && newPatient.occupation && newPatient.occupation !== 'N/A') {
                       : null;
                     const apptSlot = myEntry?.appointmentTime ? CLINIC_SLOTS.find(s => s.value === myEntry.appointmentTime) : null;
                     const apptDateStr = myEntry?.appointmentDate
-                     ? (() => {
-    const d = new Date(myEntry.appointmentDate + 'T00:00:00');
-    return isNaN(d.getTime()) ? 'Date not set' : d.toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-  })()
-: null;
+                      ? new Date(myEntry.appointmentDate + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+                      : null;
                     const statusColors = {
                       'Accepted':  { bg: 'bg-green-50 border-green-300',  badge: 'bg-green-100 text-green-700', icon: '✅', label: 'Accepted' },
                       'Rejected':  { bg: 'bg-red-50 border-red-300',      badge: 'bg-red-100 text-red-700',    icon: '❌', label: 'Rejected' },
@@ -2874,7 +2504,7 @@ if (age < 6 && newPatient.occupation && newPatient.occupation !== 'N/A') {
                                       className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                                     >
                                       <option value="">Select service category</option>
-                                      {Object.keys(serviceConfig).map(cat => (
+                                      {Object.keys(SERVICE_CATEGORIES).map(cat => (
                                         <option key={cat} value={cat}>{cat}</option>
                                       ))}
                                     </select>
@@ -2887,7 +2517,7 @@ if (age < 6 && newPatient.occupation && newPatient.occupation !== 'N/A') {
                                     <select
                                       value={editingAppointment.newServiceType}
                                       onChange={(e) => {
-                                        const svc = serviceConfig[editingAppointment.newServiceCategory]?.services.find(s => s.name === e.target.value);
+                                        const svc = SERVICE_CATEGORIES[editingAppointment.newServiceCategory]?.services.find(s => s.name === e.target.value);
                                         setEditingAppointment({
                                           ...editingAppointment,
                                           newServiceType: e.target.value,
@@ -2898,7 +2528,7 @@ if (age < 6 && newPatient.occupation && newPatient.occupation !== 'N/A') {
                                       className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent disabled:bg-gray-100"
                                     >
                                       <option value="">{editingAppointment.newServiceCategory ? 'Select service type' : 'Select a category first'}</option>
-                                      {editingAppointment.newServiceCategory && serviceConfig[editingAppointment.newServiceCategory]?.services.map(s => (
+                                      {editingAppointment.newServiceCategory && SERVICE_CATEGORIES[editingAppointment.newServiceCategory]?.services.map(s => (
                                         <option key={s.name} value={s.name}>{s.name}</option>
                                       ))}
                                     </select>
@@ -2971,8 +2601,6 @@ if (age < 6 && newPatient.occupation && newPatient.occupation !== 'N/A') {
                   )}
 
                   {/* Booking View */}
-              
-   
                   {residentView === 'booking' && (
                     <div className="max-w-3xl mx-auto p-4">
                       <div className="bg-white rounded-xl shadow-lg overflow-hidden">
@@ -2980,43 +2608,151 @@ if (age < 6 && newPatient.occupation && newPatient.occupation !== 'N/A') {
                         <div className="bg-gradient-to-r from-purple-600 to-pink-600 px-6 py-5">
                           <h2 className="text-2xl font-bold text-white mb-2">Book Appointment</h2>
                           <p className="text-white/90 text-sm flex items-center">
-                            <span className="mr-2">📅</span>
-                            Schedule your visit — your details are already on file
+                            <span className="mr-2">✨</span>
+                            No Patient ID required - Just your name!
                           </p>
                         </div>
                         
                         {/* Form Content */}
                         <div className="p-6 space-y-6">
 
-                          {/* ── PATIENT INFO SUMMARY (read-only) ── */}
-                          <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
-                            <div className="flex items-center justify-between mb-2">
-                              <h3 className="text-sm font-bold text-gray-600 uppercase tracking-wide">Booking As</h3>
-                              {residentBooking.firstName && (
-                                <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">✓ Info on file</span>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-3">
-                              <div className="w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-lg flex-shrink-0" style={{background:'var(--ht-primary)'}}>
-                                {(residentBooking.firstName?.charAt(0) || currentUser?.fullName?.charAt(0) || '?').toUpperCase()}
+                          {/* ── PERSONAL INFORMATION ── */}
+                          <div>
+                            <h3 className="text-base font-bold text-gray-800 mb-3 pb-2 border-b border-gray-200">Personal Information</h3>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div>
+                                <label className="block text-sm font-semibold text-gray-700 mb-1">Last Name <span className="text-red-500">*</span></label>
+                                <input type="text" value={residentBooking.lastName}
+                                  onChange={(e) => setResidentBooking({...residentBooking, lastName: e.target.value})}
+                                  placeholder="Dela Cruz"
+                                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all" />
                               </div>
                               <div>
-                                <p className="font-bold text-gray-800 text-lg">
-                                  {residentBooking.firstName || ''} {residentBooking.middleName || ''} {residentBooking.lastName || currentUser?.fullName || 'Unknown'}
-                                </p>
-                                <div className="flex items-center gap-3 text-sm text-gray-500 mt-0.5">
-                                  {residentBooking.dateOfBirth && <span>🎂 {new Date(residentBooking.dateOfBirth + 'T00:00:00').toLocaleDateString('en-PH', { year:'numeric', month:'short', day:'numeric' })}</span>}
-                                  {residentBooking.sex && <span>• {residentBooking.sex}</span>}
-                                  {residentBooking.contactNumber && <span>• 📱 {residentBooking.contactNumber}</span>}
-                                </div>
-                                {residentBooking.address && <p className="text-xs text-gray-400 mt-0.5">📍 {residentBooking.address}</p>}
+                                <label className="block text-sm font-semibold text-gray-700 mb-1">First Name <span className="text-red-500">*</span></label>
+                                <input type="text" value={residentBooking.firstName}
+                                  onChange={(e) => setResidentBooking({...residentBooking, firstName: e.target.value})}
+                                  placeholder="Juan"
+                                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all" />
+                              </div>
+                              <div>
+                                <label className="block text-sm font-semibold text-gray-700 mb-1">Middle Name</label>
+                                <input type="text" value={residentBooking.middleName}
+                                  onChange={(e) => setResidentBooking({...residentBooking, middleName: e.target.value})}
+                                  placeholder="Santos"
+                                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all" />
+                              </div>
+                              <div>
+                                <label className="block text-sm font-semibold text-gray-700 mb-1">Date of Birth <span className="text-red-500">*</span></label>
+                                <input type="date" value={residentBooking.dateOfBirth}
+                                  onChange={(e) => setResidentBooking({...residentBooking, dateOfBirth: e.target.value})}
+                                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all" />
+                              </div>
+                              <div>
+                                <label className="block text-sm font-semibold text-gray-700 mb-1">Sex <span className="text-red-500">*</span></label>
+                                <select value={residentBooking.sex}
+                                  onChange={(e) => setResidentBooking({...residentBooking, sex: e.target.value})}
+                                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all">
+                                  <option value="">Select</option>
+                                  <option value="Male">Male</option>
+                                  <option value="Female">Female</option>
+                                </select>
+                              </div>
+                              <div>
+                                <label className="block text-sm font-semibold text-gray-700 mb-1">Civil Status</label>
+                                <select value={residentBooking.civilStatus}
+                                  onChange={(e) => setResidentBooking({...residentBooking, civilStatus: e.target.value})}
+                                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all">
+                                  <option value="">Select</option>
+                                  <option value="Single">Single</option>
+                                  <option value="Married">Married</option>
+                                  <option value="Widowed">Widowed</option>
+                                  <option value="Separated">Separated</option>
+                                  <option value="Divorced">Divorced</option>
+                                </select>
                               </div>
                             </div>
-                            {!residentBooking.firstName && (
-                              <p className="text-xs text-amber-600 mt-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                                ⚠️ Your registration info was not found. Please make sure your account name matches a registered patient, or contact staff to register you first.
-                              </p>
-                            )}
+                          </div>
+
+                          {/* ── CONTACT INFORMATION ── */}
+                          <div>
+                            <h3 className="text-base font-bold text-gray-800 mb-3 pb-2 border-b border-gray-200">Contact Information</h3>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div className="md:col-span-2">
+                                <label className="block text-sm font-semibold text-gray-700 mb-1">Address <span className="text-red-500">*</span></label>
+                                <input type="text" value={residentBooking.address}
+                                  onChange={(e) => setResidentBooking({...residentBooking, address: e.target.value})}
+                                  placeholder="Barangay, City/Municipality"
+                                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all" />
+                              </div>
+                              <div>
+                                <label className="block text-sm font-semibold text-gray-700 mb-1">Contact Number <span className="text-red-500">*</span></label>
+                                <input type="tel" value={residentBooking.contactNumber}
+                                  onChange={(e) => setResidentBooking({...residentBooking, contactNumber: sanitizePhone(e.target.value)})}
+                                  placeholder="09XXXXXXXXX"
+                                  maxLength={16}
+                                  className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all ${phoneClass(residentBooking.contactNumber)}`} />
+                                <PhoneMsg val={residentBooking.contactNumber} />
+                              </div>
+                              <div>
+                                <label className="block text-sm font-semibold text-gray-700 mb-1">Occupation</label>
+                                <input type="text" value={residentBooking.occupation}
+                                  onChange={(e) => setResidentBooking({...residentBooking, occupation: e.target.value})}
+                                  placeholder="e.g. Teacher, Farmer"
+                                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all" />
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* ── EMERGENCY CONTACT ── */}
+                          <div>
+                            <h3 className="text-base font-bold text-gray-800 mb-3 pb-2 border-b border-gray-200">Emergency Contact</h3>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div>
+                                <label className="block text-sm font-semibold text-gray-700 mb-1">Emergency Contact Person</label>
+                                <input type="text" value={residentBooking.emergencyContactPerson}
+                                  onChange={(e) => setResidentBooking({...residentBooking, emergencyContactPerson: e.target.value})}
+                                  placeholder="Full name"
+                                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all" />
+                              </div>
+                              <div>
+                                <label className="block text-sm font-semibold text-gray-700 mb-1">Emergency Contact Number</label>
+                                <input type="tel" value={residentBooking.emergencyContactNumber}
+                                  onChange={(e) => setResidentBooking({...residentBooking, emergencyContactNumber: sanitizePhone(e.target.value)})}
+                                  placeholder="09XXXXXXXXX"
+                                  maxLength={16}
+                                  className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all ${phoneClass(residentBooking.emergencyContactNumber)}`} />
+                                <PhoneMsg val={residentBooking.emergencyContactNumber} />
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* ── MEDICAL INFORMATION ── */}
+                          <div>
+                            <h3 className="text-base font-bold text-gray-800 mb-3 pb-2 border-b border-gray-200">Medical Information</h3>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div>
+                                <label className="block text-sm font-semibold text-gray-700 mb-1">Allergies</label>
+                                <input type="text" value={residentBooking.allergies}
+                                  onChange={(e) => setResidentBooking({...residentBooking, allergies: e.target.value})}
+                                  placeholder="e.g., Penicillin, Peanuts"
+                                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all" />
+                              </div>
+                              <div className="md:col-span-2">
+                                <label className="block text-sm font-semibold text-gray-700 mb-1">Chronic Conditions</label>
+                                <input type="text" value={residentBooking.chronicConditions}
+                                  onChange={(e) => setResidentBooking({...residentBooking, chronicConditions: e.target.value})}
+                                  placeholder="e.g., Hypertension, Diabetes"
+                                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all" />
+                              </div>
+                              <div className="md:col-span-2">
+                                <label className="block text-sm font-semibold text-gray-700 mb-1">Current Medications</label>
+                                <textarea value={residentBooking.currentMedications}
+                                  onChange={(e) => setResidentBooking({...residentBooking, currentMedications: e.target.value})}
+                                  placeholder="List current medications"
+                                  rows={2}
+                                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all resize-none" />
+                              </div>
+                            </div>
                           </div>
 
                           {/* ── APPOINTMENT SCHEDULE ── */}
@@ -3087,7 +2823,7 @@ if (age < 6 && newPatient.occupation && newPatient.occupation !== 'N/A') {
                                 className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
                               >
                                 <option value="">Select service category</option>
-                                {Object.keys(serviceConfig).map(category => (
+                                {Object.keys(SERVICE_CATEGORIES).map(category => (
                                   <option key={category} value={category}>{category}</option>
                                 ))}
                               </select>
@@ -3101,7 +2837,7 @@ if (age < 6 && newPatient.occupation && newPatient.occupation !== 'N/A') {
                               <select
                                 value={residentBooking.serviceType}
                                 onChange={(e) => {
-                                  const selectedService = serviceConfig[residentBooking.serviceCategory]?.services
+                                  const selectedService = SERVICE_CATEGORIES[residentBooking.serviceCategory]?.services
                                     .find(s => s.name === e.target.value);
                                   setResidentBooking({
                                     ...residentBooking, 
@@ -3116,7 +2852,7 @@ if (age < 6 && newPatient.occupation && newPatient.occupation !== 'N/A') {
                                   {residentBooking.serviceCategory ? 'Select service type' : 'Please select a service category first'}
                                 </option>
                                 {residentBooking.serviceCategory && 
-                                  serviceConfig[residentBooking.serviceCategory]?.services.map(service => (
+                                  SERVICE_CATEGORIES[residentBooking.serviceCategory]?.services.map(service => (
                                     <option key={service.name} value={service.name}>{service.name}</option>
                                   ))
                                 }
@@ -3306,7 +3042,6 @@ if (age < 6 && newPatient.occupation && newPatient.occupation !== 'N/A') {
                       ...(userRole === 'admin' ? [
                         { id: 'accounts', label: 'Accounts', icon: Users },
                         { id: 'auditlog', label: 'Audit Log', icon: List },
-                        { id: 'settings', label: '⚙️ Settings', icon: Activity },
                         { id: 'theme', label: '🎨 Theme', icon: Activity }
                       ] : [])
                     ].map(tab => (
@@ -4008,7 +3743,7 @@ if (age < 6 && newPatient.occupation && newPatient.occupation !== 'N/A') {
                         {(() => {
                           const data = getAnalyticsData();
                           const categoryCounts = {};
-                          Object.keys(serviceConfig).forEach(category => {
+                          Object.keys(SERVICE_CATEGORIES).forEach(category => {
                             categoryCounts[category] = data.filter(v => v.serviceCategory === category).length;
                           });
                           const maxCount = Math.max(...Object.values(categoryCounts), 1);
@@ -4139,7 +3874,7 @@ if (age < 6 && newPatient.occupation && newPatient.occupation !== 'N/A') {
                     <div className="bg-white rounded-xl shadow-md p-6">
                       <h3 className="text-lg font-bold text-gray-800 mb-6">Service Statistics</h3>
                       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                        {Object.keys(serviceConfig).map(category => {
+                        {Object.keys(SERVICE_CATEGORIES).map(category => {
                           const count = getAnalyticsData().filter(v => v.serviceCategory === category).length;
                           return (
                             <div key={category} className="bg-gray-50 rounded-lg p-4 text-center">
@@ -4546,8 +4281,12 @@ if (age < 6 && newPatient.occupation && newPatient.occupation !== 'N/A') {
                 {activeTab === 'auditlog' && userRole === 'admin' && (() => {
                   // Audit log displayed from backend /api/audit
                   // We use a local state for the audit entries fetched once when tab opens
-                 
-                  
+                  const [auditEntries, setAuditEntries] = React.useState([]);
+                  React.useEffect(() => {
+                    api('GET', '/audit').then(rows => {
+                      setAuditEntries(Array.isArray(rows) ? rows.slice().reverse() : []);
+                    }).catch(() => {});
+                  }, []);
                   const actionColors = {
                     LOGIN:            { bg: 'bg-green-50',  text: 'text-green-700',  border: 'border-green-200',  icon: '🔑' },
                     LOGOUT:           { bg: 'bg-gray-50',   text: 'text-gray-600',   border: 'border-gray-200',   icon: '🚪' },
@@ -4603,7 +4342,7 @@ if (age < 6 && newPatient.occupation && newPatient.occupation !== 'N/A') {
                                     </div>
                                     <p className="text-xs text-gray-600 mt-0.5">
                                       <span className="font-medium">By:</span> {entry.username || 'System'} ({entry.role || 'unknown'})
-                                      {entry.details ? <span className="ml-2 text-gray-500">— {typeof entry.details === 'string' ? entry.details : JSON.stringify(entry.details)}</span> : null}
+                                      {entry.details ? <span className="ml-2 text-gray-500">— {entry.details}</span> : null}
                                     </p>
                                   </div>
                                 </div>
@@ -4951,17 +4690,7 @@ if (age < 6 && newPatient.occupation && newPatient.occupation !== 'N/A') {
                         <div className="md:col-span-2 mt-4">
                           <h3 className="text-lg font-semibold text-gray-800 mb-4 pb-2 border-b">Medical Information</h3>
                         </div>
-                        <div>
-                          <label className="block text-sm font-semibold text-gray-700 mb-2">
-                            PhilHealth Number
-                          </label>
-                          <input
-                            type="text"
-                            value={newPatient.philHealthNumber}
-                            onChange={(e) => setNewPatient({...newPatient, philHealthNumber: e.target.value})}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                          />
-                        </div>
+
                         <div>
                           <label className="block text-sm font-semibold text-gray-700 mb-2">
                             Allergies
@@ -5040,25 +4769,7 @@ if (age < 6 && newPatient.occupation && newPatient.occupation !== 'N/A') {
                           </label>
                           <select
                             value={queuePatient.patientId}
-                            onChange={(e) => {
-  const pid = e.target.value;
-  const appt = queue.find(q =>
-    q.patientId === pid &&
-    q.selfBooked &&
-    ['Waiting', 'Accepted'].includes(q.status)
-  );
-  if (appt) {
-    setQueuePatient({
-      patientId: pid,
-      serviceCategory: appt.serviceCategory || '',
-      serviceType: appt.service || '',
-      priority: appt.priority || 'Regular',
-      chiefComplaint: appt.chiefComplaint || '',
-    });
-  } else {
-    setQueuePatient({ patientId: pid, serviceCategory: '', serviceType: '', priority: 'Regular', chiefComplaint: '' });
-  }
-}}
+                            onChange={(e) => setQueuePatient({...queuePatient, patientId: e.target.value})}
                             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
                           >
                             <option value="">-- Select Patient --</option>
@@ -5087,7 +4798,7 @@ if (age < 6 && newPatient.occupation && newPatient.occupation !== 'N/A') {
                             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
                           >
                             <option value="">-- Select Service Category --</option>
-                            {Object.keys(serviceConfig).map(category => (
+                            {Object.keys(SERVICE_CATEGORIES).map(category => (
                               <option key={category} value={category}>{category}</option>
                             ))}
                           </select>
@@ -5100,7 +4811,7 @@ if (age < 6 && newPatient.occupation && newPatient.occupation !== 'N/A') {
                           <select
                             value={queuePatient.serviceType}
                             onChange={(e) => {
-                              const selectedService = serviceConfig[queuePatient.serviceCategory]?.services
+                              const selectedService = SERVICE_CATEGORIES[queuePatient.serviceCategory]?.services
                                 .find(s => s.name === e.target.value);
                               setQueuePatient({
                                 ...queuePatient, 
@@ -5115,7 +4826,7 @@ if (age < 6 && newPatient.occupation && newPatient.occupation !== 'N/A') {
                               {queuePatient.serviceCategory ? '-- Select Service Type --' : 'Please select a service category first'}
                             </option>
                             {queuePatient.serviceCategory && 
-                              serviceConfig[queuePatient.serviceCategory]?.services.map(service => (
+                              SERVICE_CATEGORIES[queuePatient.serviceCategory]?.services.map(service => (
                                 <option key={service.name} value={service.name}>{service.name}</option>
                               ))
                             }
@@ -5218,7 +4929,7 @@ if (age < 6 && newPatient.occupation && newPatient.occupation !== 'N/A') {
                         <div className="md:col-span-2">
                           <h3 className="text-lg font-semibold text-gray-800 mb-3 pb-2 border-b">Medical Information</h3>
                           <div className="space-y-2">
-                            <p className="text-sm"><span className="font-medium text-gray-600">PhilHealth Number:</span> <span className="text-gray-800">{selectedPatient.philHealthNumber || 'N/A'}</span></p>
+
                             <p className="text-sm"><span className="font-medium text-gray-600">Allergies:</span> <span className="text-gray-800">{selectedPatient.allergies || 'None'}</span></p>
                             <p className="text-sm"><span className="font-medium text-gray-600">Chronic Conditions:</span> <span className="text-gray-800">{selectedPatient.chronicConditions || 'None'}</span></p>
                             <p className="text-sm"><span className="font-medium text-gray-600">Current Medications:</span> <span className="text-gray-800">{selectedPatient.currentMedications || 'None'}</span></p>
@@ -5236,268 +4947,6 @@ if (age < 6 && newPatient.occupation && newPatient.occupation !== 'N/A') {
                       </div>
                     </div>
                   </div>
-                </div>
-              )}
-
-              {/* ===== SETTINGS — SERVICE CATEGORY MANAGEMENT ===== */}
-              {activeTab === 'settings' && userRole === 'admin' && (
-                <div className="space-y-6">
-                  <div className="bg-white rounded-xl shadow-md p-6">
-                    <div className="flex items-center justify-between mb-6">
-                      <div>
-                        <h2 className="text-xl font-bold text-gray-800">⚙️ Service Category Settings</h2>
-                        <p className="text-sm text-gray-500 mt-1">Add, edit, or remove service categories and their service types</p>
-                      </div>
-                      <button
-                        onClick={() => { setShowAddCategory(true); setSettingsError(''); setSettingsSuccess(''); setNewCategory({ name: '', urgency: 'Non-Urgent', services: [{ name: '', priority: 'Regular' }] }); }}
-                        className="flex items-center gap-2 text-white px-4 py-2.5 rounded-xl font-semibold text-sm transition-colors" style={{background:'var(--ht-primary)'}}
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-                        Add Category
-                      </button>
-                    </div>
-
-                    {settingsSuccess && (
-                      <div className="flex items-center gap-2 bg-green-50 border border-green-200 rounded-lg px-4 py-3 mb-4">
-                        <CheckCircle className="w-4 h-4 text-green-500" />
-                        <p className="text-sm text-green-700">{settingsSuccess}</p>
-                        <button onClick={() => setSettingsSuccess('')} className="ml-auto text-green-400 hover:text-green-600">×</button>
-                      </div>
-                    )}
-
-                    {/* Category List */}
-                    <div className="space-y-4">
-                      {Object.entries(serviceConfig).map(([catName, catData]) => (
-                        <div key={catName} className="border-2 border-gray-200 rounded-xl overflow-hidden hover:border-gray-300 transition-colors">
-                          {/* Category Header */}
-                          <div className="bg-gray-50 px-5 py-3 flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                              <div className="w-3 h-3 rounded-full" style={{background: catData.urgency === 'Urgent' ? '#f97316' : catData.urgency === 'Mixed' ? '#eab308' : '#22c55e'}}></div>
-                              <div>
-                                <h3 className="font-bold text-gray-800">{catName}</h3>
-                                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${catData.urgency === 'Urgent' ? 'bg-orange-100 text-orange-700' : catData.urgency === 'Mixed' ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'}`}>
-                                  {catData.urgency}
-                                </span>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs text-gray-400">{catData.services.length} service{catData.services.length !== 1 ? 's' : ''}</span>
-                              <button
-                                onClick={() => {
-                                  setEditingCategory({
-                                    originalName: catName,
-                                    name: catName,
-                                    urgency: catData.urgency,
-                                    dbId: catData.dbId,
-                                    services: catData.services.map(s => ({ name: s.name, priority: s.priority, dbId: s.dbId }))
-                                  });
-                                  setSettingsError('');
-                                }}
-                                className="p-1.5 rounded-lg text-blue-500 hover:bg-blue-50 transition-colors" title="Edit category"
-                              >
-                                <Edit className="w-4 h-4" />
-                              </button>
-                              <button
-                                onClick={async () => {
-                                  if (!window.confirm(`Delete "${catName}" and all its services? This cannot be undone.`)) return;
-                                  try {
-                                    if (catData.dbId) await api('DELETE', '/service-categories/' + catData.dbId);
-                                    const updated = { ...serviceConfig };
-                                    delete updated[catName];
-                                    setServiceConfig(updated);
-                                    setSettingsSuccess(`"${catName}" deleted successfully.`);
-                                  } catch (err) { alert('Delete failed: ' + err.message); }
-                                }}
-                                className="p-1.5 rounded-lg text-red-400 hover:bg-red-50 hover:text-red-600 transition-colors" title="Delete category"
-                              >
-                                <Trash className="w-4 h-4" />
-                              </button>
-                            </div>
-                          </div>
-                          {/* Services List */}
-                          <div className="px-5 py-3">
-                            <div className="space-y-1.5">
-                              {catData.services.map((svc, idx) => (
-                                <div key={idx} className="flex items-center justify-between py-1.5 px-3 bg-white rounded-lg border border-gray-100">
-                                  <span className="text-sm text-gray-700">{svc.name}</span>
-                                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${svc.priority === 'Priority Case' ? 'bg-red-100 text-red-700' : svc.priority === 'Urgent' ? 'bg-orange-100 text-orange-700' : 'bg-green-100 text-green-700'}`}>
-                                    {svc.priority}
-                                  </span>
-                                </div>
-                              ))}
-                              {catData.services.length === 0 && (
-                                <p className="text-sm text-gray-400 italic py-2">No services — click Edit to add some</p>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-
-                    {Object.keys(serviceConfig).length === 0 && (
-                      <div className="text-center py-12 text-gray-500">
-                        <p className="text-lg font-medium">No service categories configured</p>
-                        <p className="text-sm mt-1">Click "Add Category" to get started</p>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* ── Add Category Modal ── */}
-                  {showAddCategory && (
-                    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-                      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
-                        <div className="px-6 py-4 border-b" style={{background:'linear-gradient(to right,var(--ht-primary),var(--ht-accent))'}}>
-                          <h3 className="text-lg font-bold text-white">Add New Service Category</h3>
-                        </div>
-                        <div className="p-6 space-y-4">
-                          <div>
-                            <label className="block text-sm font-semibold text-gray-700 mb-1">Category Name <span className="text-red-500">*</span></label>
-                            <input type="text" value={newCategory.name} onChange={e => setNewCategory({...newCategory, name: e.target.value})}
-                              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm" placeholder="e.g. Dental Services" />
-                          </div>
-                          <div>
-                            <label className="block text-sm font-semibold text-gray-700 mb-1">Urgency Level</label>
-                            <select value={newCategory.urgency} onChange={e => setNewCategory({...newCategory, urgency: e.target.value})}
-                              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-sm">
-                              <option value="Non-Urgent">Non-Urgent</option>
-                              <option value="Mixed">Mixed</option>
-                              <option value="Urgent">Urgent</option>
-                            </select>
-                          </div>
-                          <div>
-                            <label className="block text-sm font-semibold text-gray-700 mb-2">Services</label>
-                            {newCategory.services.map((svc, idx) => (
-                              <div key={idx} className="flex items-center gap-2 mb-2">
-                                <input type="text" value={svc.name} placeholder="Service name"
-                                  onChange={e => { const s = [...newCategory.services]; s[idx].name = e.target.value; setNewCategory({...newCategory, services: s}); }}
-                                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
-                                <select value={svc.priority}
-                                  onChange={e => { const s = [...newCategory.services]; s[idx].priority = e.target.value; setNewCategory({...newCategory, services: s}); }}
-                                  className="px-2 py-2 border border-gray-300 rounded-lg text-sm w-32">
-                                  <option value="Regular">Regular</option>
-                                  <option value="Urgent">Urgent</option>
-                                  <option value="Priority Case">Priority Case</option>
-                                </select>
-                                {newCategory.services.length > 1 && (
-                                  <button onClick={() => { const s = newCategory.services.filter((_, i) => i !== idx); setNewCategory({...newCategory, services: s}); }}
-                                    className="p-1.5 text-red-400 hover:text-red-600"><Trash className="w-4 h-4" /></button>
-                                )}
-                              </div>
-                            ))}
-                            <button onClick={() => setNewCategory({...newCategory, services: [...newCategory.services, { name: '', priority: 'Regular' }]})}
-                              className="text-sm text-blue-600 hover:text-blue-700 font-medium mt-1">+ Add another service</button>
-                          </div>
-                          {settingsError && <p className="text-sm text-red-500">{settingsError}</p>}
-                          <div className="flex gap-3 pt-2">
-                            <button onClick={() => setShowAddCategory(false)} className="flex-1 border border-gray-300 text-gray-600 py-2.5 rounded-xl font-semibold text-sm">Cancel</button>
-                            <button onClick={async () => {
-                              setSettingsError('');
-                              if (!newCategory.name.trim()) { setSettingsError('Category name is required.'); return; }
-                              const validServices = newCategory.services.filter(s => s.name.trim());
-                              if (validServices.length === 0) { setSettingsError('Add at least one service.'); return; }
-                              if (serviceConfig[newCategory.name.trim()]) { setSettingsError('This category already exists.'); return; }
-                              try {
-                                await api('POST', '/service-categories', {
-                                  categoryName: newCategory.name.trim(),
-                                  urgency: newCategory.urgency,
-                                  services: validServices.map(s => ({ serviceName: s.name.trim(), defaultPriority: s.priority }))
-                                });
-                                await loadServiceCategories();
-                                setShowAddCategory(false);
-                                setSettingsSuccess(`"${newCategory.name.trim()}" added successfully!`);
-                              } catch (err) { setSettingsError(err.message || 'Failed to add category.'); }
-                            }} className="flex-1 text-white py-2.5 rounded-xl font-semibold text-sm" style={{background:'var(--ht-primary)'}}>
-                              Add Category
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* ── Edit Category Modal ── */}
-                  {editingCategory && (
-                    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-                      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
-                        <div className="px-6 py-4 border-b bg-gradient-to-r from-blue-600 to-indigo-600">
-                          <h3 className="text-lg font-bold text-white">Edit: {editingCategory.originalName}</h3>
-                        </div>
-                        <div className="p-6 space-y-4">
-                          <div>
-                            <label className="block text-sm font-semibold text-gray-700 mb-1">Category Name <span className="text-red-500">*</span></label>
-                            <input type="text" value={editingCategory.name}
-                              onChange={e => setEditingCategory({...editingCategory, name: e.target.value})}
-                              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
-                          </div>
-                          <div>
-                            <label className="block text-sm font-semibold text-gray-700 mb-1">Urgency Level</label>
-                            <select value={editingCategory.urgency}
-                              onChange={e => setEditingCategory({...editingCategory, urgency: e.target.value})}
-                              className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent">
-                              <option value="Non-Urgent">Non-Urgent</option>
-                              <option value="Mixed">Mixed</option>
-                              <option value="Urgent">Urgent</option>
-                            </select>
-                          </div>
-                          <div>
-                            <label className="block text-sm font-semibold text-gray-700 mb-2">Services</label>
-                            {editingCategory.services.map((svc, idx) => (
-                              <div key={idx} className="flex items-center gap-2 mb-2">
-                                <input type="text" value={svc.name} placeholder="Service name"
-                                  onChange={e => { const s = [...editingCategory.services]; s[idx] = {...s[idx], name: e.target.value}; setEditingCategory({...editingCategory, services: s}); }}
-                                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
-                                <select value={svc.priority}
-                                  onChange={e => { const s = [...editingCategory.services]; s[idx] = {...s[idx], priority: e.target.value}; setEditingCategory({...editingCategory, services: s}); }}
-                                  className="px-2 py-2 border border-gray-300 rounded-lg text-sm w-32">
-                                  <option value="Regular">Regular</option>
-                                  <option value="Urgent">Urgent</option>
-                                  <option value="Priority Case">Priority Case</option>
-                                </select>
-                                <button onClick={() => { const s = editingCategory.services.filter((_, i) => i !== idx); setEditingCategory({...editingCategory, services: s}); }}
-                                  className="p-1.5 text-red-400 hover:text-red-600"><Trash className="w-4 h-4" /></button>
-                              </div>
-                            ))}
-                            <button onClick={() => setEditingCategory({...editingCategory, services: [...editingCategory.services, { name: '', priority: 'Regular' }]})}
-                              className="text-sm text-blue-600 hover:text-blue-700 font-medium mt-1">+ Add another service</button>
-                          </div>
-                          {settingsError && <p className="text-sm text-red-500">{settingsError}</p>}
-                          <div className="flex gap-3 pt-2">
-                            <button onClick={() => { setEditingCategory(null); setSettingsError(''); }}
-                              className="flex-1 border border-gray-300 text-gray-600 py-2.5 rounded-xl font-semibold text-sm">Cancel</button>
-                            <button onClick={async () => {
-                              setSettingsError('');
-                              if (!editingCategory.name.trim()) { setSettingsError('Category name is required.'); return; }
-                              const validServices = editingCategory.services.filter(s => s.name.trim());
-                              if (validServices.length === 0) { setSettingsError('Add at least one service.'); return; }
-                              try {
-                                if (editingCategory.dbId) {
-                                  await api('PUT', '/service-categories/' + editingCategory.dbId, {
-                                    categoryName: editingCategory.name.trim(),
-                                    urgency: editingCategory.urgency,
-                                    services: validServices.map(s => ({ serviceName: s.name.trim(), defaultPriority: s.priority }))
-                                  });
-                                  await loadServiceCategories();
-                                } else {
-                                  // Local-only update (no DB record yet)
-                                  const updated = { ...serviceConfig };
-                                  if (editingCategory.originalName !== editingCategory.name.trim()) delete updated[editingCategory.originalName];
-                                  updated[editingCategory.name.trim()] = {
-                                    urgency: editingCategory.urgency,
-                                    services: validServices.map(s => ({ name: s.name.trim(), priority: s.priority }))
-                                  };
-                                  setServiceConfig(updated);
-                                }
-                                setEditingCategory(null);
-                                setSettingsSuccess(`"${editingCategory.name.trim()}" updated successfully!`);
-                              } catch (err) { setSettingsError(err.message || 'Failed to update category.'); }
-                            }} className="flex-1 text-white py-2.5 rounded-xl font-semibold text-sm bg-blue-600 hover:bg-blue-700">
-                              Save Changes
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
                 </div>
               )}
 
@@ -5829,15 +5278,7 @@ if (age < 6 && newPatient.occupation && newPatient.occupation !== 'N/A') {
                         <div className="md:col-span-2 mt-4">
                           <h3 className="text-lg font-semibold text-gray-800 mb-4 pb-2 border-b">Medical Information</h3>
                         </div>
-                        <div>
-                          <label className="block text-sm font-semibold text-gray-700 mb-2">PhilHealth Number</label>
-                          <input
-                            type="text"
-                            value={editingPatient.philHealthNumber}
-                            onChange={(e) => setEditingPatient({...editingPatient, philHealthNumber: e.target.value})}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                          />
-                        </div>
+
                         <div>
                           <label className="block text-sm font-semibold text-gray-700 mb-2">Allergies</label>
                           <input
