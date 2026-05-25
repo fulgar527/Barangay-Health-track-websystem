@@ -729,18 +729,6 @@ contactNumber: pendingAccount.contactNumber || '',
   { value: '16:00', label: '4:00 PM – 5:00 PM',   slot: 9 },
 ];
 
-// Dynamic Philippine Holidays — works for any year
-const getPhHolidays = (year) => {
-  const easter = (y) => {
-    const a=y%19, b=Math.floor(y/100), c=y%100;
-    const d=Math.floor(b/4), e=b%4, f=Math.floor((b+8)/25);
-    const g=Math.floor((b-f+1)/3), h=(19*a+b-d-g+15)%30;
-    const i=Math.floor(c/4), k=c%4, l=(32+2*e+2*i-h-k)%7;
-    const m=Math.floor((a+11*h+22*l)/451);
-    const month=Math.floor((h+l-7*m+114)/31);
-    const day=((h+l-7*m+114)%31)+1;
-    return new Date(y, month-1, day);
-  };
   const fmt = (d) => d.toISOString().split('T')[0];
   const addDays = (d, n) => { const r=new Date(d); r.setDate(r.getDate()+n); return r; };
   const lastMonday = (y, month) => {
@@ -767,12 +755,7 @@ const getPhHolidays = (year) => {
   ];
 };
 
-const isHoliday = (dateStr) => {
-  if (!dateStr) return null;
-  const year = parseInt(dateStr.split('-')[0]);
-  const holidays = getPhHolidays(year);
-  return holidays.find(h => h.date === dateStr);
-};
+          const CLINIC_SLOTS = [
             { value: '08:00', label: '8:00 AM – 9:00 AM',   slot: 1 },
             { value: '09:00', label: '9:00 AM – 10:00 AM',  slot: 2 },
             { value: '10:00', label: '10:00 AM – 11:00 AM', slot: 3 },
@@ -783,6 +766,24 @@ const isHoliday = (dateStr) => {
             { value: '15:00', label: '3:00 PM – 4:00 PM',   slot: 8 },
             { value: '16:00', label: '4:00 PM – 5:00 PM',   slot: 9 },
           ];
+          // Dynamic Philippine Holidays — works for any year
+const getPhHolidays = (year) => {
+  const easter = (y) => {
+    const a=y%19, b=Math.floor(y/100), c=y%100;
+    const d=Math.floor(b/4), e=b%4, f=Math.floor((b+8)/25);
+    const g=Math.floor((b-f+1)/3), h=(19*a+b-d-g+15)%30;
+    const i=Math.floor(c/4), k=c%4, l=(32+2*e+2*i-h-k)%7;
+    const m=Math.floor((a+11*h+22*l)/451);
+    const month=Math.floor((h+l-7*m+114)/31);
+    const day=((h+l-7*m+114)%31)+1;
+    return new Date(y, month-1, day);
+  };
+          const isHoliday = (dateStr) => {
+  if (!dateStr) return null;
+  const year = parseInt(dateStr.split('-')[0]);
+  const holidays = getPhHolidays(year);
+  return holidays.find(h => h.date === dateStr);
+};
 
           // Returns Set of booked time-values for a given date (excluding an optional appointment id)
           const getBookedSlots = (date, excludeId = null) => {
