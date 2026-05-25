@@ -11,6 +11,12 @@ const { logAudit } = require('./audit');
 //     any request reaches this router, so req.user is guaranteed to be populated.
 //     Using req.user.id directly gives correct audit actor IDs.
 // ──────────────────────────────────────────────────────────────────────────────
+// ADDITIONAL FIX #5 (May 2026):
+//   - Added detailed error logging in POST /queue to diagnose "Failed to add to queue"
+//   - Validate patient_id exists before INSERT
+//   - Check service_name matches available services
+//   - Better constraint violation messages
+// ──────────────────────────────────────────────────────────────────────────────
 
 // Get all queue entries
 router.get('/', async (req, res) => {
@@ -68,7 +74,7 @@ router.get('/:queueId', async (req, res) => {
   }
 });
 
-// Add to queue
+// Add to queue — WITH DETAILED ERROR DIAGNOSTICS
 router.post('/', async (req, res) => {
   try {
     const {
@@ -76,44 +82,154 @@ router.post('/', async (req, res) => {
       chiefComplaint, appointmentDate, appointmentTime, selfBooked, bookedByUsername
     } = req.body;
 
-    const queueNumResult = await db.query('SELECT get_next_queue_number() as queue_number');
-    const queueNumber = queueNumResult.rows[0].queue_number;
+    console.log('📝 Queue booking attempt:', {
+      patientId,
+      serviceCategory,
+      serviceName,
+      priority,
+      appointmentDate,
+      appointmentTime
+    });
 
-    const serviceResult = await db.query(
-      'SELECT service_id FROM services WHERE service_name = $1',
-      [serviceName]
+    // ────── VALIDATION 1: Check patient exists ──────
+    const patientCheck = await db.query(
+      'SELECT patient_id FROM patients WHERE patient_id = $1',
+      [patientId]
     );
-    const serviceId = serviceResult.rows.length > 0 ? serviceResult.rows[0].service_id : null;
+    if (patientCheck.rows.length === 0) {
+      console.error('❌ Patient not found:', patientId);
+      return res.status(400).json({ 
+        error: 'Patient not found. Please register first.',
+        detail: `Patient ID "${patientId}" does not exist in the system.`
+      });
+    }
+    console.log('✅ Patient found:', patientId);
 
-    if (appointmentDate && appointmentTime) {
-      const conflict = await db.query(
-        `SELECT COUNT(*) FROM queue
-         WHERE appointment_date = $1
-           AND appointment_time = $2
-           AND status NOT IN ('Cancelled', 'Rejected')`,
-        [appointmentDate, appointmentTime]
+    // ────── VALIDATION 2: Get queue number ──────
+    let queueNumber;
+    try {
+      const queueNumResult = await db.query('SELECT get_next_queue_number() as queue_number');
+      queueNumber = queueNumResult.rows[0].queue_number;
+      console.log('✅ Queue number generated:', queueNumber);
+    } catch (qErr) {
+      console.error('❌ Failed to generate queue number:', qErr.message);
+      return res.status(500).json({ 
+        error: 'Failed to generate queue number.',
+        detail: qErr.message
+      });
+    }
+
+    // ────── VALIDATION 3: Validate service name exists ──────
+    let serviceId = null;
+    try {
+      const serviceResult = await db.query(
+        'SELECT service_id FROM services WHERE service_name = $1',
+        [serviceName]
       );
-      if (parseInt(conflict.rows[0].count) >= 1) {
-        return res.status(409).json({ error: 'This appointment slot is already fully booked. Please choose a different time.' });
+      if (serviceResult.rows.length > 0) {
+        serviceId = serviceResult.rows[0].service_id;
+        console.log('✅ Service found:', serviceName, '(ID:', serviceId + ')');
+      } else {
+        console.warn('⚠️  Service not found (optional):', serviceName);
+        // Don't error — allow null service_id
+      }
+    } catch (sErr) {
+      console.error('❌ Service lookup failed:', sErr.message);
+      return res.status(500).json({ 
+        error: 'Failed to look up service.',
+        detail: sErr.message
+      });
+    }
+
+    // ────── VALIDATION 4: Check appointment slot availability ──────
+    if (appointmentDate && appointmentTime) {
+      try {
+        const conflict = await db.query(
+          `SELECT COUNT(*) FROM queue
+           WHERE appointment_date = $1
+             AND appointment_time = $2
+             AND status NOT IN ('Cancelled', 'Rejected')`,
+          [appointmentDate, appointmentTime]
+        );
+        const count = parseInt(conflict.rows[0].count);
+        if (count >= 1) {
+          console.warn('⚠️  Slot full:', appointmentDate, appointmentTime);
+          return res.status(409).json({ 
+            error: 'This appointment slot is already fully booked. Please choose a different time.' 
+          });
+        }
+        console.log('✅ Slot available:', appointmentDate, appointmentTime);
+      } catch (cErr) {
+        console.error('❌ Conflict check failed:', cErr.message);
+        return res.status(500).json({ 
+          error: 'Failed to check appointment availability.',
+          detail: cErr.message
+        });
       }
     }
 
-    const result = await db.query(
-      `INSERT INTO queue (
-        queue_number, patient_id, service_id, service_category, service_name,
-        priority, chief_complaint, appointment_date, appointment_time, self_booked, booked_by_username
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-      RETURNING *`,
-      [queueNumber, patientId, serviceId, serviceCategory, serviceName,
-       priority, chiefComplaint, appointmentDate, appointmentTime, selfBooked || false, bookedByUsername || null]
-    );
+    // ────── VALIDATION 5: Validate chief complaint ──────
+    if (!chiefComplaint || chiefComplaint.trim() === '') {
+      console.error('❌ Chief complaint is required');
+      return res.status(400).json({ 
+        error: 'Chief complaint is required.',
+        detail: 'Please provide a reason for the visit.'
+      });
+    }
+    console.log('✅ Chief complaint provided');
 
-    // FIX: use req.user.id set by requireAuth — no JWT re-verification needed
-    await logAudit(db, req.user?.id, 'ADD_QUEUE', 'queue', result.rows[0].queue_id, { patientId, serviceName, priority }, req.ip);
+    // ────── INSERT QUEUE ENTRY ──────
+    let result;
+    try {
+      result = await db.query(
+        `INSERT INTO queue (
+          queue_number, patient_id, service_id, service_category, service_name,
+          priority, chief_complaint, appointment_date, appointment_time, self_booked, booked_by_username
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        RETURNING *`,
+        [
+          queueNumber, patientId, serviceId, serviceCategory, serviceName,
+          priority, chiefComplaint, appointmentDate, appointmentTime, selfBooked || false, bookedByUsername || null
+        ]
+      );
+      console.log('✅ Queue entry created:', result.rows[0].queue_id);
+    } catch (insertErr) {
+      console.error('❌ INSERT failed:', insertErr.message);
+      console.error('   Error code:', insertErr.code);
+      console.error('   Error detail:', insertErr.detail);
+      
+      // Provide specific error message
+      if (insertErr.code === '23503') {
+        return res.status(400).json({ 
+          error: 'Invalid patient reference.',
+          detail: 'The patient ID does not exist in the database. Please register first.'
+        });
+      } else if (insertErr.code === '23502') {
+        return res.status(400).json({ 
+          error: 'Missing required field.',
+          detail: insertErr.message
+        });
+      }
+      return res.status(500).json({ 
+        error: 'Failed to add to queue.',
+        detail: insertErr.message
+      });
+    }
+
+    // ────── AUDIT LOG ──────
+    try {
+      await logAudit(db, req.user?.id, 'ADD_QUEUE', 'queue', result.rows[0].queue_id, { patientId, serviceName, priority }, req.ip);
+    } catch (auditErr) {
+      console.error('⚠️  Audit log failed (non-critical):', auditErr.message);
+    }
+
     res.status(201).json(result.rows[0]);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Failed to add to queue' });
+    console.error('❌ Unexpected error in POST /queue:', err);
+    res.status(500).json({ 
+      error: 'Failed to add to queue',
+      detail: err.message
+    });
   }
 });
 
