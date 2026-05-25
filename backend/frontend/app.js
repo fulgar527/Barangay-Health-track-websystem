@@ -1635,7 +1635,6 @@ if (age < 6 && newPatient.occupation && newPatient.occupation !== 'N/A') {
   } else {
     alert('Unable to identify patient information.');
     return;
-  }
 }
             }
             if (/[a-zA-Z]/.test(residentBooking.contactNumber)) {
