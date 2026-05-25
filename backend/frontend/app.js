@@ -1622,25 +1622,37 @@ if (age < 6 && newPatient.occupation && newPatient.occupation !== 'N/A') {
             }
 
             try {
-              // Calculate age
-              const today = new Date(), birthDate = new Date(residentBooking.dateOfBirth);
-              let age = today.getFullYear() - birthDate.getFullYear();
-              const m = today.getMonth() - birthDate.getMonth();
-              if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) age--;
+              // Calculate age (handle missing DOB gracefully)
+              let age = 0;
+              if (residentBooking.dateOfBirth) {
+                const today = new Date(), birthDate = new Date(residentBooking.dateOfBirth);
+                age = today.getFullYear() - birthDate.getFullYear();
+                const m = today.getMonth() - birthDate.getMonth();
+                if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) age--;
+              }
 
-              // Upsert patient: check if exists by name + DOB, else create
+              // Upsert patient: check if exists by name (+ DOB if available), else create
               let patient = registeredPatients.find(p =>
                 p.firstName.toLowerCase() === residentBooking.firstName.toLowerCase() &&
                 p.lastName.toLowerCase()  === residentBooking.lastName.toLowerCase() &&
-                p.dateOfBirth === residentBooking.dateOfBirth
+                (!residentBooking.dateOfBirth || p.dateOfBirth === residentBooking.dateOfBirth)
               );
+              if (!patient) {
+                // Also try matching by name only (without DOB) as fallback
+                patient = registeredPatients.find(p =>
+                  p.firstName.toLowerCase() === residentBooking.firstName.toLowerCase() &&
+                  p.lastName.toLowerCase()  === residentBooking.lastName.toLowerCase()
+                );
+              }
               if (!patient) {
                 const row = await api('POST', '/patients', {
                   lastName: residentBooking.lastName, firstName: residentBooking.firstName,
                   middleName: residentBooking.middleName || null,
-                  dateOfBirth: residentBooking.dateOfBirth, age,
-                  sex: residentBooking.sex, address: residentBooking.address,
-                  contactNumber: residentBooking.contactNumber,
+                  dateOfBirth: residentBooking.dateOfBirth || null,
+                  age: age || 0,
+                  sex: residentBooking.sex || null,
+                  address: residentBooking.address || 'N/A',
+                  contactNumber: residentBooking.contactNumber || 'N/A',
                   civilStatus: residentBooking.civilStatus || null,
                   occupation: residentBooking.occupation || null,
                   philhealthNumber: residentBooking.philHealthNumber || null,
