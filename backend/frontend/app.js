@@ -2453,8 +2453,11 @@ if (age < 6 && newPatient.occupation && newPatient.occupation !== 'N/A') {
                       : null;
                     const apptSlot = myEntry?.appointmentTime ? CLINIC_SLOTS.find(s => s.value === myEntry.appointmentTime) : null;
                     const apptDateStr = myEntry?.appointmentDate
-                      ? new Date(myEntry.appointmentDate + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
-                      : null;
+                     ? (() => {
+    const d = new Date(myEntry.appointmentDate + 'T00:00:00');
+    return isNaN(d.getTime()) ? 'Date not set' : d.toLocaleDateString('en-PH', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+  })()
+: null;
                     const statusColors = {
                       'Accepted':  { bg: 'bg-green-50 border-green-300',  badge: 'bg-green-100 text-green-700', icon: '✅', label: 'Accepted' },
                       'Rejected':  { bg: 'bg-red-50 border-red-300',      badge: 'bg-red-100 text-red-700',    icon: '❌', label: 'Rejected' },
