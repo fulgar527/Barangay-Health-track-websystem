@@ -1574,7 +1574,9 @@ if (age < 6 && newPatient.occupation && newPatient.occupation !== 'N/A') {
             }
             if (residentBooking.emergencyContactNumber && /[a-zA-Z]/.test(residentBooking.emergencyContactNumber)) {
               alert('Emergency Contact Number must contain digits only — no letters allowed.'); return;
-              // Age range validation for service categories
+            }
+
+            // Age range validation for service categories
             const patientAge = (() => {
               if (!residentBooking.dateOfBirth) return null;
               const today = new Date(), dob = new Date(residentBooking.dateOfBirth);
@@ -1609,7 +1611,6 @@ if (age < 6 && newPatient.occupation && newPatient.occupation !== 'N/A') {
               if (patientAge !== null && patientAge < 18) {
                 alert('Family Planning services are only available for patients aged 18 and above.'); return;
               }
-            }
             }
             const selectedDate = new Date(residentBooking.appointmentDate + 'T00:00:00');
             const todayDate = new Date(); todayDate.setHours(0,0,0,0);
@@ -2975,7 +2976,7 @@ if (age < 6 && newPatient.occupation && newPatient.occupation !== 'N/A') {
                           <h2 className="text-2xl font-bold text-white mb-2">Book Appointment</h2>
                           <p className="text-white/90 text-sm flex items-center">
                             <span className="mr-2">📅</span>
-                            Schedule your visit — your details are already on file
+                            {residentBooking.dateOfBirth ? 'Schedule your visit — your details are already on file' : 'Schedule your clinic visit'}
                           </p>
                         </div>
                         
@@ -2986,9 +2987,11 @@ if (age < 6 && newPatient.occupation && newPatient.occupation !== 'N/A') {
                           <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
                             <div className="flex items-center justify-between mb-2">
                               <h3 className="text-sm font-bold text-gray-600 uppercase tracking-wide">Booking As</h3>
-                              {residentBooking.firstName && (
-                                <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">✓ Info on file</span>
-                              )}
+                              {residentBooking.dateOfBirth && residentBooking.contactNumber ? (
+                                <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">✓ Full info on file</span>
+                              ) : residentBooking.firstName ? (
+                                <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-medium">⚠ Limited info</span>
+                              ) : null}
                             </div>
                             <div className="flex items-center gap-3">
                               <div className="w-12 h-12 rounded-full flex items-center justify-center text-white font-bold text-lg flex-shrink-0" style={{background:'var(--ht-primary)'}}>
@@ -2996,21 +2999,20 @@ if (age < 6 && newPatient.occupation && newPatient.occupation !== 'N/A') {
                               </div>
                               <div>
                                 <p className="font-bold text-gray-800 text-lg">
-                                  {residentBooking.firstName || ''} {residentBooking.middleName || ''} {residentBooking.lastName || currentUser?.fullName || 'Unknown'}
+                                  {residentBooking.firstName ? `${residentBooking.firstName} ${residentBooking.middleName || ''} ${residentBooking.lastName}`.trim() : (currentUser?.fullName || 'Unknown')}
                                 </p>
-                                <div className="flex items-center gap-3 text-sm text-gray-500 mt-0.5">
-                                  {residentBooking.dateOfBirth && <span>🎂 {new Date(residentBooking.dateOfBirth + 'T00:00:00').toLocaleDateString('en-PH', { year:'numeric', month:'short', day:'numeric' })}</span>}
-                                  {residentBooking.sex && <span>• {residentBooking.sex}</span>}
-                                  {residentBooking.contactNumber && <span>• 📱 {residentBooking.contactNumber}</span>}
-                                </div>
+                                {residentBooking.dateOfBirth || residentBooking.sex || residentBooking.contactNumber ? (
+                                  <div className="flex items-center gap-3 text-sm text-gray-500 mt-0.5 flex-wrap">
+                                    {residentBooking.dateOfBirth && <span>🎂 {new Date(residentBooking.dateOfBirth + 'T00:00:00').toLocaleDateString('en-PH', { year:'numeric', month:'short', day:'numeric' })}</span>}
+                                    {residentBooking.sex && <span>• {residentBooking.sex}</span>}
+                                    {residentBooking.contactNumber && <span>• 📱 {residentBooking.contactNumber}</span>}
+                                  </div>
+                                ) : (
+                                  <p className="text-xs text-gray-400 mt-0.5">Name matched from your account login</p>
+                                )}
                                 {residentBooking.address && <p className="text-xs text-gray-400 mt-0.5">📍 {residentBooking.address}</p>}
                               </div>
                             </div>
-                            {!residentBooking.firstName && (
-                              <p className="text-xs text-amber-600 mt-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                                ⚠️ Your registration info was not found. Please make sure your account name matches a registered patient, or contact staff to register you first.
-                              </p>
-                            )}
                           </div>
 
                           {/* ── APPOINTMENT SCHEDULE ── */}
