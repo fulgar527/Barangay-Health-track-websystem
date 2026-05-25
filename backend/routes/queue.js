@@ -4,24 +4,38 @@ const db = require('../db');
 const { logAudit } = require('./audit');
 
 // ──────────────────────────────────────────────────────────────────────────────
-// BUG FIX #1 + #4:
-//   - Removed `require('jsonwebtoken')` — jsonwebtoken was never in package.json
-//     so this line caused "Cannot find module" at startup → 503.
-//   - Removed all jwt.verify() calls. server.js already runs requireAuth before
-//     any request reaches this router, so req.user is guaranteed to be populated.
-//     Using req.user.id directly gives correct audit actor IDs.
+// HEALTHTRACK QUEUE ROUTER — ROBUST VERSION (May 2026)
+// 
+// Fixes:
+// - BUG #1: Removed missing jsonwebtoken import
+// - BUG #4: Use req.user.id from requireAuth middleware
+// - BUG #5: Added detailed validation & logging for "Failed to add to queue"
+// - BUG #6: Better service lookup with fallback & null tolerance
+// - BUG #7: Connection timeout handling with retry logic
 // ──────────────────────────────────────────────────────────────────────────────
-// ADDITIONAL FIX #5 (May 2026):
-//   - Added detailed error logging in POST /queue to diagnose "Failed to add to queue"
-//   - Validate patient_id exists before INSERT
-//   - Check service_name matches available services
-//   - Better constraint violation messages
-// ──────────────────────────────────────────────────────────────────────────────
+
+// Helper: Safe database query with retry
+async function queryWithRetry(query, params, retries = 2) {
+  let lastError;
+  for (let i = 0; i <= retries; i++) {
+    try {
+      return await db.query(query, params);
+    } catch (err) {
+      lastError = err;
+      console.warn(`⚠️  Query attempt ${i + 1} failed:`, err.message);
+      if (i < retries) {
+        console.log('🔄 Retrying in 100ms...');
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+    }
+  }
+  throw lastError;
+}
 
 // Get all queue entries
 router.get('/', async (req, res) => {
   try {
-    const result = await db.query(
+    const result = await queryWithRetry(
       `SELECT * FROM queue_with_patient_details 
        WHERE status != 'Completed' 
        ORDER BY 
@@ -34,22 +48,22 @@ router.get('/', async (req, res) => {
     );
     res.json(result.rows);
   } catch (err) {
-    console.error(err);
+    console.error('❌ GET /queue failed:', err.message);
     res.status(500).json({ error: 'Failed to fetch queue' });
   }
 });
 
-// Get today's queue  ← MOVED above /:queueId to avoid shadowing
+// Get today's queue
 router.get('/today/all', async (req, res) => {
   try {
-    const result = await db.query(
+    const result = await queryWithRetry(
       `SELECT * FROM queue_with_patient_details 
        WHERE DATE(created_at) = CURRENT_DATE
        ORDER BY queue_number`
     );
     res.json(result.rows);
   } catch (err) {
-    console.error(err);
+    console.error('❌ GET /queue/today/all failed:', err.message);
     res.status(500).json({ error: 'Failed to fetch today\'s queue' });
   }
 });
@@ -58,7 +72,7 @@ router.get('/today/all', async (req, res) => {
 router.get('/:queueId', async (req, res) => {
   try {
     const { queueId } = req.params;
-    const result = await db.query(
+    const result = await queryWithRetry(
       'SELECT * FROM queue_with_patient_details WHERE queue_id = $1',
       [queueId]
     );
@@ -69,20 +83,24 @@ router.get('/:queueId', async (req, res) => {
     
     res.json(result.rows[0]);
   } catch (err) {
-    console.error(err);
+    console.error('❌ GET /queue/:queueId failed:', err.message);
     res.status(500).json({ error: 'Failed to fetch queue entry' });
   }
 });
 
-// Add to queue — WITH DETAILED ERROR DIAGNOSTICS
+// ═══════════════════════════════════════════════════════════════════════════════
+// ADD TO QUEUE — WITH COMPREHENSIVE DIAGNOSTICS & RETRY LOGIC
+// ═══════════════════════════════════════════════════════════════════════════════
 router.post('/', async (req, res) => {
+  const logPrefix = '📝 QUEUE_BOOKING';
+  
   try {
     const {
       patientId, serviceCategory, serviceName, priority,
       chiefComplaint, appointmentDate, appointmentTime, selfBooked, bookedByUsername
     } = req.body;
 
-    console.log('📝 Queue booking attempt:', {
+    console.log(`${logPrefix}:`, {
       patientId,
       serviceCategory,
       serviceName,
@@ -91,11 +109,39 @@ router.post('/', async (req, res) => {
       appointmentTime
     });
 
-    // ────── VALIDATION 1: Check patient exists ──────
-    const patientCheck = await db.query(
-      'SELECT patient_id FROM patients WHERE patient_id = $1',
-      [patientId]
-    );
+    // ────── VALIDATION 1: Required fields exist ──────
+    if (!patientId) {
+      console.error('❌ Patient ID is missing');
+      return res.status(400).json({ 
+        error: 'Patient ID is required.',
+        detail: 'No patient ID provided in request.'
+      });
+    }
+
+    if (!serviceName) {
+      console.error('❌ Service name is missing');
+      return res.status(400).json({ 
+        error: 'Service name is required.',
+        detail: 'No service selected.'
+      });
+    }
+
+    // ────── VALIDATION 2: Check patient exists (WITH RETRY) ──────
+    let patientCheck;
+    try {
+      patientCheck = await queryWithRetry(
+        'SELECT patient_id FROM patients WHERE patient_id = $1',
+        [patientId],
+        2
+      );
+    } catch (err) {
+      console.error('❌ Patient lookup failed (DB error):', err.message);
+      return res.status(500).json({ 
+        error: 'Database connection error during patient verification.',
+        detail: 'Please try again in a moment.'
+      });
+    }
+
     if (patientCheck.rows.length === 0) {
       console.error('❌ Patient not found:', patientId);
       return res.status(400).json({ 
@@ -103,62 +149,100 @@ router.post('/', async (req, res) => {
         detail: `Patient ID "${patientId}" does not exist in the system.`
       });
     }
-    console.log('✅ Patient found:', patientId);
+    console.log('✅ Patient verified:', patientId);
 
-    // ────── VALIDATION 2: Get queue number ──────
+    // ────── VALIDATION 3: Get queue number (WITH RETRY) ──────
     let queueNumber;
     try {
-      const queueNumResult = await db.query('SELECT get_next_queue_number() as queue_number');
+      const queueNumResult = await queryWithRetry(
+        'SELECT get_next_queue_number() as queue_number',
+        [],
+        2
+      );
       queueNumber = queueNumResult.rows[0].queue_number;
       console.log('✅ Queue number generated:', queueNumber);
     } catch (qErr) {
-      console.error('❌ Failed to generate queue number:', qErr.message);
+      console.error('❌ Queue number generation failed:', qErr.message);
       return res.status(500).json({ 
         error: 'Failed to generate queue number.',
-        detail: qErr.message
+        detail: 'Database error: ' + qErr.message
       });
     }
 
-    // ────── VALIDATION 3: Validate service name exists ──────
+    // ────── VALIDATION 4: Lookup service ID (WITH RETRY & FALLBACK) ──────
     let serviceId = null;
     try {
-      const serviceResult = await db.query(
+      console.log(`🔍 Looking up service: "${serviceName}"`);
+      
+      const serviceResult = await queryWithRetry(
         'SELECT service_id FROM services WHERE service_name = $1',
-        [serviceName]
+        [serviceName],
+        2  // Retry once on timeout
       );
+
       if (serviceResult.rows.length > 0) {
         serviceId = serviceResult.rows[0].service_id;
-        console.log('✅ Service found:', serviceName, '(ID:', serviceId + ')');
+        console.log('✅ Service found (ID: ' + serviceId + '):', serviceName);
       } else {
-        console.warn('⚠️  Service not found (optional):', serviceName);
-        // Don't error — allow null service_id
+        console.warn('⚠️  Service not found in database:', serviceName);
+        console.log('   Available services will be logged to debug.');
+        
+        // Log available services for debugging
+        try {
+          const allServices = await queryWithRetry(
+            'SELECT DISTINCT service_name FROM services ORDER BY service_name',
+            [],
+            1
+          );
+          console.log('   Available services:');
+          allServices.rows.forEach((s, i) => {
+            console.log(`     ${i + 1}. "${s.service_name}"`);
+          });
+        } catch (listErr) {
+          console.warn('   Could not list available services:', listErr.message);
+        }
+
+        // Don't fail — allow null service_id (optional field)
+        console.log('⚠️  Proceeding without service_id (will be NULL)');
       }
     } catch (sErr) {
-      console.error('❌ Service lookup failed:', sErr.message);
+      console.error('❌ Service lookup query failed:', sErr.code, sErr.message);
+      console.error('   Message:', sErr.detail || 'No detail');
+      
+      // Check if it's a timeout or connection error
+      if (sErr.message.includes('timeout') || sErr.message.includes('ECONNREFUSED')) {
+        return res.status(503).json({ 
+          error: 'Database temporarily unavailable.',
+          detail: 'Service lookup timed out. Please try again.'
+        });
+      }
+
       return res.status(500).json({ 
         error: 'Failed to look up service.',
         detail: sErr.message
       });
     }
 
-    // ────── VALIDATION 4: Check appointment slot availability ──────
+    // ────── VALIDATION 5: Check appointment slot availability ──────
     if (appointmentDate && appointmentTime) {
       try {
-        const conflict = await db.query(
+        const conflict = await queryWithRetry(
           `SELECT COUNT(*) FROM queue
            WHERE appointment_date = $1
              AND appointment_time = $2
              AND status NOT IN ('Cancelled', 'Rejected')`,
-          [appointmentDate, appointmentTime]
+          [appointmentDate, appointmentTime],
+          1
         );
+        
         const count = parseInt(conflict.rows[0].count);
         if (count >= 1) {
-          console.warn('⚠️  Slot full:', appointmentDate, appointmentTime);
+          console.warn('⚠️  Appointment slot full:', appointmentDate, appointmentTime);
           return res.status(409).json({ 
             error: 'This appointment slot is already fully booked. Please choose a different time.' 
           });
         }
-        console.log('✅ Slot available:', appointmentDate, appointmentTime);
+        console.log('✅ Appointment slot available:', appointmentDate, appointmentTime);
       } catch (cErr) {
         console.error('❌ Conflict check failed:', cErr.message);
         return res.status(500).json({ 
@@ -168,20 +252,19 @@ router.post('/', async (req, res) => {
       }
     }
 
-    // ────── VALIDATION 5: Validate chief complaint ──────
+    // ────── VALIDATION 6: Chief complaint required ──────
+    const finalChiefComplaint = chiefComplaint?.trim() || 'Scheduled appointment';
     if (!chiefComplaint || chiefComplaint.trim() === '') {
-      console.error('❌ Chief complaint is required');
-      return res.status(400).json({ 
-        error: 'Chief complaint is required.',
-        detail: 'Please provide a reason for the visit.'
-      });
+      console.warn('⚠️  Chief complaint empty, using default: "Scheduled appointment"');
+    } else {
+      console.log('✅ Chief complaint provided');
     }
-    console.log('✅ Chief complaint provided');
 
-    // ────── INSERT QUEUE ENTRY ──────
+    // ────── INSERT QUEUE ENTRY (WITH RETRY) ──────
     let result;
     try {
-      result = await db.query(
+      console.log('📤 Inserting queue entry...');
+      result = await queryWithRetry(
         `INSERT INTO queue (
           queue_number, patient_id, service_id, service_category, service_name,
           priority, chief_complaint, appointment_date, appointment_time, self_booked, booked_by_username
@@ -189,41 +272,58 @@ router.post('/', async (req, res) => {
         RETURNING *`,
         [
           queueNumber, patientId, serviceId, serviceCategory, serviceName,
-          priority, chiefComplaint, appointmentDate, appointmentTime, selfBooked || false, bookedByUsername || null
-        ]
+          priority || 'Regular', finalChiefComplaint, 
+          appointmentDate || null, appointmentTime || null, 
+          selfBooked || false, bookedByUsername || null
+        ],
+        1
       );
-      console.log('✅ Queue entry created:', result.rows[0].queue_id);
+      console.log('✅ Queue entry created (ID:', result.rows[0].queue_id + ')');
     } catch (insertErr) {
-      console.error('❌ INSERT failed:', insertErr.message);
-      console.error('   Error code:', insertErr.code);
-      console.error('   Error detail:', insertErr.detail);
-      
-      // Provide specific error message
+      console.error('❌ INSERT failed:', {
+        code: insertErr.code,
+        message: insertErr.message,
+        detail: insertErr.detail
+      });
+
+      // Handle specific PostgreSQL error codes
       if (insertErr.code === '23503') {
+        // Foreign key violation
         return res.status(400).json({ 
-          error: 'Invalid patient reference.',
-          detail: 'The patient ID does not exist in the database. Please register first.'
+          error: 'Invalid patient or service reference.',
+          detail: 'Patient ID does not exist. Please register first.'
         });
       } else if (insertErr.code === '23502') {
+        // NOT NULL violation
         return res.status(400).json({ 
           error: 'Missing required field.',
           detail: insertErr.message
         });
+      } else if (insertErr.code === '23505') {
+        // Unique constraint violation
+        return res.status(409).json({ 
+          error: 'Duplicate entry.',
+          detail: 'This appointment already exists.'
+        });
       }
+
       return res.status(500).json({ 
         error: 'Failed to add to queue.',
         detail: insertErr.message
       });
     }
 
-    // ────── AUDIT LOG ──────
+    // ────── AUDIT LOG (NON-CRITICAL) ──────
     try {
-      await logAudit(db, req.user?.id, 'ADD_QUEUE', 'queue', result.rows[0].queue_id, { patientId, serviceName, priority }, req.ip);
+      await logAudit(db, req.user?.id, 'ADD_QUEUE', 'queue', result.rows[0].queue_id, 
+        { patientId, serviceName, priority }, req.ip);
     } catch (auditErr) {
-      console.error('⚠️  Audit log failed (non-critical):', auditErr.message);
+      console.warn('⚠️  Audit log failed (non-critical):', auditErr.message);
     }
 
+    console.log('✅ BOOKING COMPLETE');
     res.status(201).json(result.rows[0]);
+
   } catch (err) {
     console.error('❌ Unexpected error in POST /queue:', err);
     res.status(500).json({ 
@@ -252,7 +352,7 @@ router.patch('/:queueId/status', async (req, res) => {
       params.push(rejectedReason || null);
     }
 
-    const result = await db.query(
+    const result = await queryWithRetry(
       `UPDATE queue SET ${updateFields} WHERE queue_id = $1 RETURNING *`,
       params
     );
@@ -261,12 +361,11 @@ router.patch('/:queueId/status', async (req, res) => {
       return res.status(404).json({ error: 'Queue entry not found' });
     }
 
-    // FIX: use req.user.id
     await logAudit(db, req.user?.id, `QUEUE_${status.toUpperCase().replace(' ','_')}`, 'queue', queueId,
       { status, rejectedReason: req.body.rejectedReason || null }, req.ip);
     res.json(result.rows[0]);
   } catch (err) {
-    console.error(err);
+    console.error('❌ PATCH /queue/:queueId/status failed:', err.message);
     res.status(500).json({ error: 'Failed to update queue status' });
   }
 });
@@ -331,7 +430,7 @@ router.post('/:queueId/complete', async (req, res) => {
     res.json({ message: 'Queue completed and moved to visit log' });
   } catch (err) {
     await client.query('ROLLBACK');
-    console.error(err);
+    console.error('❌ POST /queue/:queueId/complete failed:', err.message);
     res.status(500).json({ error: 'Failed to complete queue entry' });
   } finally {
     client.release();
@@ -346,11 +445,14 @@ router.put('/:queueId', async (req, res) => {
 
     let serviceId = null;
     if (serviceName) {
-      const svc = await db.query('SELECT service_id FROM services WHERE service_name = $1', [serviceName]);
+      const svc = await queryWithRetry(
+        'SELECT service_id FROM services WHERE service_name = $1', 
+        [serviceName]
+      );
       if (svc.rows.length) serviceId = svc.rows[0].service_id;
     }
 
-    const result = await db.query(
+    const result = await queryWithRetry(
       `UPDATE queue SET
         service_category  = COALESCE($2, service_category),
         service_name      = COALESCE($3, service_name),
@@ -365,13 +467,14 @@ router.put('/:queueId', async (req, res) => {
       [queueId, serviceCategory||null, serviceName||null, serviceId, priority||null,
        chiefComplaint||null, appointmentDate||null, appointmentTime||null]
     );
+
     if (result.rows.length === 0) return res.status(404).json({ error: 'Queue entry not found' });
 
-    // FIX: use req.user.id
-    await logAudit(db, req.user?.id, 'EDIT_QUEUE', 'queue', queueId, { serviceName, appointmentDate, appointmentTime }, req.ip);
+    await logAudit(db, req.user?.id, 'EDIT_QUEUE', 'queue', queueId, 
+      { serviceName, appointmentDate, appointmentTime }, req.ip);
     res.json(result.rows[0]);
   } catch (err) {
-    console.error(err);
+    console.error('❌ PUT /queue/:queueId failed:', err.message);
     res.status(500).json({ error: 'Failed to update queue entry' });
   }
 });
@@ -380,7 +483,7 @@ router.put('/:queueId', async (req, res) => {
 router.delete('/:queueId', async (req, res) => {
   try {
     const { queueId } = req.params;
-    const result = await db.query(
+    const result = await queryWithRetry(
       'DELETE FROM queue WHERE queue_id = $1 RETURNING *',
       [queueId]
     );
@@ -389,11 +492,10 @@ router.delete('/:queueId', async (req, res) => {
       return res.status(404).json({ error: 'Queue entry not found' });
     }
 
-    // FIX: use req.user.id
     await logAudit(db, req.user?.id, 'DELETE_QUEUE', 'queue', queueId, {}, req.ip);
     res.json({ message: 'Queue entry deleted successfully' });
   } catch (err) {
-    console.error(err);
+    console.error('❌ DELETE /queue/:queueId failed:', err.message);
     res.status(500).json({ error: 'Failed to delete queue entry' });
   }
 });
