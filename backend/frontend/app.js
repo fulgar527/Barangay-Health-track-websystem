@@ -3122,7 +3122,7 @@ if (age < 6 && newPatient.occupation && newPatient.occupation !== 'N/A') {
               </div>
             );
           }
-
+         };
           // ==================== RENDER: STAFF/ADMIN DASHBOARD ====================
           return (
             <div className="min-h-screen bg-gray-50">
