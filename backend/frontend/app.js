@@ -403,6 +403,11 @@ function normalizeUser(u) {
           const [loginPassword, setLoginPassword] = useState('');
           const [loginError, setLoginError] = useState('');
           const [showCreateAccount, setShowCreateAccount] = useState(false);
+          const [showForgotPassword, setShowForgotPassword] = useState(false);
+          const [forgotEmail, setForgotEmail] = useState('');
+          const [forgotStatus, setForgotStatus] = useState('');
+          const [forgotError, setForgotError] = useState('');
+          const [forgotLoading, setForgotLoading] = useState(false);
           const [showPassword, setShowPassword] = useState(false);
           const [showRegPassword, setShowRegPassword] = useState(false);
           const [newAccount, setNewAccount] = useState({
@@ -456,27 +461,18 @@ function normalizeUser(u) {
               return;
             }
 
-            // ── DEFAULT LOGIN (bypass API for local testing) ─────────────────
-            // Uses hardcoded credentials matching the default accounts shown on
-            // the login screen. Remove this block and restore the API call below
-            // once the backend is confirmed working on Hostinger.
-            const DEFAULT_ACCOUNTS = [
-              { username: 'admin',    password: 'admin123',    role: 'admin',    fullName: 'Admin User',    userId: 'local-admin' },
-              { username: 'staff',    password: 'staff123',    role: 'staff',    fullName: 'Staff User',    userId: 'local-staff' },
-              { username: 'resident', password: 'resident123', role: 'resident', fullName: 'Resident User', userId: 'local-resident' },
-            ];
-
-            const match = DEFAULT_ACCOUNTS.find(
-              a => a.username === loginUsername.trim().toLowerCase() && a.password === loginPassword
-            );
-
-            if (match) {
+            // ── API LOGIN — authenticates against backend/database ───────────
+            try {
+              setLoginError('');
+              const data = await api('POST', '/auth/login', {
+                username: loginUsername.trim(), password: loginPassword
+              });
+              setToken(data.token);
               const user = {
-                id: match.userId, userId: match.userId,
-                username: match.username, role: match.role,
-                fullName: match.fullName, email: '',
+                id: data.user.userId, userId: data.user.userId,
+                username: data.user.username, role: data.user.role,
+                fullName: data.user.fullName, email: data.user.email,
               };
-              setToken('local-dev-token');
               setLoginAttempts(0); setLockoutUntil(null);
               setCurrentUser(user); setUserRole(user.role);
               try { sessionStorage.setItem('ht_user', JSON.stringify(user)); } catch {}
@@ -485,7 +481,7 @@ function normalizeUser(u) {
               setLoginUsername(''); setLoginPassword('');
               setLoginError(''); setShowPassword(false);
               setLastActivity(Date.now());
-            } else {
+            } catch (err) {
               const newAttempts = loginAttempts + 1;
               setLoginAttempts(newAttempts);
               if (newAttempts >= MAX_ATTEMPTS) {
@@ -493,44 +489,28 @@ function normalizeUser(u) {
                 setLockoutUntil(until); setLoginAttempts(0);
                 setLoginError('Too many failed attempts. Login locked for 5 minutes.');
               } else {
-                setLoginError(`Invalid username or password. ${MAX_ATTEMPTS - newAttempts} attempt${MAX_ATTEMPTS - newAttempts !== 1 ? 's' : ''} remaining.`);
+                const msg = err.message || 'Invalid username or password.';
+                setLoginError(`${msg} ${MAX_ATTEMPTS - newAttempts} attempt${MAX_ATTEMPTS - newAttempts !== 1 ? 's' : ''} remaining.`);
               }
             }
-            // ── END DEFAULT LOGIN ─────────────────────────────────────────────
-            // To restore API login, delete everything above this line (inside the
-            // try block) and uncomment the block below:
-            //
-            // try {
-            //   setLoginError('');
-            //   const data = await api('POST', '/auth/login', {
-            //     username: loginUsername.trim(), password: loginPassword
-            //   });
-            //   setToken(data.token);
-            //   const user = {
-            //     id: data.user.userId, userId: data.user.userId,
-            //     username: data.user.username, role: data.user.role,
-            //     fullName: data.user.fullName, email: data.user.email,
-            //   };
-            //   setLoginAttempts(0); setLockoutUntil(null);
-            //   setCurrentUser(user); setUserRole(user.role);
-            //   try { sessionStorage.setItem('ht_user', JSON.stringify(user)); } catch {}
-            //   if (user.role === 'resident') setResidentView('queue');
-            //   else setActiveTab('dashboard');
-            //   setLoginUsername(''); setLoginPassword('');
-            //   setLoginError(''); setShowPassword(false);
-            //   setLastActivity(Date.now());
-            // } catch (err) {
-            //   const newAttempts = loginAttempts + 1;
-            //   setLoginAttempts(newAttempts);
-            //   if (newAttempts >= MAX_ATTEMPTS) {
-            //     const until = Date.now() + LOCKOUT_DURATION_MS;
-            //     setLockoutUntil(until); setLoginAttempts(0);
-            //     setLoginError('Too many failed attempts. Login locked for 5 minutes.');
-            //   } else {
-            //     const msg = err.message || 'Invalid username or password.';
-            //     setLoginError(`${msg} ${MAX_ATTEMPTS - newAttempts} attempt${MAX_ATTEMPTS - newAttempts !== 1 ? 's' : ''} remaining.`);
-            //   }
-            // }
+          };
+
+
+          const handleForgotPassword = async (e) => {
+            e.preventDefault();
+            if (!forgotEmail.trim()) { setForgotError('Please enter your email address.'); return; }
+            setForgotLoading(true); setForgotError(''); setForgotStatus('');
+            try {
+              const res = await fetch('/api/auth/forgot-password', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: forgotEmail.trim() })
+              });
+              const data = await res.json();
+              if (!res.ok) { setForgotError(data.error || 'Something went wrong.'); }
+              else { setForgotStatus(data.message); setForgotEmail(''); }
+            } catch { setForgotError('Network error. Please try again.'); }
+            finally { setForgotLoading(false); }
           };
 
           // ── Audit logger — writes to backend (fire-and-forget) ──────────────
@@ -1689,7 +1669,17 @@ function normalizeUser(u) {
                           </button>
                         </div>
 
-                        <div className="mt-6 text-center">
+                        <div className="mt-4 text-center">
+                          <button
+                            type="button"
+                            onClick={() => { setShowForgotPassword(true); setForgotEmail(''); setForgotError(''); setForgotStatus(''); }}
+                            className="text-sm text-gray-500 hover:text-red-700 hover:underline transition-colors"
+                          >
+                            Forgot Password?
+                          </button>
+                        </div>
+
+                        <div className="mt-4 text-center">
                           <p className="text-sm text-gray-600">
                             Don't have an account?{' '}
                             <button
@@ -3000,6 +2990,58 @@ function normalizeUser(u) {
           // ==================== RENDER: STAFF/ADMIN DASHBOARD ====================
           return (
             <div className="min-h-screen bg-gray-50">
+
+              {/* ===== FORGOT PASSWORD MODAL ===== */}
+              {showForgotPassword && (
+                <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
+                  <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+                    <div className="flex items-center justify-between mb-4">
+                      <h2 className="text-xl font-bold text-gray-800">Forgot Password</h2>
+                      <button onClick={() => setShowForgotPassword(false)} className="text-gray-400 hover:text-gray-600 text-2xl font-bold leading-none">&times;</button>
+                    </div>
+                    {forgotStatus ? (
+                      <div className="text-center py-6">
+                        <div className="text-5xl mb-4">📧</div>
+                        <p className="text-green-700 font-semibold text-base mb-2">Email Sent!</p>
+                        <p className="text-gray-600 text-sm mb-6">{forgotStatus}</p>
+                        <button
+                          onClick={() => { setShowForgotPassword(false); setForgotStatus(''); }}
+                          className="px-6 py-2 rounded-xl text-white font-semibold" style={{background:'linear-gradient(to right,var(--ht-primary),var(--ht-accent))'}}
+                        >Back to Login</button>
+                      </div>
+                    ) : (
+                      <form onSubmit={handleForgotPassword}>
+                        <p className="text-sm text-gray-500 mb-4">Enter the email address linked to your account and we'll send you a password reset link.</p>
+                        {forgotError && (
+                          <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm mb-4">{forgotError}</div>
+                        )}
+                        <div className="mb-4">
+                          <label className="block text-sm font-semibold text-gray-700 mb-1">Email Address</label>
+                          <input
+                            type="email"
+                            value={forgotEmail}
+                            onChange={(e) => { setForgotEmail(e.target.value); setForgotError(''); }}
+                            placeholder="Enter your registered email"
+                            className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-400 focus:border-transparent"
+                            required
+                          />
+                        </div>
+                        <div className="flex gap-3">
+                          <button type="button" onClick={() => setShowForgotPassword(false)}
+                            className="flex-1 py-2.5 border border-gray-300 rounded-xl text-gray-600 font-semibold hover:bg-gray-50">
+                            Cancel
+                          </button>
+                          <button type="submit" disabled={forgotLoading}
+                            className="flex-1 py-2.5 rounded-xl text-white font-semibold disabled:opacity-60" style={{background:'linear-gradient(to right,var(--ht-primary),var(--ht-accent))'}}>
+                            {forgotLoading ? 'Sending...' : 'Send Reset Link'}
+                          </button>
+                        </div>
+                      </form>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {/* Header */}
               <div className="text-white shadow-lg" style={{background:'linear-gradient(to right,var(--ht-primary),var(--ht-primary-dark))'}}>
                 <div className="container mx-auto px-4 py-4">
