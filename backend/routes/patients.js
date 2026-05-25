@@ -68,6 +68,25 @@ router.post('/', async (req, res) => {
       chronicConditions, currentMedications
     } = req.body;
 
+    // ────────────────────────────────────────────────────────────────────────
+    // Required-field check with a clean 400 response.
+    // Both staff manual-register and resident on-the-fly booking call this.
+    // Without this guard, missing fields produce a 500 with a raw Postgres
+    // "null value violates not-null constraint" error.
+    // ────────────────────────────────────────────────────────────────────────
+    if (!firstName || !lastName) {
+      return res.status(400).json({ error: 'First name and last name are required.' });
+    }
+
+    // Apply safe defaults for NOT NULL columns so on-the-fly resident bookings
+    // succeed even when profile is incomplete. Resident can update later.
+    const safeDob     = dateOfBirth || '2000-01-01';
+    const safeAge     = (age && age > 0) ? age
+                        : Math.max(0, Math.floor((Date.now() - new Date(safeDob)) / 31557600000));
+    const safeSex     = ['Male', 'Female'].includes(sex) ? sex : 'Male';
+    const safeAddr    = (address && String(address).trim()) || 'To be updated';
+    const safeContact = (contactNumber && String(contactNumber).trim()) || 'N/A';
+
     const idResult = await db.query('SELECT generate_patient_id() as patient_id');
     const patientId = idResult.rows[0].patient_id;
 
@@ -79,16 +98,16 @@ router.post('/', async (req, res) => {
         chronic_conditions, current_medications
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
       RETURNING *`,
-      [patientId, lastName, firstName, middleName, dateOfBirth, age, sex,
-       address, contactNumber, civilStatus, occupation, philhealthNumber,
+      [patientId, lastName.trim(), firstName.trim(), middleName, safeDob, safeAge, safeSex,
+       safeAddr, safeContact, civilStatus, occupation, philhealthNumber,
        emergencyContactPerson, emergencyContactNumber, allergies,
        chronicConditions, currentMedications]
     );
 
     res.status(201).json(result.rows[0]);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Failed to create patient' });
+    console.error('POST /patients failed:', err.message);
+    res.status(500).json({ error: 'Failed to create patient: ' + err.message });
   }
 });
 
