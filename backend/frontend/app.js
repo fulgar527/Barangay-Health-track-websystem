@@ -2027,6 +2027,14 @@ if (age < 6 && newPatient.occupation && newPatient.occupation !== 'N/A') {
                           </p>
                         </div>
 
+                        <div className="mt-4 p-3 bg-gray-50 rounded-lg">
+                          <p className="text-xs text-gray-500 font-semibold mb-2 text-center">Default Accounts</p>
+                          <div className="grid grid-cols-3 gap-2 text-xs text-gray-500">
+                            <div className="text-center p-1.5 bg-white rounded border">
+                              <p className="font-semibold text-blue-600">Admin</p>
+                              <p>admin</p>
+                              <p className="text-gray-400">admin123</p>
+                            </div>
                             <div className="text-center p-1.5 bg-white rounded border">
                               <p className="font-semibold text-green-600">Staff</p>
                               <p>staff</p>
