@@ -229,6 +229,7 @@ app.use('/api/services', requireAuth, require('./routes/services'));
 app.use('/api/visit-log', requireAuth, require('./routes/visitLog'));
 app.use('/api/analytics', requireAuth, require('./routes/analytics'));
 app.use('/api/audit', requireAuth, require('./routes/audit'));
+app.use('/api/service-categories', requireAuth, require('./routes/serviceCategories'));
 
 // Serve React SPA for all non-API GET requests.
 // Uses app.use() (no path) instead of app.get('*') — the literal '*' pattern
