@@ -1578,8 +1578,25 @@ if (age < 6 && newPatient.occupation && newPatient.occupation !== 'N/A') {
                 !residentBooking.serviceCategory || !residentBooking.serviceType) {
               alert('Please fill in all required appointment fields (date, time, service category, and service type).'); return;
             }
-            if (!residentBooking.firstName || !residentBooking.lastName) {
-              alert('Your patient information could not be found. Please contact clinic staff to register you first.'); return;
+           // Auto-fill from logged-in account if patient info missing
+if (!residentBooking.firstName || !residentBooking.lastName) {
+
+  const fullName =
+    currentUser?.fullName ||
+    currentUser?.name ||
+    currentUser?.username ||
+    '';
+
+  const parts = fullName.trim().split(' ');
+
+  if (parts.length >= 2) {
+    residentBooking.firstName = parts[0];
+    residentBooking.lastName = parts[parts.length - 1];
+  } else {
+    alert('Unable to identify patient information.');
+    return;
+  }
+}
             }
             if (/[a-zA-Z]/.test(residentBooking.contactNumber)) {
               alert('Contact Number must contain digits only — no letters allowed.'); return;
