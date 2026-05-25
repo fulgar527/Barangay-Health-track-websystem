@@ -97,16 +97,75 @@ router.post('/register', async (req, res) => {
     );
 
     const user = result.rows[0];
-    // Auto-create patient record so booking form auto-fills
+    // ────────────────────────────────────────────────────────────────────────
+    // Auto-create patient record so booking form auto-fills.
+    //
+    // FIX: original version was broken — patient_id is the PRIMARY KEY with
+    // no default, and date_of_birth/sex/address/contact_number are NOT NULL
+    // with a CHECK on sex. The old INSERT failed silently for every register,
+    // so residents could never book.
+    //
+    // This version:
+    //   1) Generates a patient_id via the schema's generate_patient_id() fn
+    //   2) Uses the values the register form actually sends (birthday, sex,
+    //      address, contactNumber)
+    //   3) Provides safe placeholder defaults if the user left anything blank
+    //      so the INSERT can still succeed (residents update later in profile)
+    //   4) Skips silently only if patient with same name+dob already exists
+    // ────────────────────────────────────────────────────────────────────────
+    let createdPatientId = null;
     try {
-      const age = req.body.birthday ? Math.floor((Date.now() - new Date(req.body.birthday)) / 31557600000) : 0;
-      await db.query(
-        `INSERT INTO patients (first_name, last_name, middle_name, date_of_birth, age, sex, address, contact_number, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
-         ON CONFLICT DO NOTHING`,
-        [firstName.trim(), lastName.trim(), middleInitial || null, req.body.birthday || null, age, req.body.sex || null, req.body.address || null, req.body.contactNumber || mobile || null]
+      // Sanitize inputs
+      const birthday = req.body.birthday || req.body.dateOfBirth || '2000-01-01';
+      const age = Math.max(0, Math.floor((Date.now() - new Date(birthday)) / 31557600000));
+      const safeSex = ['Male', 'Female'].includes(req.body.sex) ? req.body.sex : 'Male';
+      const safeAddress = (req.body.address && req.body.address.trim()) || 'To be updated';
+      const safeContact = (req.body.contactNumber && req.body.contactNumber.trim())
+                          || (mobile && mobile.trim()) || 'N/A';
+
+      // Check if a patient with the same name + DOB already exists (avoid dupes)
+      const dupe = await db.query(
+        `SELECT patient_id FROM patients
+         WHERE LOWER(first_name) = LOWER($1)
+           AND LOWER(last_name)  = LOWER($2)
+           AND date_of_birth = $3
+         LIMIT 1`,
+        [firstName.trim(), lastName.trim(), birthday]
       );
-    } catch(e) { console.error('Auto-create patient:', e.message); }
+
+      if (dupe.rows.length > 0) {
+        createdPatientId = dupe.rows[0].patient_id;
+        console.log('Patient already exists, linking to:', createdPatientId);
+      } else {
+        // Generate a fresh patient_id using the DB function
+        const idRes = await db.query('SELECT generate_patient_id() as patient_id');
+        createdPatientId = idRes.rows[0].patient_id;
+
+        await db.query(
+          `INSERT INTO patients (
+             patient_id, first_name, last_name, middle_name,
+             date_of_birth, age, sex, address, contact_number, created_at
+           )
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())`,
+          [
+            createdPatientId,
+            firstName.trim(),
+            lastName.trim(),
+            middleInitial ? middleInitial.trim().replace('.', '') : null,
+            birthday,
+            age,
+            safeSex,
+            safeAddress,
+            safeContact
+          ]
+        );
+        console.log('Auto-created patient:', createdPatientId, 'for user:', user.username);
+      }
+    } catch (e) {
+      // Log loudly — but don't fail registration. User can still log in;
+      // staff can register them as a patient manually if needed.
+      console.error('Auto-create patient FAILED for', user.username, ':', e.message);
+    }
     res.status(201).json({
       message: 'Account created successfully.',
       user: {
@@ -115,7 +174,8 @@ router.post('/register', async (req, res) => {
         role: user.role,
         fullName: user.full_name,
         email: user.email,
-        createdAt: user.created_at
+        createdAt: user.created_at,
+        patientId: createdPatientId   // null if auto-create failed; frontend tolerates
       }
     });
   } catch (err) {
