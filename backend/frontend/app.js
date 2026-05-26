@@ -3004,7 +3004,7 @@ function normalizeUser(u) {
                                     </option>;
                                   })}
                                 </select>
-                                <p className="text-xs text-gray-400 mt-1">🏥 Clinic hours: 8:00 AM – 5:00 PM | 9 slots/day | Lunch 12–1 PM blocked</p>
+                                <p className="text-xs text-gray-400 mt-1">🏥 Clinic hours: 8:00 AM – 5:00 PM | Lunch 12–1 PM blocked</p>
                               </div>
                               <div className="md:col-span-2">
                                 <label className="block text-sm font-semibold text-gray-700 mb-1">Service Category <span className="text-red-500">*</span></label>
