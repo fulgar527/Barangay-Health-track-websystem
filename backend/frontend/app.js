@@ -66,7 +66,7 @@ function normalizeQueue(q) {
     serviceCategory: q.service_category||q.serviceCategory||'',
     priority:      q.priority      ||'Regular',
     chiefComplaint:q.chief_complaint||q.chiefComplaint||'',
-    appointmentDate: q.appointment_date||q.appointmentDate||'',
+    appointmentDate: (q.appointment_date||q.appointmentDate||'').toString().split('T')[0],
     appointmentTime: q.appointment_time||q.appointmentTime||'',
     status:          q.status     ||'Waiting',
     timeQueued:      q.time_queued||q.timeQueued||new Date().toISOString(),
