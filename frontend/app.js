@@ -1536,19 +1536,27 @@ function normalizeUser(u) {
               const m = today.getMonth() - birthDate.getMonth();
               if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) age--;
 
-              // Upsert patient: check if exists by name + DOB, else create
-              let patient = myPatientRecord || registeredPatients.find(p =>
-                p.firstName.toLowerCase() === bookingData.firstName.toLowerCase() &&
-                p.lastName.toLowerCase()  === bookingData.lastName.toLowerCase() &&
-                p.dateOfBirth === bookingData.dateOfBirth
-              );
+              // Upsert patient: use real patient record, else find by name+DOB, else create new
+              let patient = (myPatientRecord && !myPatientRecord._fromAccount) ? myPatientRecord : null;
               if (!patient) {
+                patient = registeredPatients.find(p =>
+                  p.firstName && bookingData.firstName &&
+                  p.firstName.toLowerCase() === bookingData.firstName.toLowerCase() &&
+                  p.lastName.toLowerCase()  === bookingData.lastName.toLowerCase() &&
+                  p.dateOfBirth === bookingData.dateOfBirth
+                ) || null;
+              }
+              if (!patient) {
+                // Create a new patient record from account data or form data
                 const row = await api('POST', '/patients', {
-                  lastName: bookingData.lastName, firstName: bookingData.firstName,
+                  lastName: bookingData.lastName || (currentUser?.fullName || '').split(' ').slice(-1)[0] || '',
+                  firstName: bookingData.firstName || (currentUser?.fullName || '').split(' ')[0] || currentUser?.username || '',
                   middleName: bookingData.middleName || null,
-                  dateOfBirth: bookingData.dateOfBirth, age,
-                  sex: bookingData.sex, address: bookingData.address,
-                  contactNumber: bookingData.contactNumber,
+                  dateOfBirth: bookingData.dateOfBirth || null,
+                  age: isNaN(age) ? null : age,
+                  sex: bookingData.sex || null,
+                  address: bookingData.address || null,
+                  contactNumber: bookingData.contactNumber || null,
                   civilStatus: bookingData.civilStatus || null,
                   occupation: bookingData.occupation || null,
                   emergencyContactPerson: bookingData.emergencyContactPerson || null,
@@ -1559,6 +1567,9 @@ function normalizeUser(u) {
                 });
                 patient = normalizePatient(row);
                 setRegisteredPatients(prev => [patient, ...prev]);
+              }
+              if (!patient?.patientId) {
+                alert('Booking failed: Could not create or find patient record. Please contact the clinic.'); return;
               }
 
               const priority = bookingData.priorityLevel ||
