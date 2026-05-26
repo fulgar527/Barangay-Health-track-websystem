@@ -2769,7 +2769,15 @@ function normalizeUser(u) {
                                   <input
                                     type="date"
                                     value={editingAppointment.newAppointmentDate}
-                                    onChange={(e) => setEditingAppointment({...editingAppointment, newAppointmentDate: e.target.value})}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      if (val) {
+                                        const day = new Date(val + 'T00:00:00').getDay();
+                                        if (day === 0 || day === 6) { alert('⚠️ Weekdays only (Mon–Fri).'); return; }
+                                        if (isPHHoliday(val)) { alert('⚠️ ' + getPHHolidayName(val) + ' is a public holiday.'); return; }
+                                      }
+                                      setEditingAppointment({...editingAppointment, newAppointmentDate: val});
+                                    }}
                                     min={new Date().toISOString().split('T')[0]}
                                     className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                                   />
@@ -3104,7 +3112,18 @@ function normalizeUser(u) {
                               <div>
                                 <label className="block text-sm font-semibold text-gray-700 mb-1">Appointment Date <span className="text-red-500">*</span></label>
                                 <input type="date" value={residentBooking.appointmentDate}
-                                  onChange={(e) => setResidentBooking({...residentBooking, appointmentDate: e.target.value, appointmentTime: ''})}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    if (val) {
+                                      const day = new Date(val + 'T00:00:00').getDay();
+                                      if (day === 0 || day === 6) {
+                                        setResidentBooking({...residentBooking, appointmentDate: '', appointmentTime: ''});
+                                        alert('⚠️ Weekdays only (Mon–Fri). Please select a weekday.');
+                                        return;
+                                      }
+                                    }
+                                    setResidentBooking({...residentBooking, appointmentDate: val, appointmentTime: ''});
+                                  }}
                                   min={new Date().toISOString().split('T')[0]}
                                   className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all ${isPHHoliday(residentBooking.appointmentDate) ? 'border-red-400 bg-red-50' : 'border-gray-300'}`} />
                                 <p className="text-xs text-gray-400 mt-1">📅 Weekdays only (Mon–Fri) · No bookings on PH holidays</p>
