@@ -1,4 +1,3 @@
-
 // ==================== API LAYER ====================
 // All data operations go through the Express backend.
 // LocalStorage is ONLY used for: theme preference.
@@ -1470,14 +1469,19 @@ function normalizeUser(u) {
           // ==================== RESIDENT PORTAL FUNCTIONS ====================
           const submitResidentBooking = async () => {
             // If patient is already on file, use their record directly
-            const myPatientRecord = registeredPatients.find(p => {
-              if (!currentUser) return false;
-              if (currentUser.username === p.patientId) return true;
-              const fn = (p.firstName || '').toLowerCase().trim();
-              const ln = (p.lastName || '').toLowerCase().trim();
-              const full = (currentUser.fullName || '').toLowerCase().trim();
-              return full.includes(fn) && full.includes(ln) && fn && ln;
-            });
+            const myPatientRecord = currentUser ? (
+              registeredPatients.find(p => {
+                if (currentUser.username === p.patientId) return true;
+                const fn = (p.firstName || '').toLowerCase().trim();
+                const ln = (p.lastName || '').toLowerCase().trim();
+                const full = (currentUser.fullName || '').toLowerCase().trim();
+                return full.includes(fn) && full.includes(ln) && fn && ln;
+              }) || {
+                firstName: (currentUser.fullName || '').split(' ')[0] || currentUser.username,
+                lastName: (currentUser.fullName || '').split(' ').slice(-1)[0] || '',
+                _fromAccount: true
+              }
+            ) : null;
             // Merge patient record into booking data so all fields are available
             const bookingData = myPatientRecord ? {
               ...residentBooking,
@@ -2736,17 +2740,23 @@ function normalizeUser(u) {
 
                   {/* Booking View */}
                   {residentView === 'booking' && (() => {
-                    // Check if the logged-in resident already has a patient record
-                    // fullName from API can be "Juan B Cruz" or "Juan Cruz", so match flexibly
-                    const myPatientRecord = registeredPatients.find(p => {
-                      if (!currentUser) return false;
-                      if (currentUser.username === p.patientId) return true;
-                      const fn = (p.firstName || '').toLowerCase().trim();
-                      const ln = (p.lastName || '').toLowerCase().trim();
-                      const full = (currentUser.fullName || '').toLowerCase().trim();
-                      // Match if both first and last name appear in the fullName string
-                      return full.includes(fn) && full.includes(ln) && fn && ln;
-                    });
+                    // For logged-in residents, always use their account data directly
+                    // Try to find a matching patient record for richer data
+                    const myPatientRecord = currentUser ? (
+                      registeredPatients.find(p => {
+                        if (currentUser.username === p.patientId) return true;
+                        const fn = (p.firstName || '').toLowerCase().trim();
+                        const ln = (p.lastName || '').toLowerCase().trim();
+                        const full = (currentUser.fullName || '').toLowerCase().trim();
+                        return full.includes(fn) && full.includes(ln) && fn && ln;
+                      }) || { 
+                        // Fallback: build a minimal record from the user account
+                        firstName: (currentUser.fullName || '').split(' ')[0] || currentUser.username,
+                        lastName: (currentUser.fullName || '').split(' ').slice(-1)[0] || '',
+                        fullName: currentUser.fullName || currentUser.username,
+                        _fromAccount: true // flag so submit knows this is account-only
+                      }
+                    ) : null;
 
                     return (
                     <div className="max-w-2xl mx-auto p-4">
@@ -2763,16 +2773,20 @@ function normalizeUser(u) {
 
                         <div className="p-6 space-y-6">
 
-                          {/* ── IF PATIENT ON FILE: show name card ── */}
+                          {/* ── IF PATIENT ON FILE or LOGGED IN: show name card ── */}
                           {myPatientRecord ? (
                             <div className="flex items-center justify-between bg-purple-50 border border-purple-200 rounded-xl px-4 py-3">
                               <div className="flex items-center gap-3">
                                 <div className="w-10 h-10 rounded-full bg-purple-600 text-white flex items-center justify-center font-bold text-lg">
-                                  {myPatientRecord.firstName?.[0]?.toUpperCase() || '?'}
+                                  {(myPatientRecord.firstName || currentUser?.fullName || '?')[0]?.toUpperCase()}
                                 </div>
                                 <div>
                                   <p className="text-xs font-semibold text-purple-500 uppercase tracking-wide mb-0.5">Booking as</p>
-                                  <p className="font-bold text-gray-800">{myPatientRecord.firstName} {myPatientRecord.lastName}</p>
+                                  <p className="font-bold text-gray-800">
+                                    {myPatientRecord._fromAccount
+                                      ? (currentUser?.fullName || currentUser?.username)
+                                      : `${myPatientRecord.firstName} ${myPatientRecord.lastName}`}
+                                  </p>
                                 </div>
                               </div>
                               <span className="text-xs text-green-600 font-semibold bg-green-50 border border-green-200 rounded-full px-3 py-1">✓ Info on file</span>
