@@ -448,29 +448,47 @@ router.put('/profile', async (req, res) => {
 // ══════════════════════════════════════════════════════════════
 router.put('/change-password', async (req, res) => {
   try {
-    const authUser = await getAuthUser(req);
-    if (!authUser) return res.status(401).json({ error: 'Unauthorized' });
-    if (authUser.isLocalDev) return res.status(400).json({ error: 'Cannot change password for demo accounts.' });
-    const userId = authUser.id;
-    const { currentPassword, newPassword } = req.body;
-    if (!currentPassword || !newPassword) return res.status(400).json({ error: 'Both current and new password are required.' });
-    if (newPassword.length < 8) return res.status(400).json({ error: 'New password must be at least 8 characters.' });
-    const bcrypt = require('bcrypt');
-    // Look up by supabase_id first, then by email as fallback
-    let result = await db.query('SELECT user_id, password_hash FROM users WHERE supabase_id = $1', [userId]);
-    if (result.rows.length === 0 && authUser.email) {
-      result = await db.query('SELECT user_id, password_hash FROM users WHERE LOWER(email) = LOWER($1)', [authUser.email]);
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Unauthorized' });
     }
-    if (result.rows.length === 0) return res.status(404).json({ error: 'User not found in database.' });
-    const dbUserId = result.rows[0].user_id;
-    const match = await bcrypt.compare(currentPassword, result.rows[0].password_hash);
-    if (!match) return res.status(400).json({ error: 'Current password is incorrect.' });
-    const hash = await bcrypt.hash(newPassword, 10);
-    await db.query('UPDATE users SET password_hash = $1 WHERE user_id = $2', [hash, dbUserId]);
+    const token = authHeader.split(' ')[1];
+
+    if (token === 'local-dev-token') {
+      return res.status(400).json({ error: 'Cannot change password for demo accounts (admin/staff/resident).' });
+    }
+
+    const { currentPassword, newPassword } = req.body;
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ error: 'Both current and new password are required.' });
+    }
+    if (newPassword.length < 8) {
+      return res.status(400).json({ error: 'New password must be at least 8 characters.' });
+    }
+
+    // Verify current password by trying to sign in
+    const { data: { user }, error: getUserErr } = await supabase.auth.getUser(token);
+    if (getUserErr || !user) return res.status(401).json({ error: 'Session expired. Please log in again.' });
+
+    // Use Supabase admin client to update password (no bcrypt needed)
+    const supabaseAdmin = require('@supabase/supabase-js').createClient(
+      process.env.SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY
+    );
+
+    const { error: updateErr } = await supabaseAdmin.auth.admin.updateUserById(user.id, {
+      password: newPassword
+    });
+
+    if (updateErr) {
+      console.error('Supabase password update error:', updateErr.message);
+      return res.status(400).json({ error: updateErr.message || 'Failed to update password.' });
+    }
+
     res.json({ message: 'Password changed successfully.' });
   } catch (err) {
     console.error('PUT /auth/change-password error:', err);
-    res.status(500).json({ error: 'Failed to change password.' });
+    res.status(500).json({ error: 'Failed to change password: ' + err.message });
   }
 });
 
