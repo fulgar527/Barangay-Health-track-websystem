@@ -517,6 +517,17 @@ function normalizeUser(u) {
           const [loginError, setLoginError] = useState('');
           const [showCreateAccount, setShowCreateAccount] = useState(false);
           const [showForgotPassword, setShowForgotPassword] = useState(false);
+
+          // ── Settings / Profile states ─────────────────────────────────────
+          const [showSettingsMenu, setShowSettingsMenu] = useState(false);
+          const [showSettingsModal, setShowSettingsModal] = useState(false);
+          const [settingsTab, setSettingsTab] = useState('profile'); // 'profile' | 'contact' | 'password' | 'avatar'
+          const [settingsForm, setSettingsForm] = useState({ firstName:'', lastName:'', middleInitial:'', email:'', contactNumber:'', currentPassword:'', newPassword:'', confirmNewPassword:'' });
+          const [settingsError, setSettingsError] = useState('');
+          const [settingsSuccess, setSettingsSuccess] = useState('');
+          const [settingsLoading, setSettingsLoading] = useState(false);
+          const [avatarColor, setAvatarColor] = useState('#b91c1c');
+          const AVATAR_COLORS = ['#b91c1c','#1d4ed8','#047857','#7c3aed','#c2410c','#0e7490','#be185d','#4338ca','#065f46','#92400e'];
           const [forgotEmail, setForgotEmail] = useState('');
           const [forgotStatus, setForgotStatus] = useState('');
           const [forgotError, setForgotError] = useState('');
@@ -657,7 +668,66 @@ function normalizeUser(u) {
             finally { setForgotLoading(false); }
           };
 
-          // ── Audit logger — writes to backend (fire-and-forget) ──────────────
+          const openSettings = (tab = 'profile') => {
+            setSettingsTab(tab);
+            setSettingsForm({
+              firstName: currentUser?.fullName?.split(' ')[0] || '',
+              lastName: currentUser?.fullName?.split(' ').slice(-1)[0] || '',
+              middleInitial: '',
+              email: currentUser?.email || '',
+              contactNumber: '',
+              currentPassword: '', newPassword: '', confirmNewPassword: ''
+            });
+            setSettingsError(''); setSettingsSuccess('');
+            setShowSettingsMenu(false);
+            setShowSettingsModal(true);
+          };
+
+          const saveSettings = async () => {
+            setSettingsError(''); setSettingsSuccess(''); setSettingsLoading(true);
+            try {
+              if (settingsTab === 'profile') {
+                if (!settingsForm.firstName.trim() || !settingsForm.lastName.trim()) {
+                  setSettingsError('First and last name are required.'); setSettingsLoading(false); return;
+                }
+                const fullName = `${settingsForm.firstName.trim()} ${settingsForm.middleInitial.trim() ? settingsForm.middleInitial.trim() + '. ' : ''}${settingsForm.lastName.trim()}`;
+                await api('PUT', '/auth/profile', { fullName });
+                setCurrentUser(prev => ({ ...prev, fullName }));
+                try { const u = JSON.parse(sessionStorage.getItem('ht_user')||'{}'); sessionStorage.setItem('ht_user', JSON.stringify({...u, fullName})); } catch {}
+                setSettingsSuccess('Profile updated successfully!');
+              } else if (settingsTab === 'contact') {
+                if (!settingsForm.contactNumber.trim()) { setSettingsError('Contact number is required.'); setSettingsLoading(false); return; }
+                if (/[a-zA-Z]/.test(settingsForm.contactNumber)) { setSettingsError('Contact number must contain digits only.'); setSettingsLoading(false); return; }
+                await api('PUT', '/auth/profile', { contactNumber: settingsForm.contactNumber.trim() });
+                setSettingsSuccess('Contact number updated!');
+              } else if (settingsTab === 'email') {
+                if (!settingsForm.email.trim()) { setSettingsError('Email is required.'); setSettingsLoading(false); return; }
+                if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(settingsForm.email.trim())) { setSettingsError('Please enter a valid email address.'); setSettingsLoading(false); return; }
+                await api('PUT', '/auth/profile', { email: settingsForm.email.trim() });
+                setCurrentUser(prev => ({ ...prev, email: settingsForm.email.trim() }));
+                setSettingsSuccess('Email address updated!');
+              } else if (settingsTab === 'password') {
+                if (!settingsForm.currentPassword || !settingsForm.newPassword || !settingsForm.confirmNewPassword) {
+                  setSettingsError('Please fill in all password fields.'); setSettingsLoading(false); return;
+                }
+                if (settingsForm.newPassword !== settingsForm.confirmNewPassword) {
+                  setSettingsError('New passwords do not match.'); setSettingsLoading(false); return;
+                }
+                if (settingsForm.newPassword.length < 8) {
+                  setSettingsError('New password must be at least 8 characters.'); setSettingsLoading(false); return;
+                }
+                await api('PUT', '/auth/change-password', { currentPassword: settingsForm.currentPassword, newPassword: settingsForm.newPassword });
+                setSettingsSuccess('Password changed successfully!');
+                setSettingsForm(f => ({ ...f, currentPassword:'', newPassword:'', confirmNewPassword:'' }));
+              } else if (settingsTab === 'avatar') {
+                setSettingsSuccess('Avatar color saved!');
+              }
+            } catch(err) {
+              setSettingsError(err.message || 'Update failed. Please try again.');
+            } finally { setSettingsLoading(false); }
+          };
+
+                    // ── Audit logger — writes to backend (fire-and-forget) ──────────────
           const writeAudit = (action, details = '') => {
             // Best-effort: POST to /api/audit. Never blocks UI.
             api('POST', '/audit', {
@@ -2308,20 +2378,47 @@ function normalizeUser(u) {
                         <p className="text-sm" style={{color:'rgba(255,255,255,0.85)'}}>Self-Service Queue and Visit History · Barangay Upper Bicutan, City of Taguig</p>
                       </div>
                     </div>
-                      <div className="flex items-center space-x-4">
-                        {currentUser && (
-                          <div className="text-right">
-                            <p className="text-sm font-semibold">{currentUser.fullName}</p>
+                      <div className="flex items-center space-x-2">
+                        <div className="relative">
+                        <button onClick={() => setShowSettingsMenu(v => !v)}
+                          className="flex items-center gap-2 hover:bg-white/10 rounded-xl px-3 py-2 transition-colors cursor-pointer">
+                          <div className="w-9 h-9 rounded-full flex items-center justify-center text-white font-bold text-base flex-shrink-0"
+                            style={{background: avatarColor}}>
+                            {(currentUser?.fullName || currentUser?.username || '?')[0].toUpperCase()}
+                          </div>
+                          <div className="text-right hidden sm:block">
+                            <p className="text-sm font-semibold text-white leading-tight">{currentUser ? currentUser.fullName : (userRole === 'admin' ? 'Administrator' : 'Staff')}</p>
                             <p className="text-xs text-purple-200">Resident</p>
                           </div>
-                        )}
-                        <button
-                          onClick={handleLogout}
-                          className="flex items-center space-x-2 bg-white/20 hover:bg-white/30 px-4 py-2 rounded-lg transition-colors"
-                        >
-                          <LogOut className="w-4 h-4" />
-                          <span>Logout</span>
+                          <svg className="w-4 h-4 text-white/70" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
                         </button>
+                        {showSettingsMenu && (
+                          <div className="absolute right-0 top-full mt-2 w-56 bg-white rounded-xl shadow-2xl border border-gray-100 z-50 overflow-hidden">
+                            <div className="px-4 py-3 bg-gray-50 border-b">
+                              <p className="text-sm font-bold text-gray-800">{currentUser?.fullName || currentUser?.username}</p>
+                              <p className="text-xs text-gray-500 capitalize">{currentUser?.role || userRole}</p>
+                            </div>
+                            {[
+                              { label:'Edit Profile Information', icon:'👤', tab:'profile' },
+                              { label:'Change Avatar Color',      icon:'🎨', tab:'avatar' },
+                              { label:'Update Contact Number',    icon:'📱', tab:'contact' },
+                              { label:'Update Email Address',     icon:'✉️', tab:'email' },
+                              { label:'Change Password',          icon:'🔒', tab:'password' },
+                            ].map(item => (
+                              <button key={item.tab} onClick={() => openSettings(item.tab)}
+                                className="w-full flex items-center gap-3 px-4 py-3 text-sm text-gray-700 hover:bg-red-50 hover:text-red-700 transition-colors text-left">
+                                <span>{item.icon}</span>{item.label}
+                              </button>
+                            ))}
+                            <div className="border-t">
+                              <button onClick={() => { setShowSettingsMenu(false); handleLogout(); }}
+                                className="w-full flex items-center gap-3 px-4 py-3 text-sm text-red-600 hover:bg-red-50 transition-colors text-left">
+                                <span>🚪</span> Logout
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
                       </div>
                     </div>
                   </div>
@@ -3310,10 +3407,145 @@ function normalizeUser(u) {
           }
 
           // ==================== RENDER: STAFF/ADMIN DASHBOARD ====================
+          React.useEffect(() => {
+            const close = () => setShowSettingsMenu(false);
+            if (showSettingsMenu) document.addEventListener('click', close);
+            return () => document.removeEventListener('click', close);
+          }, [showSettingsMenu]);
+
           return (
             <div className="min-h-screen bg-gray-50">
 
-              {/* ===== FORGOT PASSWORD MODAL ===== */}
+              {/* ===== SETTINGS MODAL ===== */}
+              {showSettingsModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4" onClick={() => setShowSettingsModal(false)}>
+                  <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md" onClick={e => e.stopPropagation()}>
+                    {/* Header */}
+                    <div className="flex items-center justify-between px-6 py-4 border-b" style={{background:'linear-gradient(to right,var(--ht-primary),var(--ht-accent))'}}>
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-lg flex-shrink-0" style={{background: avatarColor}}>
+                          {(currentUser?.fullName || currentUser?.username || '?')[0].toUpperCase()}
+                        </div>
+                        <div>
+                          <p className="text-white font-bold text-sm">{currentUser?.fullName || currentUser?.username}</p>
+                          <p className="text-white/80 text-xs capitalize">{currentUser?.role || userRole}</p>
+                        </div>
+                      </div>
+                      <button onClick={() => setShowSettingsModal(false)} className="text-white/80 hover:text-white text-2xl font-bold leading-none">&times;</button>
+                    </div>
+
+                    {/* Tab Menu */}
+                    <div className="flex border-b bg-gray-50 rounded-none overflow-x-auto">
+                      {[
+                        { id:'profile',  label:'Profile',  icon:'👤' },
+                        { id:'avatar',   label:'Avatar',   icon:'🎨' },
+                        { id:'contact',  label:'Contact',  icon:'📱' },
+                        { id:'email',    label:'Email',    icon:'✉️' },
+                        { id:'password', label:'Password', icon:'🔒' },
+                      ].map(tab => (
+                        <button key={tab.id} onClick={() => { setSettingsTab(tab.id); setSettingsError(''); setSettingsSuccess(''); }}
+                          className={`flex-1 py-3 text-xs font-semibold transition-colors whitespace-nowrap px-2 ${settingsTab === tab.id ? 'border-b-2 text-red-700 bg-white' : 'text-gray-500 hover:text-gray-700'}`}
+                          style={settingsTab === tab.id ? {borderColor:'var(--ht-primary)'} : {}}>
+                          {tab.icon} {tab.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Content */}
+                    <div className="px-6 py-5">
+                      {settingsError && <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-2 text-sm mb-4">{settingsError}</div>}
+                      {settingsSuccess && <div className="bg-green-50 border border-green-200 text-green-700 rounded-lg px-4 py-2 text-sm mb-4">✓ {settingsSuccess}</div>}
+
+                      {settingsTab === 'profile' && (
+                        <div className="space-y-3">
+                          <p className="text-xs text-gray-500 mb-3">Update your display name shown across the system.</p>
+                          <div><label className="block text-sm font-semibold text-gray-700 mb-1">First Name</label>
+                            <input type="text" value={settingsForm.firstName} onChange={e => setSettingsForm(f=>({...f,firstName:e.target.value}))}
+                              className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-400 focus:border-transparent" /></div>
+                          <div><label className="block text-sm font-semibold text-gray-700 mb-1">Middle Initial <span className="text-gray-400 font-normal">(optional)</span></label>
+                            <input type="text" value={settingsForm.middleInitial} onChange={e => setSettingsForm(f=>({...f,middleInitial:e.target.value.slice(0,1).toUpperCase()}))}
+                              maxLength={1} placeholder="A"
+                              className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-400 focus:border-transparent" /></div>
+                          <div><label className="block text-sm font-semibold text-gray-700 mb-1">Last Name</label>
+                            <input type="text" value={settingsForm.lastName} onChange={e => setSettingsForm(f=>({...f,lastName:e.target.value}))}
+                              className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-400 focus:border-transparent" /></div>
+                        </div>
+                      )}
+
+                      {settingsTab === 'avatar' && (
+                        <div>
+                          <p className="text-xs text-gray-500 mb-4">Choose a color for your avatar initials.</p>
+                          <div className="flex justify-center mb-5">
+                            <div className="w-20 h-20 rounded-full flex items-center justify-center text-white font-bold text-3xl shadow-lg transition-all" style={{background: avatarColor}}>
+                              {(currentUser?.fullName || currentUser?.username || '?')[0].toUpperCase()}
+                            </div>
+                          </div>
+                          <div className="flex flex-wrap justify-center gap-3">
+                            {AVATAR_COLORS.map(c => (
+                              <button key={c} onClick={() => setAvatarColor(c)}
+                                className={`w-10 h-10 rounded-full transition-all transform hover:scale-110 ${avatarColor === c ? 'ring-4 ring-offset-2 scale-110' : ''}`}
+                                style={{background: c, ringColor: c}} />
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {settingsTab === 'contact' && (
+                        <div>
+                          <p className="text-xs text-gray-500 mb-3">Update your contact number on file.</p>
+                          <div><label className="block text-sm font-semibold text-gray-700 mb-1">Contact Number</label>
+                            <input type="text" value={settingsForm.contactNumber} onChange={e => setSettingsForm(f=>({...f,contactNumber:e.target.value}))}
+                              placeholder="09XXXXXXXXX"
+                              className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-400 focus:border-transparent" /></div>
+                        </div>
+                      )}
+
+                      {settingsTab === 'email' && (
+                        <div>
+                          <p className="text-xs text-gray-500 mb-3">Update your registered email address.</p>
+                          <div><label className="block text-sm font-semibold text-gray-700 mb-1">Email Address</label>
+                            <input type="email" value={settingsForm.email} onChange={e => setSettingsForm(f=>({...f,email:e.target.value}))}
+                              placeholder="email@example.com"
+                              className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-400 focus:border-transparent" /></div>
+                        </div>
+                      )}
+
+                      {settingsTab === 'password' && (
+                        <div className="space-y-3">
+                          <p className="text-xs text-gray-500 mb-3">Choose a strong password with at least 8 characters.</p>
+                          <div><label className="block text-sm font-semibold text-gray-700 mb-1">Current Password</label>
+                            <input type="password" value={settingsForm.currentPassword} onChange={e => setSettingsForm(f=>({...f,currentPassword:e.target.value}))}
+                              placeholder="Enter current password"
+                              className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-400 focus:border-transparent" /></div>
+                          <div><label className="block text-sm font-semibold text-gray-700 mb-1">New Password</label>
+                            <input type="password" value={settingsForm.newPassword} onChange={e => setSettingsForm(f=>({...f,newPassword:e.target.value}))}
+                              placeholder="Min 8 characters"
+                              className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-400 focus:border-transparent" /></div>
+                          <div><label className="block text-sm font-semibold text-gray-700 mb-1">Confirm New Password</label>
+                            <input type="password" value={settingsForm.confirmNewPassword} onChange={e => setSettingsForm(f=>({...f,confirmNewPassword:e.target.value}))}
+                              placeholder="Re-enter new password"
+                              className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-400 focus:border-transparent" /></div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Footer */}
+                    <div className="flex gap-3 px-6 pb-5">
+                      <button onClick={() => setShowSettingsModal(false)}
+                        className="flex-1 py-2.5 border border-gray-300 rounded-xl text-gray-600 font-semibold hover:bg-gray-50">
+                        Cancel
+                      </button>
+                      <button onClick={saveSettings} disabled={settingsLoading}
+                        className="flex-1 py-2.5 rounded-xl text-white font-semibold disabled:opacity-60"
+                        style={{background:'linear-gradient(to right,var(--ht-primary),var(--ht-accent))'}}>
+                        {settingsLoading ? 'Saving...' : 'Save Changes'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+                            {/* ===== FORGOT PASSWORD MODAL ===== */}
               {showForgotPassword && (
                 <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
                   <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
@@ -3375,18 +3607,47 @@ function normalizeUser(u) {
                         <p className="text-sm" style={{color:'rgba(255,255,255,0.85)'}}>Patient Information System with Queueing for Barangay Upper Bicutan Health Clinics - City of Taguig</p>
                       </div>
                     </div>
-                    <div className="flex items-center space-x-4">
-                      <div className="text-right">
-                        <p className="text-sm font-semibold">{currentUser ? currentUser.fullName : (userRole === 'admin' ? 'Administrator' : 'Staff')}</p>
-                        <p className="text-xs text-blue-200">{userRole === 'admin' ? 'Administrator' : 'Staff'} Access</p>
+                    <div className="flex items-center space-x-2">
+                      <div className="relative">
+                        <button onClick={() => setShowSettingsMenu(v => !v)}
+                          className="flex items-center gap-2 hover:bg-white/10 rounded-xl px-3 py-2 transition-colors cursor-pointer">
+                          <div className="w-9 h-9 rounded-full flex items-center justify-center text-white font-bold text-base flex-shrink-0"
+                            style={{background: avatarColor}}>
+                            {(currentUser?.fullName || currentUser?.username || '?')[0].toUpperCase()}
+                          </div>
+                          <div className="text-right hidden sm:block">
+                            <p className="text-sm font-semibold text-white leading-tight">{currentUser ? currentUser.fullName : (userRole === 'admin' ? 'Administrator' : 'Staff')}</p>
+                            <p className="text-xs text-blue-200">{userRole === 'admin' ? 'Administrator' : 'Staff'} Access</p>
+                          </div>
+                          <svg className="w-4 h-4 text-white/70" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                        </button>
+                        {showSettingsMenu && (
+                          <div className="absolute right-0 top-full mt-2 w-56 bg-white rounded-xl shadow-2xl border border-gray-100 z-50 overflow-hidden">
+                            <div className="px-4 py-3 bg-gray-50 border-b">
+                              <p className="text-sm font-bold text-gray-800">{currentUser?.fullName || currentUser?.username}</p>
+                              <p className="text-xs text-gray-500 capitalize">{currentUser?.role || userRole}</p>
+                            </div>
+                            {[
+                              { label:'Edit Profile Information', icon:'👤', tab:'profile' },
+                              { label:'Change Avatar Color',      icon:'🎨', tab:'avatar' },
+                              { label:'Update Contact Number',    icon:'📱', tab:'contact' },
+                              { label:'Update Email Address',     icon:'✉️', tab:'email' },
+                              { label:'Change Password',          icon:'🔒', tab:'password' },
+                            ].map(item => (
+                              <button key={item.tab} onClick={() => openSettings(item.tab)}
+                                className="w-full flex items-center gap-3 px-4 py-3 text-sm text-gray-700 hover:bg-red-50 hover:text-red-700 transition-colors text-left">
+                                <span>{item.icon}</span>{item.label}
+                              </button>
+                            ))}
+                            <div className="border-t">
+                              <button onClick={() => { setShowSettingsMenu(false); handleLogout(); }}
+                                className="w-full flex items-center gap-3 px-4 py-3 text-sm text-red-600 hover:bg-red-50 transition-colors text-left">
+                                <span>🚪</span> Logout
+                              </button>
+                            </div>
+                          </div>
+                        )}
                       </div>
-                      <button
-                        onClick={handleLogout}
-                        className="flex items-center space-x-2 bg-white/20 hover:bg-white/30 px-4 py-2 rounded-lg transition-colors"
-                      >
-                        <LogOut className="w-4 h-4" />
-                        <span>Logout</span>
-                      </button>
                     </div>
                   </div>
                 </div>
