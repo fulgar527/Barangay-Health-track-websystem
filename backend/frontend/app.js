@@ -410,7 +410,33 @@ function normalizeUser(u) {
           );
         }
 
-                function HealthTrackApp() {
+        
+        // ── Philippine Public Holidays (Regular + Special Non-Working) ────────
+        const PH_HOLIDAYS = {
+          '2026-01-01': "New Year's Day",
+          '2026-02-05': "Chinese New Year",
+          '2026-02-25': "EDSA People Power Revolution Anniversary",
+          '2026-04-02': "Maundy Thursday",
+          '2026-04-03': "Good Friday",
+          '2026-04-04': "Black Saturday",
+          '2026-04-09': "Araw ng Kagitingan (Day of Valor)",
+          '2026-05-01': "Labor Day",
+          '2026-06-12': "Independence Day",
+          '2026-08-21': "Ninoy Aquino Day",
+          '2026-08-25': "National Heroes Day",
+          '2026-11-01': "All Saints Day",
+          '2026-11-02': "All Souls Day",
+          '2026-11-30': "Bonifacio Day",
+          '2026-12-08': "Feast of the Immaculate Conception",
+          '2026-12-24': "Christmas Eve",
+          '2026-12-25': "Christmas Day",
+          '2026-12-30': "Rizal Day",
+          '2026-12-31': "New Year's Eve",
+        };
+        const isPHHoliday = (dateStr) => !!PH_HOLIDAYS[dateStr];
+        const getPHHolidayName = (dateStr) => PH_HOLIDAYS[dateStr] || null;
+
+        function HealthTrackApp() {
           // ==================== PHONE NUMBER HELPER ====================
           const sanitizePhone = (val) => {
             return val.replace(/[^0-9+]/g, '').replace(/(.)\+/g, '$1');
@@ -1521,6 +1547,10 @@ function normalizeUser(u) {
             if (selectedDate < todayDate) { alert('Appointment date cannot be in the past.'); return; }
             const dayOfWeek = selectedDate.getDay();
             if (dayOfWeek === 0 || dayOfWeek === 6) { alert('Clinic is open Monday to Friday only.'); return; }
+            if (isPHHoliday(bookingData.appointmentDate)) {
+              alert('⚠️ ' + getPHHolidayName(bookingData.appointmentDate) + ' is a Philippine public holiday. Please select another date.');
+              return;
+            }
             const [hours] = residentBooking.appointmentTime.split(':').map(Number);
             if (hours < 8 || hours > 16) { alert('Please select a valid clinic slot (8 AM – 4 PM).'); return; }
             if (residentBooking.appointmentTime === '12:00') { alert('12:00 PM – 1:00 PM is the lunch break.'); return; }
@@ -2938,8 +2968,11 @@ function normalizeUser(u) {
                                 <input type="date" value={residentBooking.appointmentDate}
                                   onChange={(e) => setResidentBooking({...residentBooking, appointmentDate: e.target.value, appointmentTime: ''})}
                                   min={new Date().toISOString().split('T')[0]}
-                                  className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all" />
-                                <p className="text-xs text-gray-400 mt-1">📅 Weekdays only (Mon–Fri)</p>
+                                  className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all ${isPHHoliday(residentBooking.appointmentDate) ? 'border-red-400 bg-red-50' : 'border-gray-300'}`} />
+                                <p className="text-xs text-gray-400 mt-1">📅 Weekdays only (Mon–Fri) · No bookings on PH holidays</p>
+                                {isPHHoliday(residentBooking.appointmentDate) && (
+                                  <p className="text-xs text-red-500 mt-1 font-medium">🚫 {getPHHolidayName(residentBooking.appointmentDate)} — Holiday, not bookable</p>
+                                )}
                               </div>
                               <div>
                                 <label className="block text-sm font-semibold text-gray-700 mb-1">Appointment Time <span className="text-red-500">*</span></label>
@@ -3021,7 +3054,8 @@ function normalizeUser(u) {
                             </button>
                             <button
                               onClick={submitResidentBooking}
-                              className="flex-1 bg-gradient-to-r from-purple-600 to-pink-600 text-white py-3 rounded-lg font-semibold hover:from-purple-700 hover:to-pink-700 transition-all transform hover:scale-[1.02] shadow-lg"
+                              disabled={isPHHoliday(residentBooking.appointmentDate)}
+                              className="flex-1 bg-gradient-to-r from-purple-600 to-pink-600 text-white py-3 rounded-lg font-semibold hover:from-purple-700 hover:to-pink-700 transition-all transform hover:scale-[1.02] shadow-lg disabled:opacity-40 disabled:cursor-not-allowed disabled:transform-none"
                             >
                               Book Appointment
                             </button>
