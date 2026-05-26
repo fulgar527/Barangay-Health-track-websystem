@@ -397,4 +397,53 @@ router.post('/forgot-password', async (req, res) => {
   }
 });
 
+
+// ══════════════════════════════════════════════════════════════
+// PUT /api/auth/profile — Update user profile info
+// ══════════════════════════════════════════════════════════════
+router.put('/profile', async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+    const { fullName, email, contactNumber } = req.body;
+    const updates = [];
+    const values = [];
+    let idx = 1;
+    if (fullName)       { updates.push(`full_name = $${idx++}`);      values.push(fullName); }
+    if (email)          { updates.push(`email = $${idx++}`);          values.push(email); }
+    if (contactNumber)  { updates.push(`mobile = $${idx++}`);         values.push(contactNumber); }
+    if (updates.length === 0) return res.status(400).json({ error: 'Nothing to update.' });
+    values.push(userId);
+    await db.query(`UPDATE users SET ${updates.join(', ')} WHERE user_id = $${idx}`, values);
+    res.json({ message: 'Profile updated successfully.' });
+  } catch (err) {
+    console.error('PUT /auth/profile error:', err);
+    res.status(500).json({ error: 'Failed to update profile.' });
+  }
+});
+
+// ══════════════════════════════════════════════════════════════
+// PUT /api/auth/change-password — Change user password
+// ══════════════════════════════════════════════════════════════
+router.put('/change-password', async (req, res) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+    const { currentPassword, newPassword } = req.body;
+    if (!currentPassword || !newPassword) return res.status(400).json({ error: 'Both current and new password are required.' });
+    if (newPassword.length < 8) return res.status(400).json({ error: 'New password must be at least 8 characters.' });
+    const result = await db.query('SELECT password_hash FROM users WHERE user_id = $1', [userId]);
+    if (result.rows.length === 0) return res.status(404).json({ error: 'User not found.' });
+    const bcrypt = require('bcrypt');
+    const match = await bcrypt.compare(currentPassword, result.rows[0].password_hash);
+    if (!match) return res.status(400).json({ error: 'Current password is incorrect.' });
+    const hash = await bcrypt.hash(newPassword, 10);
+    await db.query('UPDATE users SET password_hash = $1 WHERE user_id = $2', [hash, userId]);
+    res.json({ message: 'Password changed successfully.' });
+  } catch (err) {
+    console.error('PUT /auth/change-password error:', err);
+    res.status(500).json({ error: 'Failed to change password.' });
+  }
+});
+
 module.exports = router;
