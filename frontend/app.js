@@ -1097,6 +1097,7 @@ function normalizeUser(u) {
             appointmentDate: '', appointmentTime: '',
             serviceCategory: '', serviceType: '', priorityLevel: '', notes: ''
           });
+          const [bookingFor, setBookingFor] = useState('myself'); // 'myself' | 'someone'
 
           // Appointment Management States
           const [editingAppointment, setEditingAppointment] = useState(null);
@@ -1647,8 +1648,8 @@ function normalizeUser(u) {
 
           // ==================== RESIDENT PORTAL FUNCTIONS ====================
           const submitResidentBooking = async () => {
-            // If patient is already on file, use their record directly
-            const myPatientRecord = currentUser ? (
+            // If booking for myself, use patient record; if someone else, always use form data
+            const myPatientRecord = (bookingFor === 'myself' && currentUser) ? (
               registeredPatients.find(p => {
                 if (currentUser.username === p.patientId) return true;
                 const fn = (p.firstName || '').toLowerCase().trim();
@@ -1660,7 +1661,7 @@ function normalizeUser(u) {
                 lastName: (currentUser.fullName || '').split(' ').slice(-1)[0] || '',
                 _fromAccount: true
               }
-            ) : null;
+            ) : null; // null = use form data (someone else)
             // Merge patient record into booking data so all fields are available
             const bookingData = myPatientRecord ? {
               ...residentBooking,
@@ -1759,12 +1760,15 @@ function normalizeUser(u) {
                 SERVICE_CATEGORIES[bookingData.serviceCategory]?.services
                   .find(s => s.name === bookingData.serviceType)?.priority || 'Regular';
 
+              const proxyNote = bookingFor === 'someone'
+                ? `[Booked by: ${currentUser?.fullName || currentUser?.username}] `
+                : '';
               const qRow = await api('POST', '/queue', {
                 patientId:       patient.patientId,
                 serviceCategory: bookingData.serviceCategory,
                 serviceName:     bookingData.serviceType,
                 priority,
-                chiefComplaint:  residentBooking.notes || 'Scheduled appointment',
+                chiefComplaint:  proxyNote + (bookingData.notes || 'Scheduled appointment'),
                 appointmentDate: bookingData.appointmentDate,
                 appointmentTime: bookingData.appointmentTime,
                 selfBooked:      true,
@@ -1773,8 +1777,10 @@ function normalizeUser(u) {
               const queueEntry = normalizeQueue(qRow);
               setQueue(prev => [...prev, queueEntry].sort((a,b) => priorityLevels[a.priority].weight - priorityLevels[b.priority].weight));
 
+              setBookingFor('myself');
               setResidentBooking({ lastName:'', firstName:'', middleName:'', dateOfBirth:'', sex:'', civilStatus:'', address:'', contactNumber:'', occupation:'', emergencyContactPerson:'', emergencyContactNumber:'', philHealthNumber:'', allergies:'', chronicConditions:'', currentMedications:'', appointmentDate:'', appointmentTime:'', serviceCategory:'', serviceType:'', priorityLevel:'', notes:'' });
-              alert(`Booking confirmed for ${residentBooking.appointmentDate} at ${residentBooking.appointmentTime}.\n\nPatient ID: ${patient.patientId}\nQueue #: ${queueEntry.queueNumber}\n\nSave your Patient ID for future reference.`);
+              const forWhom = bookingFor === 'someone' ? `${bookingData.firstName} ${bookingData.lastName}` : (currentUser?.fullName || currentUser?.username);
+              alert(`Booking confirmed for ${forWhom}!\n\nDate: ${bookingData.appointmentDate} at ${bookingData.appointmentTime}\nPatient ID: ${patient.patientId}\nQueue #: ${queueEntry.queueNumber}`);
               setResidentView('appointments');
             } catch(err) {
               alert('Booking failed: ' + (err.message || 'Unknown error'));
@@ -3166,7 +3172,6 @@ function normalizeUser(u) {
                   {/* Booking View */}
                   {residentView === 'booking' && (() => {
                     // For logged-in residents, always use their account data directly
-                    // Try to find a matching patient record for richer data
                     const myPatientRecord = currentUser ? (
                       registeredPatients.find(p => {
                         if (currentUser.username === p.patientId) return true;
@@ -3174,14 +3179,16 @@ function normalizeUser(u) {
                         const ln = (p.lastName || '').toLowerCase().trim();
                         const full = (currentUser.fullName || '').toLowerCase().trim();
                         return full.includes(fn) && full.includes(ln) && fn && ln;
-                      }) || { 
-                        // Fallback: build a minimal record from the user account
+                      }) || {
                         firstName: (currentUser.fullName || '').split(' ')[0] || currentUser.username,
                         lastName: (currentUser.fullName || '').split(' ').slice(-1)[0] || '',
                         fullName: currentUser.fullName || currentUser.username,
-                        _fromAccount: true // flag so submit knows this is account-only
+                        _fromAccount: true
                       }
                     ) : null;
+
+                    // When booking for someone else, treat as no patient record
+                    const effectivePatientRecord = bookingFor === 'myself' ? myPatientRecord : null;
 
                     return (
                     <div className="max-w-2xl mx-auto p-4">
@@ -3190,34 +3197,80 @@ function normalizeUser(u) {
                         <div className="bg-gradient-to-r from-purple-600 to-pink-600 px-6 py-5">
                           <h2 className="text-2xl font-bold text-white mb-1">Book Appointment</h2>
                           <p className="text-white/90 text-sm">
-                            {myPatientRecord
-                              ? '📋 Schedule your visit — your details are already on file'
-                              : '✨ No Patient ID required - Just your name!'}
+                            {bookingFor === 'someone'
+                              ? '👨‍👩‍👧 Booking on behalf of someone else'
+                              : effectivePatientRecord
+                                ? '📋 Schedule your visit — your details are already on file'
+                                : '✨ No Patient ID required - Just your name!'}
                           </p>
                         </div>
 
                         <div className="p-6 space-y-6">
 
-                          {/* ── IF PATIENT ON FILE or LOGGED IN: show name card ── */}
-                          {myPatientRecord ? (
+                          {/* ── WHO IS THIS FOR? SELECTOR ── */}
+                          <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
+                            <p className="text-sm font-bold text-gray-700 mb-3">Who is this appointment for?</p>
+                            <div className="grid grid-cols-2 gap-3">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setBookingFor('myself');
+                                  setResidentBooking(b => ({...b, lastName:'', firstName:'', middleName:'', dateOfBirth:'', sex:'', civilStatus:'', address:'', contactNumber:'', occupation:'', emergencyContactPerson:'', emergencyContactNumber:'', allergies:'', chronicConditions:'', currentMedications:''}));
+                                }}
+                                className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all ${bookingFor === 'myself' ? 'border-purple-500 bg-purple-50' : 'border-gray-200 bg-white hover:border-gray-300'}`}>
+                                <div className={`w-12 h-12 rounded-full flex items-center justify-center text-xl font-bold ${bookingFor === 'myself' ? 'bg-purple-600 text-white' : 'bg-gray-200 text-gray-600'}`}>
+                                  {(currentUser?.fullName || currentUser?.username || '?')[0].toUpperCase()}
+                                </div>
+                                <div className="text-center">
+                                  <p className={`text-sm font-bold ${bookingFor === 'myself' ? 'text-purple-700' : 'text-gray-700'}`}>👤 Myself</p>
+                                  <p className="text-xs text-gray-500 mt-0.5">{currentUser?.fullName || currentUser?.username}</p>
+                                </div>
+                                {bookingFor === 'myself' && <span className="text-xs text-purple-600 font-semibold">✓ Selected</span>}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setBookingFor('someone');
+                                  setResidentBooking(b => ({...b, lastName:'', firstName:'', middleName:'', dateOfBirth:'', sex:'', civilStatus:'', address:'', contactNumber:'', occupation:'', emergencyContactPerson:'', emergencyContactNumber:'', allergies:'', chronicConditions:'', currentMedications:''}));
+                                }}
+                                className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 transition-all ${bookingFor === 'someone' ? 'border-pink-500 bg-pink-50' : 'border-gray-200 bg-white hover:border-gray-300'}`}>
+                                <div className={`w-12 h-12 rounded-full flex items-center justify-center text-xl ${bookingFor === 'someone' ? 'bg-pink-500 text-white' : 'bg-gray-200 text-gray-500'}`}>
+                                  👨‍👩‍👧
+                                </div>
+                                <div className="text-center">
+                                  <p className={`text-sm font-bold ${bookingFor === 'someone' ? 'text-pink-700' : 'text-gray-700'}`}>Someone Else</p>
+                                  <p className="text-xs text-gray-500 mt-0.5">Book for a family member or patient</p>
+                                </div>
+                                {bookingFor === 'someone' && <span className="text-xs text-pink-600 font-semibold">✓ Selected</span>}
+                              </button>
+                            </div>
+                            {bookingFor === 'someone' && (
+                              <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-3">
+                                ⚠️ You are booking on behalf of someone else. This will appear in your appointments as a proxy booking. Please fill in their personal details below.
+                              </p>
+                            )}
+                          </div>
+
+                          {/* ── IF PATIENT ON FILE: show name card (only for myself) ── */}
+                          {effectivePatientRecord ? (
                             <div className="flex items-center justify-between bg-purple-50 border border-purple-200 rounded-xl px-4 py-3">
                               <div className="flex items-center gap-3">
                                 <div className="w-10 h-10 rounded-full bg-purple-600 text-white flex items-center justify-center font-bold text-lg">
-                                  {(myPatientRecord.firstName || currentUser?.fullName || '?')[0]?.toUpperCase()}
+                                  {(effectivePatientRecord.firstName || currentUser?.fullName || '?')[0]?.toUpperCase()}
                                 </div>
                                 <div>
                                   <p className="text-xs font-semibold text-purple-500 uppercase tracking-wide mb-0.5">Booking as</p>
                                   <p className="font-bold text-gray-800">
-                                    {myPatientRecord._fromAccount
+                                    {effectivePatientRecord._fromAccount
                                       ? (currentUser?.fullName || currentUser?.username)
-                                      : `${myPatientRecord.firstName} ${myPatientRecord.lastName}`}
+                                      : `${effectivePatientRecord.firstName} ${effectivePatientRecord.lastName}`}
                                   </p>
                                 </div>
                               </div>
                               <span className="text-xs text-green-600 font-semibold bg-green-50 border border-green-200 rounded-full px-3 py-1">✓ Info on file</span>
                             </div>
                           ) : (
-                            /* ── IF NO RECORD: show full personal info form ── */
+                            /* ── NO RECORD or booking for someone else: show full form ── */
                             <div>
                               <h3 className="text-base font-bold text-gray-800 mb-3 pb-2 border-b border-gray-200">Personal Information</h3>
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -3445,6 +3498,7 @@ function normalizeUser(u) {
                                   appointmentDate: '', appointmentTime: '',
                                   serviceCategory: '', serviceType: '', priorityLevel: '', notes: ''
                                 });
+                                setBookingFor('myself');
                                 setResidentView('queue');
                               }}
                               className="flex-1 bg-white border-2 border-gray-300 text-gray-700 py-3 rounded-lg font-semibold hover:bg-gray-50 transition-all"
