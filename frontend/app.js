@@ -5913,14 +5913,26 @@ function normalizeUser(u) {
                           <option value="">-- Select Patient --</option>
                           <option value="WALKIN_UNREGISTERED">🚶 Walk-in (Unregistered / No Patient ID)</option>
                           {registeredPatients
-                            .filter(p => !queue.some(q => q.patientId === p.patientId && ['Waiting','Accepted'].includes(q.status)))
+                            .filter(p => {
+                              // Hide patients already active in queue
+                              if (queue.some(q => q.patientId === p.patientId && ['Waiting','Accepted'].includes(q.status))) return false;
+                              // Hide self-registered residents (have a matching user account)
+                              const hasAccount = users.some(u =>
+                                u.role === 'resident' && (
+                                  (u.fullName || '').toLowerCase().includes((p.firstName || '').toLowerCase()) &&
+                                  (u.fullName || '').toLowerCase().includes((p.lastName || '').toLowerCase()) &&
+                                  (p.firstName || '').length > 0
+                                )
+                              );
+                              return !hasAccount;
+                            })
                             .map(p => (
                               <option key={p.patientId} value={p.patientId}>
                                 {p.patientId} — {p.firstName} {p.lastName} (Age: {p.age || 'N/A'}, Sex: {p.sex || 'N/A'})
                               </option>
                             ))}
                         </select>
-                        <p className="text-xs text-gray-400 mt-1">Only showing patients not currently in queue</p>
+                        <p className="text-xs text-gray-400 mt-1">Showing staff-registered walk-in patients only</p>
                         {queuePatient.patientId === 'WALKIN_UNREGISTERED' && (
                           <div className="mt-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
                             <p className="text-xs text-amber-700">⚠️ Unregistered walk-in. Please register them in the Patients tab after their visit for complete records.</p>
