@@ -411,6 +411,9 @@ function normalizeUser(u) {
         }
 
         
+        // ── Avatar color palette ────────────────────────────────────────────
+        const AVATAR_COLORS = ['#b91c1c','#1d4ed8','#047857','#7c3aed','#c2410c','#0e7490','#be185d','#4338ca','#065f46','#92400e'];
+
         // ── Philippine Public Holidays (Regular + Special Non-Working) ────────
         const PH_HOLIDAYS = {
           '2026-01-01': "New Year's Day",
@@ -527,7 +530,6 @@ function normalizeUser(u) {
           const [settingsSuccess, setSettingsSuccess] = useState('');
           const [settingsLoading, setSettingsLoading] = useState(false);
           const [avatarColor, setAvatarColor] = useState('#b91c1c');
-          const AVATAR_COLORS = ['#b91c1c','#1d4ed8','#047857','#7c3aed','#c2410c','#0e7490','#be185d','#4338ca','#065f46','#92400e'];
           const [forgotEmail, setForgotEmail] = useState('');
           const [forgotStatus, setForgotStatus] = useState('');
           const [forgotError, setForgotError] = useState('');
@@ -917,6 +919,13 @@ function normalizeUser(u) {
             setOtpInput('');
             setOtpError('');
           };
+
+          // ── Close settings menu on outside click ───────────────────────────
+          React.useEffect(() => {
+            const close = () => setShowSettingsMenu(false);
+            if (showSettingsMenu) document.addEventListener('click', close);
+            return () => document.removeEventListener('click', close);
+          }, [showSettingsMenu]);
 
           // Handle Create Account (alias kept for form onSubmit)
           const handleCreateAccount = handleSendOTP;
@@ -3407,12 +3416,6 @@ function normalizeUser(u) {
           }
 
           // ==================== RENDER: STAFF/ADMIN DASHBOARD ====================
-          React.useEffect(() => {
-            const close = () => setShowSettingsMenu(false);
-            if (showSettingsMenu) document.addEventListener('click', close);
-            return () => document.removeEventListener('click', close);
-          }, [showSettingsMenu]);
-
           return (
             <div className="min-h-screen bg-gray-50">
 
