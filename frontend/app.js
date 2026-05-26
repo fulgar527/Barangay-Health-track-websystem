@@ -817,13 +817,27 @@ function normalizeUser(u) {
           ];
 
           // Returns Set of booked time-values for a given date (excluding an optional appointment id)
+          const SLOT_CAPACITY = 38; // max bookings per time slot
+
+          // Returns a Set of time slots that are FULL (at or over capacity)
           const getBookedSlots = (date, excludeId = null) => {
             if (!date) return new Set();
-            return new Set(
-              queue
-                .filter(q => q.appointmentDate === date && q.id !== excludeId && q.status !== 'Cancelled')
-                .map(q => q.appointmentTime)
-            );
+            const counts = {};
+            queue
+              .filter(q => q.appointmentDate === date && q.id !== excludeId && !['Cancelled','Rejected'].includes(q.status))
+              .forEach(q => {
+                if (q.appointmentTime) counts[q.appointmentTime] = (counts[q.appointmentTime] || 0) + 1;
+              });
+            return new Set(Object.entries(counts).filter(([, c]) => c >= SLOT_CAPACITY).map(([t]) => t));
+          };
+
+          // Returns count of bookings for a specific slot
+          const getSlotCount = (date, time) => {
+            if (!date || !time) return 0;
+            return queue.filter(q =>
+              q.appointmentDate === date && q.appointmentTime === time &&
+              !['Cancelled','Rejected'].includes(q.status)
+            ).length;
           };
 
           // Data States
@@ -1555,7 +1569,7 @@ function normalizeUser(u) {
             if (hours < 8 || hours > 16) { alert('Please select a valid clinic slot (8 AM – 4 PM).'); return; }
             if (residentBooking.appointmentTime === '12:00') { alert('12:00 PM – 1:00 PM is the lunch break.'); return; }
             const bookedSlots = getBookedSlots(residentBooking.appointmentDate);
-            if (bookedSlots.has(residentBooking.appointmentTime)) {
+            if (bookedSlots.has(bookingData.appointmentTime)) {
               alert('This time slot is already fully booked. Please choose another time.'); return;
             }
 
@@ -2983,7 +2997,11 @@ function normalizeUser(u) {
                                   <option value="">-- Select a Time Slot --</option>
                                   {CLINIC_SLOTS.filter(s => s.value !== '12:00').map(slot => {
                                     const isBooked = residentBooking.appointmentDate && getBookedSlots(residentBooking.appointmentDate).has(slot.value);
-                                    return <option key={slot.value} value={slot.value} disabled={isBooked}>{slot.label}{isBooked ? ' (Full)' : ''}</option>;
+                                    const count = residentBooking.appointmentDate ? getSlotCount(residentBooking.appointmentDate, slot.value) : 0;
+                                    const remaining = SLOT_CAPACITY - count;
+                                    return <option key={slot.value} value={slot.value} disabled={isBooked}>
+                                      {slot.label}{isBooked ? ' (Full)' : count > 0 ? ` (${remaining} slots left)` : ''}
+                                    </option>;
                                   })}
                                 </select>
                                 <p className="text-xs text-gray-400 mt-1">🏥 Clinic hours: 8:00 AM – 5:00 PM | 9 slots/day | Lunch 12–1 PM blocked</p>
