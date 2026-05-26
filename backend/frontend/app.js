@@ -527,7 +527,11 @@ function normalizeUser(u) {
             username: '', password: '', confirmPassword: '', role: 'resident',
             firstName: '', middleInitial: '', lastName: '',
             birthday: '',
-            email: '', mobile: '', contactMethod: 'email'
+            email: '', mobile: '', contactMethod: 'email',
+            // Personal info fields (auto-saved to patients table on registration)
+            sex: '', civilStatus: '', address: '', contactNumber: '',
+            occupation: '', emergencyContactPerson: '', emergencyContactNumber: '',
+            allergies: '', chronicConditions: '', currentMedications: '',
           });
           const [registerError, setRegisterError] = useState('');
           const [registerSuccess, setRegisterSuccess] = useState('');
@@ -733,7 +737,7 @@ function normalizeUser(u) {
             setPendingAccount({
               id: Date.now(),
               username: username.trim().toLowerCase(),
-              _plainPassword: password,    // used by handleVerifyOTP to POST to API
+              _plainPassword: password,
               _firstName: firstName.trim(),
               _middleInitial: middleInitial.trim(),
               _lastName: lastName.trim(),
@@ -741,7 +745,18 @@ function normalizeUser(u) {
               birthday: birthday,
               email: contactMethod === 'email' ? email.trim() : '',
               mobile: contactMethod === 'mobile' ? mobile.trim() : '',
-              createdAt: new Date().toISOString()
+              createdAt: new Date().toISOString(),
+              // Personal info for patient record
+              sex: newAccount.sex || '',
+              civilStatus: newAccount.civilStatus || '',
+              address: newAccount.address || '',
+              contactNumber: newAccount.contactNumber || '',
+              occupation: newAccount.occupation || '',
+              emergencyContactPerson: newAccount.emergencyContactPerson || '',
+              emergencyContactNumber: newAccount.emergencyContactNumber || '',
+              allergies: newAccount.allergies || '',
+              chronicConditions: newAccount.chronicConditions || '',
+              currentMedications: newAccount.currentMedications || '',
             });
             setOtpStep(true);
           };
@@ -770,9 +785,38 @@ function normalizeUser(u) {
                 email:     pendingAccount.email || '',
                 mobile:    pendingAccount.mobile || '',
               });
+              // Auto-create patient record with personal info
+              const today2 = new Date();
+              const dob2 = new Date(pendingAccount.birthday);
+              let autoAge = today2.getFullYear() - dob2.getFullYear();
+              const mm2 = today2.getMonth() - dob2.getMonth();
+              if (mm2 < 0 || (mm2 === 0 && today2.getDate() < dob2.getDate())) autoAge--;
+              try {
+                const patRow = await api('POST', '/patients', {
+                  firstName: pendingAccount._firstName,
+                  lastName:  pendingAccount._lastName,
+                  middleName: pendingAccount._middleInitial ? pendingAccount._middleInitial + '.' : null,
+                  dateOfBirth: pendingAccount.birthday || null,
+                  age: autoAge,
+                  sex: pendingAccount.sex || null,
+                  civilStatus: pendingAccount.civilStatus || null,
+                  address: pendingAccount.address || null,
+                  contactNumber: pendingAccount.contactNumber || null,
+                  occupation: pendingAccount.occupation || null,
+                  emergencyContactPerson: pendingAccount.emergencyContactPerson || null,
+                  emergencyContactNumber: pendingAccount.emergencyContactNumber || null,
+                  allergies: pendingAccount.allergies || null,
+                  chronicConditions: pendingAccount.chronicConditions || null,
+                  currentMedications: pendingAccount.currentMedications || null,
+                });
+                const newPat = normalizePatient(patRow);
+                setRegisteredPatients(prev => [newPat, ...prev]);
+              } catch(patErr) {
+                console.warn('Patient record auto-create failed (non-fatal):', patErr.message);
+              }
               setOtpStep(false); setPendingAccount(null); setOtpCode(''); setOtpInput('');
               setRegisterSuccess(`Account created successfully! You can now log in as "${pendingAccount.username}".`);
-              setNewAccount({ username:'', password:'', confirmPassword:'', role:'resident', firstName:'', middleInitial:'', lastName:'', birthday:'', email:'', mobile:'', contactMethod:'email' });
+              setNewAccount({ username:'', password:'', confirmPassword:'', role:'resident', firstName:'', middleInitial:'', lastName:'', birthday:'', email:'', mobile:'', contactMethod:'email', sex:'', civilStatus:'', address:'', contactNumber:'', occupation:'', emergencyContactPerson:'', emergencyContactNumber:'', allergies:'', chronicConditions:'', currentMedications:'' });
               setShowRegPassword(false); setShowCreateAccount(false);
             } catch(err) {
               setOtpError(err.message || 'Registration failed. Please try again.');
@@ -2062,6 +2106,86 @@ function normalizeUser(u) {
                             {newAccount.password && newAccount.confirmPassword && newAccount.password === newAccount.confirmPassword && (
                               <p className="text-xs text-green-500 mt-1">Passwords match</p>
                             )}
+                          </div>
+
+                          {/* ── Personal Information Section ── */}
+                          <div className="border-t pt-4 mt-2">
+                            <p className="text-sm font-bold text-gray-700 mb-3">Personal Information <span className="text-xs font-normal text-gray-400">(saved to your patient record)</span></p>
+                            <div className="grid grid-cols-2 gap-3 mb-3">
+                              <div>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">Sex <span className="text-red-500">*</span></label>
+                                <select value={newAccount.sex} onChange={(e) => setNewAccount({...newAccount, sex: e.target.value})}
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-400 focus:border-transparent">
+                                  <option value="">Select</option>
+                                  <option value="Male">Male</option>
+                                  <option value="Female">Female</option>
+                                </select>
+                              </div>
+                              <div>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">Civil Status</label>
+                                <select value={newAccount.civilStatus} onChange={(e) => setNewAccount({...newAccount, civilStatus: e.target.value})}
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-400 focus:border-transparent">
+                                  <option value="">Select</option>
+                                  <option value="Single">Single</option>
+                                  <option value="Married">Married</option>
+                                  <option value="Widowed">Widowed</option>
+                                  <option value="Separated">Separated</option>
+                                </select>
+                              </div>
+                            </div>
+                            <div className="mb-3">
+                              <label className="block text-xs font-medium text-gray-600 mb-1">Address <span className="text-red-500">*</span></label>
+                              <input type="text" value={newAccount.address} onChange={(e) => setNewAccount({...newAccount, address: e.target.value})}
+                                placeholder="Barangay, City/Municipality"
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-400 focus:border-transparent" />
+                            </div>
+                            <div className="grid grid-cols-2 gap-3 mb-3">
+                              <div>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">Contact Number <span className="text-red-500">*</span></label>
+                                <input type="text" value={newAccount.contactNumber} onChange={(e) => setNewAccount({...newAccount, contactNumber: e.target.value})}
+                                  placeholder="09XXXXXXXXX"
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-400 focus:border-transparent" />
+                              </div>
+                              <div>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">Occupation</label>
+                                <input type="text" value={newAccount.occupation} onChange={(e) => setNewAccount({...newAccount, occupation: e.target.value})}
+                                  placeholder="e.g. Teacher"
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-400 focus:border-transparent" />
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3 mb-3">
+                              <div>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">Emergency Contact Person</label>
+                                <input type="text" value={newAccount.emergencyContactPerson} onChange={(e) => setNewAccount({...newAccount, emergencyContactPerson: e.target.value})}
+                                  placeholder="Full name"
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-400 focus:border-transparent" />
+                              </div>
+                              <div>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">Emergency Contact Number</label>
+                                <input type="text" value={newAccount.emergencyContactNumber} onChange={(e) => setNewAccount({...newAccount, emergencyContactNumber: e.target.value})}
+                                  placeholder="09XXXXXXXXX"
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-400 focus:border-transparent" />
+                              </div>
+                            </div>
+                            <div className="mb-3">
+                              <label className="block text-xs font-medium text-gray-600 mb-1">Allergies</label>
+                              <input type="text" value={newAccount.allergies} onChange={(e) => setNewAccount({...newAccount, allergies: e.target.value})}
+                                placeholder="e.g. Penicillin, Peanuts (leave blank if none)"
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-400 focus:border-transparent" />
+                            </div>
+                            <div className="mb-3">
+                              <label className="block text-xs font-medium text-gray-600 mb-1">Chronic Conditions</label>
+                              <input type="text" value={newAccount.chronicConditions} onChange={(e) => setNewAccount({...newAccount, chronicConditions: e.target.value})}
+                                placeholder="e.g. Hypertension, Diabetes (leave blank if none)"
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-400 focus:border-transparent" />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-600 mb-1">Current Medications</label>
+                              <textarea value={newAccount.currentMedications} onChange={(e) => setNewAccount({...newAccount, currentMedications: e.target.value})}
+                                placeholder="List current medications (leave blank if none)"
+                                rows={2}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-400 focus:border-transparent resize-none" />
+                            </div>
                           </div>
 
                           <div>
