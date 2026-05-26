@@ -1,5 +1,13 @@
 const express = require('express');
 const router = express.Router();
+const { createClient } = require('@supabase/supabase-js');
+const db = require('../db');
+
+// Supabase client
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_ANON_KEY
+);
 
 // ── Inline auth helper for protected profile/password routes ─────────────────
 async function getAuthUser(req) {
@@ -13,14 +21,6 @@ async function getAuthUser(req) {
     return { id: user.id, email: user.email };
   } catch { return null; }
 }
-const { createClient } = require('@supabase/supabase-js');
-const db = require('../db');
-
-// Supabase client
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_ANON_KEY
-);
 
 // ══════════════════════════════════════════════════════════════════════════════
 // POST /api/auth/register — Create a new user account
@@ -418,12 +418,15 @@ router.put('/profile', async (req, res) => {
   try {
     const authUser = await getAuthUser(req);
     if (!authUser) return res.status(401).json({ error: 'Unauthorized' });
-    const userId = authUser.isLocalDev ? null : authUser.id;
-    if (!userId) {
-      // Local dev demo account — nothing to update in DB
-      return res.json({ message: 'Profile display updated (demo account).' });
-    }
+    if (authUser.isLocalDev) return res.json({ message: 'Profile display updated (demo account).' });
     const { fullName, email, contactNumber } = req.body;
+    // Look up DB user by supabase_id or email
+    let userRow = await db.query('SELECT user_id FROM users WHERE supabase_id = $1', [authUser.id]);
+    if (userRow.rows.length === 0 && authUser.email) {
+      userRow = await db.query('SELECT user_id FROM users WHERE LOWER(email) = LOWER($1)', [authUser.email]);
+    }
+    if (userRow.rows.length === 0) return res.status(404).json({ error: 'User not found.' });
+    const dbUserId = userRow.rows[0].user_id;
     const updates = [];
     const values = [];
     let idx = 1;
@@ -431,7 +434,7 @@ router.put('/profile', async (req, res) => {
     if (email)          { updates.push(`email = $${idx++}`);          values.push(email); }
     if (contactNumber)  { updates.push(`mobile = $${idx++}`);         values.push(contactNumber); }
     if (updates.length === 0) return res.status(400).json({ error: 'Nothing to update.' });
-    values.push(userId);
+    values.push(dbUserId);
     await db.query(`UPDATE users SET ${updates.join(', ')} WHERE user_id = $${idx}`, values);
     res.json({ message: 'Profile updated successfully.' });
   } catch (err) {
@@ -452,13 +455,18 @@ router.put('/change-password', async (req, res) => {
     const { currentPassword, newPassword } = req.body;
     if (!currentPassword || !newPassword) return res.status(400).json({ error: 'Both current and new password are required.' });
     if (newPassword.length < 8) return res.status(400).json({ error: 'New password must be at least 8 characters.' });
-    const result = await db.query('SELECT password_hash FROM users WHERE user_id = $1', [userId]);
-    if (result.rows.length === 0) return res.status(404).json({ error: 'User not found.' });
     const bcrypt = require('bcrypt');
+    // Look up by supabase_id first, then by email as fallback
+    let result = await db.query('SELECT user_id, password_hash FROM users WHERE supabase_id = $1', [userId]);
+    if (result.rows.length === 0 && authUser.email) {
+      result = await db.query('SELECT user_id, password_hash FROM users WHERE LOWER(email) = LOWER($1)', [authUser.email]);
+    }
+    if (result.rows.length === 0) return res.status(404).json({ error: 'User not found in database.' });
+    const dbUserId = result.rows[0].user_id;
     const match = await bcrypt.compare(currentPassword, result.rows[0].password_hash);
     if (!match) return res.status(400).json({ error: 'Current password is incorrect.' });
     const hash = await bcrypt.hash(newPassword, 10);
-    await db.query('UPDATE users SET password_hash = $1 WHERE user_id = $2', [hash, userId]);
+    await db.query('UPDATE users SET password_hash = $1 WHERE user_id = $2', [hash, dbUserId]);
     res.json({ message: 'Password changed successfully.' });
   } catch (err) {
     console.error('PUT /auth/change-password error:', err);
