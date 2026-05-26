@@ -4378,7 +4378,7 @@ function normalizeUser(u) {
                           <span>Register New Patient</span>
                         </button>
                         <button
-                          onClick={() => setShowAddToQueue(true)}
+                          onClick={() => setShowRegisterPatient(true)}
                           className="flex items-center justify-center space-x-2 bg-gradient-to-r from-orange-500 to-orange-600 text-white py-4 rounded-lg font-semibold hover:from-orange-600 hover:to-orange-700 transition-all transform hover:scale-105 shadow-md"
                         >
                           <Clock className="w-5 h-5" />
@@ -4455,7 +4455,7 @@ function normalizeUser(u) {
                     <div className="flex justify-between items-center">
                       <h2 className="text-2xl font-bold text-gray-800">Queue Management</h2>
                       <button
-                        onClick={() => setShowAddToQueue(true)}
+                        onClick={() => setShowRegisterPatient(true)}
                         className="flex items-center space-x-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:from-blue-600 hover:to-blue-700 transition-all transform hover:scale-105 shadow-md"
                       >
                         <UserPlus className="w-5 h-5" />
