@@ -466,22 +466,32 @@ router.put('/change-password', async (req, res) => {
       return res.status(400).json({ error: 'New password must be at least 8 characters.' });
     }
 
-    // Verify current password by trying to sign in
+    // Step 1: Get user's email from their token
     const { data: { user }, error: getUserErr } = await supabase.auth.getUser(token);
     if (getUserErr || !user) return res.status(401).json({ error: 'Session expired. Please log in again.' });
 
-    // Use Supabase user-scoped client with their token to update password
-    const { createClient } = require('@supabase/supabase-js');
-    const userSupabase = createClient(
-      process.env.SUPABASE_URL,
-      process.env.SUPABASE_ANON_KEY,
-      { global: { headers: { Authorization: 'Bearer ' + token } } }
-    );
+    // Step 2: Verify current password by signing in with it
+    const { data: signInData, error: signInErr } = await supabase.auth.signInWithPassword({
+      email: user.email,
+      password: currentPassword
+    });
+    if (signInErr || !signInData?.session) {
+      return res.status(400).json({ error: 'Current password is incorrect.' });
+    }
 
-    const { error: updateErr } = await userSupabase.auth.updateUser({
+    // Step 3: Use the fresh session to update the password
+    const { createClient } = require('@supabase/supabase-js');
+    const sessionSupabase = createClient(
+      process.env.SUPABASE_URL,
+      process.env.SUPABASE_ANON_KEY
+    );
+    await sessionSupabase.auth.setSession({
+      access_token: signInData.session.access_token,
+      refresh_token: signInData.session.refresh_token
+    });
+    const { error: updateErr } = await sessionSupabase.auth.updateUser({
       password: newPassword
     });
-
     if (updateErr) {
       console.error('Supabase password update error:', updateErr.message);
       return res.status(400).json({ error: updateErr.message || 'Failed to update password.' });
