@@ -328,7 +328,20 @@ function normalizeUser(u) {
           const [auditEntries, setAuditEntries] = React.useState([]);
           React.useEffect(() => {
             api('GET', '/audit').then(rows => {
-              setAuditEntries(Array.isArray(rows) ? rows.slice().reverse() : []);
+              // Normalize all fields to strings to avoid React "objects as children" error
+              const safe = (v) => {
+                if (v === null || v === undefined) return '';
+                if (typeof v === 'object') return JSON.stringify(v);
+                return String(v);
+              };
+              const normalized = (Array.isArray(rows) ? rows : []).map(r => ({
+                action:    safe(r.action),
+                username:  safe(r.username),
+                role:      safe(r.role),
+                details:   safe(r.details),
+                timestamp: safe(r.timestamp),
+              }));
+              setAuditEntries(normalized.slice().reverse());
             }).catch(() => {});
           }, []);
           const actionColors = {
@@ -378,14 +391,14 @@ function normalizeUser(u) {
                           <span className="text-xl flex-shrink-0 mt-0.5">{ac.icon}</span>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center justify-between gap-2 flex-wrap">
-                              <span className={`text-sm font-bold ${ac.text}`}>{entry.action.replace(/_/g,' ')}</span>
+                              <span className={`text-sm font-bold ${ac.text}`}>{String(entry.action || '').replace(/_/g,' ')}</span>
                               <span className="text-xs text-gray-400 flex-shrink-0">
                                 {new Date(entry.timestamp).toLocaleString('en-PH', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' })}
                               </span>
                             </div>
                             <p className="text-xs text-gray-600 mt-0.5">
                               <span className="font-medium">By:</span> {entry.username || 'System'} ({entry.role || 'unknown'})
-                              {entry.details ? <span className="ml-2 text-gray-500">— {entry.details}</span> : null}
+                              {entry.details ? <span className="ml-2 text-gray-500">— {typeof entry.details === 'object' ? JSON.stringify(entry.details) : String(entry.details)}</span> : null}
                             </p>
                           </div>
                         </div>
