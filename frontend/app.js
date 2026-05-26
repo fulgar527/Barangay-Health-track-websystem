@@ -2389,7 +2389,7 @@ function normalizeUser(u) {
                     </div>
                       <div className="flex items-center space-x-2">
                         <div className="relative">
-                        <button onClick={() => setShowSettingsMenu(v => !v)}
+                        <button onClick={(e) => { e.stopPropagation(); setShowSettingsMenu(v => !v); }}
                           className="flex items-center gap-2 hover:bg-white/10 rounded-xl px-3 py-2 transition-colors cursor-pointer">
                           <div className="w-9 h-9 rounded-full flex items-center justify-center text-white font-bold text-base flex-shrink-0"
                             style={{background: avatarColor}}>
@@ -2402,7 +2402,7 @@ function normalizeUser(u) {
                           <svg className="w-4 h-4 text-white/70" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
                         </button>
                         {showSettingsMenu && (
-                          <div className="absolute right-0 top-full mt-2 w-56 bg-white rounded-xl shadow-2xl border border-gray-100 z-50 overflow-hidden">
+                          <div onClick={(e) => e.stopPropagation()} className="absolute right-0 top-full mt-2 w-56 bg-white rounded-xl shadow-2xl border border-gray-100 z-50 overflow-hidden">
                             <div className="px-4 py-3 bg-gray-50 border-b">
                               <p className="text-sm font-bold text-gray-800">{currentUser?.fullName || currentUser?.username}</p>
                               <p className="text-xs text-gray-500 capitalize">{currentUser?.role || userRole}</p>
@@ -3612,7 +3612,7 @@ function normalizeUser(u) {
                     </div>
                     <div className="flex items-center space-x-2">
                       <div className="relative">
-                        <button onClick={() => setShowSettingsMenu(v => !v)}
+                        <button onClick={(e) => { e.stopPropagation(); setShowSettingsMenu(v => !v); }}
                           className="flex items-center gap-2 hover:bg-white/10 rounded-xl px-3 py-2 transition-colors cursor-pointer">
                           <div className="w-9 h-9 rounded-full flex items-center justify-center text-white font-bold text-base flex-shrink-0"
                             style={{background: avatarColor}}>
@@ -3625,7 +3625,7 @@ function normalizeUser(u) {
                           <svg className="w-4 h-4 text-white/70" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
                         </button>
                         {showSettingsMenu && (
-                          <div className="absolute right-0 top-full mt-2 w-56 bg-white rounded-xl shadow-2xl border border-gray-100 z-50 overflow-hidden">
+                          <div onClick={(e) => e.stopPropagation()} className="absolute right-0 top-full mt-2 w-56 bg-white rounded-xl shadow-2xl border border-gray-100 z-50 overflow-hidden">
                             <div className="px-4 py-3 bg-gray-50 border-b">
                               <p className="text-sm font-bold text-gray-800">{currentUser?.fullName || currentUser?.username}</p>
                               <p className="text-xs text-gray-500 capitalize">{currentUser?.role || userRole}</p>
