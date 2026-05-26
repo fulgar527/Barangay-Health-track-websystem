@@ -2347,6 +2347,122 @@ function normalizeUser(u) {
           if (userRole === 'resident') {
             return (
               <div className="min-h-screen bg-gray-50">
+
+                {/* ===== SETTINGS MODAL (Resident) ===== */}
+                {showSettingsModal && (
+                  <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4" onClick={() => setShowSettingsModal(false)}>
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md" onClick={e => e.stopPropagation()}>
+                      <div className="flex items-center justify-between px-6 py-4 border-b" style={{background:'linear-gradient(to right,var(--ht-primary),var(--ht-accent))'}}>
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-lg flex-shrink-0" style={{background: avatarColor}}>
+                            {(currentUser?.fullName || currentUser?.username || '?')[0].toUpperCase()}
+                          </div>
+                          <div>
+                            <p className="text-white font-bold text-sm">{currentUser?.fullName || currentUser?.username}</p>
+                            <p className="text-white/80 text-xs capitalize">Resident</p>
+                          </div>
+                        </div>
+                        <button onClick={() => setShowSettingsModal(false)} className="text-white/80 hover:text-white text-2xl font-bold leading-none">&times;</button>
+                      </div>
+                      <div className="flex border-b bg-gray-50 overflow-x-auto">
+                        {[
+                          { id:'profile',  label:'Profile',  icon:'👤' },
+                          { id:'avatar',   label:'Avatar',   icon:'🎨' },
+                          { id:'contact',  label:'Contact',  icon:'📱' },
+                          { id:'email',    label:'Email',    icon:'✉️' },
+                          { id:'password', label:'Password', icon:'🔒' },
+                        ].map(tab => (
+                          <button key={tab.id} onClick={() => { setSettingsTab(tab.id); setSettingsError(''); setSettingsSuccess(''); }}
+                            className={`flex-1 py-3 text-xs font-semibold transition-colors whitespace-nowrap px-2 ${settingsTab === tab.id ? 'border-b-2 text-red-700 bg-white' : 'text-gray-500 hover:text-gray-700'}`}
+                            style={settingsTab === tab.id ? {borderColor:'var(--ht-primary)'} : {}}>
+                            {tab.icon} {tab.label}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="px-6 py-5">
+                        {settingsError && <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-2 text-sm mb-4">{settingsError}</div>}
+                        {settingsSuccess && <div className="bg-green-50 border border-green-200 text-green-700 rounded-lg px-4 py-2 text-sm mb-4">✓ {settingsSuccess}</div>}
+                        {settingsTab === 'profile' && (
+                          <div className="space-y-3">
+                            <p className="text-xs text-gray-500 mb-3">Update your display name.</p>
+                            <div><label className="block text-sm font-semibold text-gray-700 mb-1">First Name</label>
+                              <input type="text" value={settingsForm.firstName} onChange={e => setSettingsForm(f=>({...f,firstName:e.target.value}))}
+                                className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-400 focus:border-transparent" /></div>
+                            <div><label className="block text-sm font-semibold text-gray-700 mb-1">Middle Initial <span className="text-gray-400 font-normal">(optional)</span></label>
+                              <input type="text" value={settingsForm.middleInitial} onChange={e => setSettingsForm(f=>({...f,middleInitial:e.target.value.slice(0,1).toUpperCase()}))}
+                                maxLength={1} placeholder="A"
+                                className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-400 focus:border-transparent" /></div>
+                            <div><label className="block text-sm font-semibold text-gray-700 mb-1">Last Name</label>
+                              <input type="text" value={settingsForm.lastName} onChange={e => setSettingsForm(f=>({...f,lastName:e.target.value}))}
+                                className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-400 focus:border-transparent" /></div>
+                          </div>
+                        )}
+                        {settingsTab === 'avatar' && (
+                          <div>
+                            <p className="text-xs text-gray-500 mb-4">Choose a color for your avatar.</p>
+                            <div className="flex justify-center mb-5">
+                              <div className="w-20 h-20 rounded-full flex items-center justify-center text-white font-bold text-3xl shadow-lg" style={{background: avatarColor}}>
+                                {(currentUser?.fullName || currentUser?.username || '?')[0].toUpperCase()}
+                              </div>
+                            </div>
+                            <div className="flex flex-wrap justify-center gap-3">
+                              {AVATAR_COLORS.map(c => (
+                                <button key={c} onClick={() => setAvatarColor(c)}
+                                  className={`w-10 h-10 rounded-full transition-all transform hover:scale-110 ${avatarColor === c ? 'ring-4 ring-offset-2 scale-110' : ''}`}
+                                  style={{background: c}} />
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {settingsTab === 'contact' && (
+                          <div>
+                            <p className="text-xs text-gray-500 mb-3">Update your contact number.</p>
+                            <div><label className="block text-sm font-semibold text-gray-700 mb-1">Contact Number</label>
+                              <input type="text" value={settingsForm.contactNumber} onChange={e => setSettingsForm(f=>({...f,contactNumber:e.target.value}))}
+                                placeholder="09XXXXXXXXX"
+                                className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-400 focus:border-transparent" /></div>
+                          </div>
+                        )}
+                        {settingsTab === 'email' && (
+                          <div>
+                            <p className="text-xs text-gray-500 mb-3">Update your email address.</p>
+                            <div><label className="block text-sm font-semibold text-gray-700 mb-1">Email Address</label>
+                              <input type="email" value={settingsForm.email} onChange={e => setSettingsForm(f=>({...f,email:e.target.value}))}
+                                placeholder="email@example.com"
+                                className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-400 focus:border-transparent" /></div>
+                          </div>
+                        )}
+                        {settingsTab === 'password' && (
+                          <div className="space-y-3">
+                            <p className="text-xs text-gray-500 mb-3">Choose a strong password with at least 8 characters.</p>
+                            <div><label className="block text-sm font-semibold text-gray-700 mb-1">Current Password</label>
+                              <input type="password" value={settingsForm.currentPassword} onChange={e => setSettingsForm(f=>({...f,currentPassword:e.target.value}))}
+                                placeholder="Enter current password"
+                                className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-400 focus:border-transparent" /></div>
+                            <div><label className="block text-sm font-semibold text-gray-700 mb-1">New Password</label>
+                              <input type="password" value={settingsForm.newPassword} onChange={e => setSettingsForm(f=>({...f,newPassword:e.target.value}))}
+                                placeholder="Min 8 characters"
+                                className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-400 focus:border-transparent" /></div>
+                            <div><label className="block text-sm font-semibold text-gray-700 mb-1">Confirm New Password</label>
+                              <input type="password" value={settingsForm.confirmNewPassword} onChange={e => setSettingsForm(f=>({...f,confirmNewPassword:e.target.value}))}
+                                placeholder="Re-enter new password"
+                                className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-400 focus:border-transparent" /></div>
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex gap-3 px-6 pb-5">
+                        <button onClick={() => setShowSettingsModal(false)}
+                          className="flex-1 py-2.5 border border-gray-300 rounded-xl text-gray-600 font-semibold hover:bg-gray-50">Cancel</button>
+                        <button onClick={saveSettings} disabled={settingsLoading}
+                          className="flex-1 py-2.5 rounded-xl text-white font-semibold disabled:opacity-60"
+                          style={{background:'linear-gradient(to right,var(--ht-primary),var(--ht-accent))'}}>
+                          {settingsLoading ? 'Saving...' : 'Save Changes'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* Header */}
                 {/* ── Idle Session Warning Modal ── */}
                 {showIdleWarning && (
