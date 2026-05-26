@@ -323,7 +323,82 @@ function normalizeUser(u) {
         });
 
         // ==================== MAIN APP COMPONENT ====================
-        function HealthTrackApp() {
+        // ── AuditLogPanel: proper component so hooks are valid ──────────────
+        function AuditLogPanel({ api, List }) {
+          const [auditEntries, setAuditEntries] = React.useState([]);
+          React.useEffect(() => {
+            api('GET', '/audit').then(rows => {
+              setAuditEntries(Array.isArray(rows) ? rows.slice().reverse() : []);
+            }).catch(() => {});
+          }, []);
+          const actionColors = {
+            LOGIN:            { bg: 'bg-green-50',  text: 'text-green-700',  border: 'border-green-200',  icon: '🔑' },
+            LOGOUT:           { bg: 'bg-gray-50',   text: 'text-gray-600',   border: 'border-gray-200',   icon: '🚪' },
+            REGISTER:         { bg: 'bg-blue-50',   text: 'text-blue-700',   border: 'border-blue-200',   icon: '👤' },
+            QUEUE_ACCEPTED:   { bg: 'bg-green-50',  text: 'text-green-700',  border: 'border-green-200',  icon: '✅' },
+            QUEUE_REJECTED:   { bg: 'bg-red-50',    text: 'text-red-700',    border: 'border-red-200',    icon: '❌' },
+            QUEUE_SERVED:     { bg: 'bg-blue-50',   text: 'text-blue-700',   border: 'border-blue-200',   icon: '✔️' },
+            QUEUE_REMOVED:    { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-200', icon: '🗑️' },
+            ADD_QUEUE:        { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200', icon: '📋' },
+            DELETE_PATIENT:   { bg: 'bg-red-50',    text: 'text-red-700',    border: 'border-red-200',    icon: '⚠️' },
+            DELETE_USER:      { bg: 'bg-red-50',    text: 'text-red-700',    border: 'border-red-200',    icon: '🚫' },
+            PASSWORD_CHANGED: { bg: 'bg-yellow-50', text: 'text-yellow-700', border: 'border-yellow-200', icon: '🔒' },
+            ACCOUNT_CREATED:  { bg: 'bg-indigo-50', text: 'text-indigo-700', border: 'border-indigo-200', icon: '🆕' },
+          };
+          return (
+            <div className="space-y-6">
+              <div className="bg-white rounded-xl shadow-md p-6">
+                <div className="flex items-center justify-between mb-6">
+                  <div>
+                    <h2 className="text-xl font-bold text-gray-800">Audit Log</h2>
+                    <p className="text-sm text-gray-500 mt-1">Complete record of all system actions — who did what and when</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="bg-gray-100 text-gray-600 text-xs px-3 py-1.5 rounded-full font-medium">{auditEntries.length} entries</span>
+                    <button
+                      onClick={() => api('DELETE', '/audit').then(() => setAuditEntries([])).catch(() => {})}
+                      className="text-xs text-red-500 hover:text-red-700 px-3 py-1.5 border border-red-200 rounded-lg hover:bg-red-50 transition-colors"
+                    >Clear Log</button>
+                  </div>
+                </div>
+                {auditEntries.length === 0 ? (
+                  <div className="text-center py-12">
+                    <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                      <List className="w-8 h-8 text-gray-300" />
+                    </div>
+                    <p className="text-gray-500 font-medium">No audit entries yet</p>
+                    <p className="text-gray-400 text-sm mt-1">Actions taken in the system will appear here</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2 max-h-[600px] overflow-y-auto pr-1">
+                    {auditEntries.map((entry, i) => {
+                      const ac = actionColors[entry.action] || { bg: 'bg-gray-50', text: 'text-gray-600', border: 'border-gray-200', icon: '📌' };
+                      return (
+                        <div key={i} className={`flex items-start gap-3 border rounded-xl px-4 py-3 ${ac.bg} ${ac.border}`}>
+                          <span className="text-xl flex-shrink-0 mt-0.5">{ac.icon}</span>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between gap-2 flex-wrap">
+                              <span className={`text-sm font-bold ${ac.text}`}>{entry.action.replace(/_/g,' ')}</span>
+                              <span className="text-xs text-gray-400 flex-shrink-0">
+                                {new Date(entry.timestamp).toLocaleString('en-PH', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' })}
+                              </span>
+                            </div>
+                            <p className="text-xs text-gray-600 mt-0.5">
+                              <span className="font-medium">By:</span> {entry.username || 'System'} ({entry.role || 'unknown'})
+                              {entry.details ? <span className="ml-2 text-gray-500">— {entry.details}</span> : null}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        }
+
+                function HealthTrackApp() {
           // ==================== PHONE NUMBER HELPER ====================
           const sanitizePhone = (val) => {
             return val.replace(/[^0-9+]/g, '').replace(/(.)\+/g, '$1');
@@ -4312,82 +4387,7 @@ function normalizeUser(u) {
                 )}
 
 
-                {activeTab === 'auditlog' && userRole === 'admin' && (() => {
-                  // Audit log displayed from backend /api/audit
-                  // We use a local state for the audit entries fetched once when tab opens
-                  const [auditEntries, setAuditEntries] = React.useState([]);
-                  React.useEffect(() => {
-                    api('GET', '/audit').then(rows => {
-                      setAuditEntries(Array.isArray(rows) ? rows.slice().reverse() : []);
-                    }).catch(() => {});
-                  }, []);
-                  const actionColors = {
-                    LOGIN:            { bg: 'bg-green-50',  text: 'text-green-700',  border: 'border-green-200',  icon: '🔑' },
-                    LOGOUT:           { bg: 'bg-gray-50',   text: 'text-gray-600',   border: 'border-gray-200',   icon: '🚪' },
-                    REGISTER:         { bg: 'bg-blue-50',   text: 'text-blue-700',   border: 'border-blue-200',   icon: '👤' },
-                    QUEUE_ACCEPTED:   { bg: 'bg-green-50',  text: 'text-green-700',  border: 'border-green-200',  icon: '✅' },
-                    QUEUE_REJECTED:   { bg: 'bg-red-50',    text: 'text-red-700',    border: 'border-red-200',    icon: '❌' },
-                    QUEUE_SERVED:     { bg: 'bg-blue-50',   text: 'text-blue-700',   border: 'border-blue-200',   icon: '✔️' },
-                    QUEUE_REMOVED:    { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-200', icon: '🗑️' },
-                    ADD_QUEUE:        { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200', icon: '📋' },
-                    DELETE_PATIENT:   { bg: 'bg-red-50',    text: 'text-red-700',    border: 'border-red-200',    icon: '⚠️' },
-                    DELETE_USER:      { bg: 'bg-red-50',    text: 'text-red-700',    border: 'border-red-200',    icon: '🚫' },
-                    PASSWORD_CHANGED: { bg: 'bg-yellow-50', text: 'text-yellow-700', border: 'border-yellow-200', icon: '🔒' },
-                    ACCOUNT_CREATED:  { bg: 'bg-indigo-50', text: 'text-indigo-700', border: 'border-indigo-200', icon: '🆕' },
-                  };
-                  return (
-                    <div className="space-y-6">
-                      <div className="bg-white rounded-xl shadow-md p-6">
-                        <div className="flex items-center justify-between mb-6">
-                          <div>
-                            <h2 className="text-xl font-bold text-gray-800">Audit Log</h2>
-                            <p className="text-sm text-gray-500 mt-1">Complete record of all system actions — who did what and when</p>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <span className="bg-gray-100 text-gray-600 text-xs px-3 py-1.5 rounded-full font-medium">{auditEntries.length} entries</span>
-                            <button
-                              onClick={() => api('DELETE', '/audit').then(() => setAuditEntries([])).catch(() => {})}
-                              className="text-xs text-red-500 hover:text-red-700 px-3 py-1.5 border border-red-200 rounded-lg hover:bg-red-50 transition-colors"
-                            >Clear Log</button>
-                          </div>
-                        </div>
-
-                        {auditEntries.length === 0 ? (
-                          <div className="text-center py-12">
-                            <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                              <List className="w-8 h-8 text-gray-300" />
-                            </div>
-                            <p className="text-gray-500 font-medium">No audit entries yet</p>
-                            <p className="text-gray-400 text-sm mt-1">Actions taken in the system will appear here</p>
-                          </div>
-                        ) : (
-                          <div className="space-y-2 max-h-[600px] overflow-y-auto pr-1">
-                            {auditEntries.map((entry, i) => {
-                              const ac = actionColors[entry.action] || { bg: 'bg-gray-50', text: 'text-gray-600', border: 'border-gray-200', icon: '📌' };
-                              return (
-                                <div key={i} className={`flex items-start gap-3 border rounded-xl px-4 py-3 ${ac.bg} ${ac.border}`}>
-                                  <span className="text-xl flex-shrink-0 mt-0.5">{ac.icon}</span>
-                                  <div className="flex-1 min-w-0">
-                                    <div className="flex items-center justify-between gap-2 flex-wrap">
-                                      <span className={`text-sm font-bold ${ac.text}`}>{entry.action.replace(/_/g,' ')}</span>
-                                      <span className="text-xs text-gray-400 flex-shrink-0">
-                                        {new Date(entry.timestamp).toLocaleString('en-PH', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' })}
-                                      </span>
-                                    </div>
-                                    <p className="text-xs text-gray-600 mt-0.5">
-                                      <span className="font-medium">By:</span> {entry.username || 'System'} ({entry.role || 'unknown'})
-                                      {entry.details ? <span className="ml-2 text-gray-500">— {entry.details}</span> : null}
-                                    </p>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })()}
+                {activeTab === 'auditlog' && userRole === 'admin' && <AuditLogPanel api={api} List={List} />}
               {/* ── Delete Account Confirmation Modal ── */}
               {deleteAccountTarget && (
                 <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50">
