@@ -1,5 +1,18 @@
 const express = require('express');
 const router = express.Router();
+
+// ── Inline auth helper for protected profile/password routes ─────────────────
+async function getAuthUser(req) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
+  const token = authHeader.split(' ')[1];
+  if (token === 'local-dev-token') return { id: null, isLocalDev: true };
+  try {
+    const { data: { user }, error } = await supabase.auth.getUser(token);
+    if (error || !user) return null;
+    return { id: user.id, email: user.email };
+  } catch { return null; }
+}
 const { createClient } = require('@supabase/supabase-js');
 const db = require('../db');
 
@@ -403,8 +416,13 @@ router.post('/forgot-password', async (req, res) => {
 // ══════════════════════════════════════════════════════════════
 router.put('/profile', async (req, res) => {
   try {
-    const userId = req.user?.id;
-    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+    const authUser = await getAuthUser(req);
+    if (!authUser) return res.status(401).json({ error: 'Unauthorized' });
+    const userId = authUser.isLocalDev ? null : authUser.id;
+    if (!userId) {
+      // Local dev demo account — nothing to update in DB
+      return res.json({ message: 'Profile display updated (demo account).' });
+    }
     const { fullName, email, contactNumber } = req.body;
     const updates = [];
     const values = [];
@@ -427,8 +445,10 @@ router.put('/profile', async (req, res) => {
 // ══════════════════════════════════════════════════════════════
 router.put('/change-password', async (req, res) => {
   try {
-    const userId = req.user?.id;
-    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+    const authUser = await getAuthUser(req);
+    if (!authUser) return res.status(401).json({ error: 'Unauthorized' });
+    if (authUser.isLocalDev) return res.status(400).json({ error: 'Cannot change password for demo accounts.' });
+    const userId = authUser.id;
     const { currentPassword, newPassword } = req.body;
     if (!currentPassword || !newPassword) return res.status(400).json({ error: 'Both current and new password are required.' });
     if (newPassword.length < 8) return res.status(400).json({ error: 'New password must be at least 8 characters.' });
