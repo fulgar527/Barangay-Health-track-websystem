@@ -225,7 +225,7 @@ function normalizeUser(u) {
         );
 
         // ==================== SERVICES CONFIGURATION ====================
-        const SERVICE_CATEGORIES = {
+        const DEFAULT_SERVICE_CATEGORIES = {
           'Maternal Care': {
             urgency: 'Non-Urgent',
             services: [
@@ -312,8 +312,8 @@ function normalizeUser(u) {
 
         // Legacy SERVICES object for backward compatibility
         const SERVICES = {};
-        Object.keys(SERVICE_CATEGORIES).forEach(category => {
-          SERVICE_CATEGORIES[category].services.forEach(service => {
+        Object.keys(DEFAULT_SERVICE_CATEGORIES).forEach(category => {
+          DEFAULT_SERVICE_CATEGORIES[category].services.forEach(service => {
             SERVICES[service.name] = {
               category: SERVICE_CATEGORIES[category].urgency,
               priority: service.priority
@@ -523,6 +523,13 @@ function normalizeUser(u) {
 
           // ── Settings / Profile states ─────────────────────────────────────
           const [showSettingsMenu, setShowSettingsMenu] = useState(false);
+          const [showServiceMgmt, setShowServiceMgmt] = useState(false);
+          const [serviceMgmtTab, setServiceMgmtTab] = useState('categories');
+          const [editingCategory, setEditingCategory] = useState(null); // {name, urgency} or null
+          const [newCategoryForm, setNewCategoryForm] = useState({ name:'', urgency:'Non-Urgent', enabled:true });
+          const [editingService, setEditingService] = useState(null); // {category, index, name, priority}
+          const [newServiceForm, setNewServiceForm] = useState({ category:'', name:'', priority:'Regular' });
+          const [serviceMgmtMsg, setServiceMgmtMsg] = useState('');
           const [showSettingsModal, setShowSettingsModal] = useState(false);
           const [settingsTab, setSettingsTab] = useState('profile'); // 'profile' | 'contact' | 'password' | 'avatar'
           const [settingsForm, setSettingsForm] = useState({ firstName:'', lastName:'', middleInitial:'', email:'', contactNumber:'', currentPassword:'', newPassword:'', confirmNewPassword:'' });
@@ -727,6 +734,76 @@ function normalizeUser(u) {
             } catch(err) {
               setSettingsError(err.message || 'Update failed. Please try again.');
             } finally { setSettingsLoading(false); }
+          };
+
+                    // ── Service Management helpers ───────────────────────────────────────
+          const saveServiceCategories = (updated) => {
+            setServiceCategories(updated);
+            try { localStorage.setItem('ht_service_categories', JSON.stringify(updated)); } catch {}
+          };
+          const saveSlotCapacity = (val) => {
+            const n = Math.max(1, Math.min(200, parseInt(val) || 38));
+            setSlotCapacity(n);
+            try { localStorage.setItem('ht_slot_capacity', String(n)); } catch {}
+          };
+          const addCategory = () => {
+            const name = newCategoryForm.name.trim();
+            if (!name) { setServiceMgmtMsg('Category name is required.'); return; }
+            if (serviceCategories[name]) { setServiceMgmtMsg('Category already exists.'); return; }
+            const updated = { ...serviceCategories, [name]: { urgency: newCategoryForm.urgency, enabled: true, services: [] } };
+            saveServiceCategories(updated);
+            setNewCategoryForm({ name:'', urgency:'Non-Urgent', enabled:true });
+            setServiceMgmtMsg(`✓ Category "${name}" added.`);
+          };
+          const updateCategory = (oldName, newName, urgency) => {
+            const updated = {};
+            Object.entries(serviceCategories).forEach(([k, v]) => {
+              updated[k === oldName ? newName.trim() : k] = k === oldName ? { ...v, urgency } : v;
+            });
+            saveServiceCategories(updated);
+            setEditingCategory(null);
+            setServiceMgmtMsg(`✓ Category updated.`);
+          };
+          const deleteCategory = (name) => {
+            if (!window.confirm(`Delete "${name}" and ALL its services? This cannot be undone.`)) return;
+            const updated = { ...serviceCategories };
+            delete updated[name];
+            saveServiceCategories(updated);
+            setServiceMgmtMsg(`✓ Category "${name}" deleted.`);
+          };
+          const toggleCategory = (name) => {
+            const updated = { ...serviceCategories, [name]: { ...serviceCategories[name], enabled: !serviceCategories[name].enabled } };
+            saveServiceCategories(updated);
+          };
+          const addService = () => {
+            const { category, name, priority } = newServiceForm;
+            if (!category || !name.trim()) { setServiceMgmtMsg('Please fill in category and service name.'); return; }
+            const cat = serviceCategories[category];
+            if (cat.services.find(s => s.name.toLowerCase() === name.trim().toLowerCase())) { setServiceMgmtMsg('Service already exists in this category.'); return; }
+            const updated = { ...serviceCategories, [category]: { ...cat, services: [...cat.services, { name: name.trim(), priority, enabled: true }] } };
+            saveServiceCategories(updated);
+            setNewServiceForm({ category, name:'', priority:'Regular' });
+            setServiceMgmtMsg(`✓ Service "${name.trim()}" added.`);
+          };
+          const updateService = (category, index, newName, priority) => {
+            const services = serviceCategories[category].services.map((s, i) => i === index ? { ...s, name: newName.trim(), priority } : s);
+            const updated = { ...serviceCategories, [category]: { ...serviceCategories[category], services } };
+            saveServiceCategories(updated);
+            setEditingService(null);
+            setServiceMgmtMsg('✓ Service updated.');
+          };
+          const deleteService = (category, index) => {
+            const sName = serviceCategories[category].services[index]?.name;
+            if (!window.confirm(`Delete service "${sName}"?`)) return;
+            const services = serviceCategories[category].services.filter((_, i) => i !== index);
+            const updated = { ...serviceCategories, [category]: { ...serviceCategories[category], services } };
+            saveServiceCategories(updated);
+            setServiceMgmtMsg(`✓ Service "${sName}" deleted.`);
+          };
+          const toggleService = (category, index) => {
+            const services = serviceCategories[category].services.map((s, i) => i === index ? { ...s, enabled: s.enabled === false ? true : false } : s);
+            const updated = { ...serviceCategories, [category]: { ...serviceCategories[category], services } };
+            saveServiceCategories(updated);
           };
 
                     // ── Audit logger — writes to backend (fire-and-forget) ──────────────
@@ -956,7 +1033,18 @@ function normalizeUser(u) {
           ];
 
           // Returns Set of booked time-values for a given date (excluding an optional appointment id)
-          const SLOT_CAPACITY = 38; // max bookings per time slot
+          // ── Service Management State (admin-configurable) ───────────────
+          const [serviceCategories, setServiceCategories] = React.useState(() => {
+            try {
+              const saved = localStorage.getItem('ht_service_categories');
+              return saved ? JSON.parse(saved) : DEFAULT_SERVICE_CATEGORIES;
+            } catch { return DEFAULT_SERVICE_CATEGORIES; }
+          });
+          const [slotCapacity, setSlotCapacity] = React.useState(() => {
+            try { return parseInt(localStorage.getItem('ht_slot_capacity') || '38'); } catch { return 38; }
+          });
+          const SERVICE_CATEGORIES = serviceCategories;
+          const SLOT_CAPACITY = slotCapacity;
 
           // Returns a Set of time slots that are FULL (at or over capacity)
           const getBookedSlots = (date, excludeId = null) => {
@@ -2541,6 +2629,14 @@ function normalizeUser(u) {
                                 <span>{item.icon}</span>{item.label}
                               </button>
                             ))}
+                            {userRole === 'admin' && (
+                              <div className="border-t">
+                                <button onClick={() => { setShowSettingsMenu(false); setServiceMgmtTab('categories'); setServiceMgmtMsg(''); setShowServiceMgmt(true); }}
+                                  className="w-full flex items-center gap-3 px-4 py-3 text-sm text-blue-700 hover:bg-blue-50 transition-colors text-left font-semibold">
+                                  <span>⚙️</span> Service Management
+                                </button>
+                              </div>
+                            )}
                             <div className="border-t">
                               <button onClick={() => { setShowSettingsMenu(false); handleLogout(); }}
                                 className="w-full flex items-center gap-3 px-4 py-3 text-sm text-red-600 hover:bg-red-50 transition-colors text-left">
@@ -3446,7 +3542,7 @@ function normalizeUser(u) {
                                   onChange={(e) => setResidentBooking({...residentBooking, serviceCategory: e.target.value, serviceType: '', priorityLevel: ''})}
                                   className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all">
                                   <option value="">Select service category</option>
-                                  {Object.keys(SERVICE_CATEGORIES).map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                                  {Object.keys(SERVICE_CATEGORIES).filter(cat => SERVICE_CATEGORIES[cat].enabled !== false).map(cat => <option key={cat} value={cat}>{cat}</option>)}
                                 </select>
                               </div>
                               <div className="md:col-span-2">
@@ -3459,7 +3555,7 @@ function normalizeUser(u) {
                                   disabled={!residentBooking.serviceCategory}
                                   className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all disabled:bg-gray-100 disabled:cursor-not-allowed">
                                   <option value="">{residentBooking.serviceCategory ? 'Select service type' : 'Please select a service category first'}</option>
-                                  {residentBooking.serviceCategory && SERVICE_CATEGORIES[residentBooking.serviceCategory]?.services.map(s => <option key={s.name} value={s.name}>{s.name}</option>)}
+                                  {residentBooking.serviceCategory && SERVICE_CATEGORIES[residentBooking.serviceCategory]?.services.filter(s => s.enabled !== false).map(s => <option key={s.name} value={s.name}>{s.name}</option>)}
                                 </select>
                               </div>
                               <div className="md:col-span-2">
@@ -3589,7 +3685,244 @@ function normalizeUser(u) {
           return (
             <div className="min-h-screen bg-gray-50">
 
-              {/* ===== SETTINGS MODAL ===== */}
+              {/* ===== SERVICE MANAGEMENT MODAL ===== */}
+              {showServiceMgmt && (
+                <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4" onClick={() => setShowServiceMgmt(false)}>
+                  <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+                    {/* Header */}
+                    <div className="flex items-center justify-between px-6 py-4 border-b flex-shrink-0" style={{background:'linear-gradient(to right,var(--ht-primary),var(--ht-accent))'}}>
+                      <div>
+                        <h2 className="text-white font-bold text-lg">⚙️ Service Management</h2>
+                        <p className="text-white/80 text-xs mt-0.5">Manage clinic services, categories, and booking capacity</p>
+                      </div>
+                      <button onClick={() => setShowServiceMgmt(false)} className="text-white/80 hover:text-white text-2xl font-bold">&times;</button>
+                    </div>
+
+                    {/* Tabs */}
+                    <div className="flex border-b bg-gray-50 flex-shrink-0 overflow-x-auto">
+                      {[
+                        { id:'categories', label:'📂 Categories' },
+                        { id:'services',   label:'🩺 Services' },
+                        { id:'capacity',   label:'📊 Capacity' },
+                      ].map(t => (
+                        <button key={t.id} onClick={() => { setServiceMgmtTab(t.id); setServiceMgmtMsg(''); setEditingCategory(null); setEditingService(null); }}
+                          className={`px-5 py-3 text-sm font-semibold whitespace-nowrap transition-colors ${serviceMgmtTab === t.id ? 'border-b-2 text-red-700 bg-white' : 'text-gray-500 hover:text-gray-700'}`}
+                          style={serviceMgmtTab === t.id ? {borderColor:'var(--ht-primary)'} : {}}>
+                          {t.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Content */}
+                    <div className="flex-1 overflow-y-auto p-6">
+                      {serviceMgmtMsg && (
+                        <div className={`mb-4 px-4 py-2 rounded-lg text-sm font-medium ${serviceMgmtMsg.startsWith('✓') ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+                          {serviceMgmtMsg}
+                        </div>
+                      )}
+
+                      {/* ── CATEGORIES TAB ── */}
+                      {serviceMgmtTab === 'categories' && (
+                        <div className="space-y-4">
+                          {/* Add new category */}
+                          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+                            <p className="text-sm font-bold text-blue-800 mb-3">➕ Add New Category</p>
+                            <div className="grid grid-cols-1 gap-3">
+                              <input type="text" value={newCategoryForm.name} onChange={e => setNewCategoryForm(f=>({...f,name:e.target.value}))}
+                                placeholder="Category name (e.g. Mental Health Services)"
+                                className="w-full px-3 py-2 border border-blue-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-400 focus:border-transparent" />
+                              <div className="flex gap-3">
+                                <select value={newCategoryForm.urgency} onChange={e => setNewCategoryForm(f=>({...f,urgency:e.target.value}))}
+                                  className="flex-1 px-3 py-2 border border-blue-300 rounded-lg text-sm">
+                                  <option value="Non-Urgent">Non-Urgent</option>
+                                  <option value="Urgent">Urgent</option>
+                                  <option value="Mixed">Mixed</option>
+                                </select>
+                                <button onClick={addCategory}
+                                  className="px-5 py-2 text-white text-sm font-semibold rounded-lg" style={{background:'var(--ht-primary)'}}>
+                                  Add Category
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* List existing categories */}
+                          <div className="space-y-2">
+                            {Object.entries(serviceCategories).map(([name, cat]) => (
+                              <div key={name} className={`border rounded-xl p-4 transition-all ${cat.enabled === false ? 'bg-gray-50 border-gray-200 opacity-60' : 'bg-white border-gray-200'}`}>
+                                {editingCategory?.name === name ? (
+                                  <div className="space-y-2">
+                                    <input type="text" defaultValue={name}
+                                      id={`cat-edit-${name}`}
+                                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                                    <div className="flex gap-2">
+                                      <select defaultValue={cat.urgency} id={`cat-urgency-${name}`}
+                                        className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                                        <option value="Non-Urgent">Non-Urgent</option>
+                                        <option value="Urgent">Urgent</option>
+                                        <option value="Mixed">Mixed</option>
+                                      </select>
+                                      <button onClick={() => updateCategory(name, document.getElementById(`cat-edit-${name}`).value, document.getElementById(`cat-urgency-${name}`).value)}
+                                        className="px-4 py-2 bg-green-600 text-white text-sm font-semibold rounded-lg">Save</button>
+                                      <button onClick={() => setEditingCategory(null)}
+                                        className="px-4 py-2 bg-gray-200 text-gray-700 text-sm font-semibold rounded-lg">Cancel</button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center justify-between">
+                                    <div>
+                                      <p className="font-semibold text-gray-800 text-sm">{name}</p>
+                                      <p className="text-xs text-gray-500">{cat.urgency} · {cat.services?.length || 0} services</p>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <button onClick={() => toggleCategory(name)}
+                                        className={`text-xs px-3 py-1.5 rounded-full font-semibold ${cat.enabled === false ? 'bg-gray-200 text-gray-500' : 'bg-green-100 text-green-700'}`}>
+                                        {cat.enabled === false ? '○ Disabled' : '● Enabled'}
+                                      </button>
+                                      <button onClick={() => setEditingCategory({name})}
+                                        className="text-xs px-3 py-1.5 bg-blue-100 text-blue-700 rounded-full font-semibold hover:bg-blue-200">Edit</button>
+                                      <button onClick={() => deleteCategory(name)}
+                                        className="text-xs px-3 py-1.5 bg-red-100 text-red-700 rounded-full font-semibold hover:bg-red-200">Delete</button>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* ── SERVICES TAB ── */}
+                      {serviceMgmtTab === 'services' && (
+                        <div className="space-y-4">
+                          {/* Add new service */}
+                          <div className="bg-purple-50 border border-purple-200 rounded-xl p-4">
+                            <p className="text-sm font-bold text-purple-800 mb-3">➕ Add New Service Type</p>
+                            <div className="space-y-2">
+                              <select value={newServiceForm.category} onChange={e => setNewServiceForm(f=>({...f,category:e.target.value}))}
+                                className="w-full px-3 py-2 border border-purple-300 rounded-lg text-sm">
+                                <option value="">Select Category</option>
+                                {Object.keys(serviceCategories).map(c => <option key={c} value={c}>{c}</option>)}
+                              </select>
+                              <input type="text" value={newServiceForm.name} onChange={e => setNewServiceForm(f=>({...f,name:e.target.value}))}
+                                placeholder="Service name"
+                                className="w-full px-3 py-2 border border-purple-300 rounded-lg text-sm" />
+                              <div className="flex gap-2">
+                                <select value={newServiceForm.priority} onChange={e => setNewServiceForm(f=>({...f,priority:e.target.value}))}
+                                  className="flex-1 px-3 py-2 border border-purple-300 rounded-lg text-sm">
+                                  <option value="Regular">Regular</option>
+                                  <option value="Urgent">Urgent</option>
+                                  <option value="Priority Case">Priority Case</option>
+                                </select>
+                                <button onClick={addService}
+                                  className="px-5 py-2 text-white text-sm font-semibold rounded-lg" style={{background:'var(--ht-primary)'}}>
+                                  Add Service
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* List services by category */}
+                          {Object.entries(serviceCategories).map(([catName, cat]) => (
+                            <div key={catName} className="border border-gray-200 rounded-xl overflow-hidden">
+                              <div className="bg-gray-50 px-4 py-2.5 flex items-center justify-between">
+                                <p className="text-sm font-bold text-gray-700">📂 {catName}</p>
+                                <span className="text-xs text-gray-400">{cat.services?.length || 0} services</span>
+                              </div>
+                              {(cat.services || []).length === 0 ? (
+                                <p className="text-xs text-gray-400 px-4 py-3 italic">No services yet</p>
+                              ) : (
+                                <div className="divide-y divide-gray-100">
+                                  {(cat.services || []).map((svc, idx) => (
+                                    <div key={idx} className={`px-4 py-3 ${svc.enabled === false ? 'opacity-50 bg-gray-50' : ''}`}>
+                                      {editingService?.category === catName && editingService?.index === idx ? (
+                                        <div className="space-y-2">
+                                          <input type="text" defaultValue={svc.name} id={`svc-edit-${catName}-${idx}`}
+                                            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm" />
+                                          <div className="flex gap-2">
+                                            <select defaultValue={svc.priority} id={`svc-pri-${catName}-${idx}`}
+                                              className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                                              <option value="Regular">Regular</option>
+                                              <option value="Urgent">Urgent</option>
+                                              <option value="Priority Case">Priority Case</option>
+                                            </select>
+                                            <button onClick={() => updateService(catName, idx, document.getElementById(`svc-edit-${catName}-${idx}`).value, document.getElementById(`svc-pri-${catName}-${idx}`).value)}
+                                              className="px-3 py-2 bg-green-600 text-white text-xs font-semibold rounded-lg">Save</button>
+                                            <button onClick={() => setEditingService(null)}
+                                              className="px-3 py-2 bg-gray-200 text-gray-700 text-xs font-semibold rounded-lg">Cancel</button>
+                                          </div>
+                                        </div>
+                                      ) : (
+                                        <div className="flex items-center justify-between gap-2">
+                                          <div className="flex-1 min-w-0">
+                                            <p className="text-sm text-gray-800 truncate">{svc.name}</p>
+                                            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${svc.priority === 'Priority Case' ? 'bg-red-100 text-red-700' : svc.priority === 'Urgent' ? 'bg-orange-100 text-orange-700' : 'bg-gray-100 text-gray-600'}`}>
+                                              {svc.priority}
+                                            </span>
+                                          </div>
+                                          <div className="flex items-center gap-1 flex-shrink-0">
+                                            <button onClick={() => toggleService(catName, idx)}
+                                              className={`text-xs px-2 py-1 rounded-full font-semibold ${svc.enabled === false ? 'bg-gray-200 text-gray-500' : 'bg-green-100 text-green-700'}`}>
+                                              {svc.enabled === false ? '○' : '●'}
+                                            </button>
+                                            <button onClick={() => setEditingService({category:catName,index:idx})}
+                                              className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded-full font-semibold">Edit</button>
+                                            <button onClick={() => deleteService(catName, idx)}
+                                              className="text-xs px-2 py-1 bg-red-100 text-red-700 rounded-full font-semibold">Del</button>
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* ── CAPACITY TAB ── */}
+                      {serviceMgmtTab === 'capacity' && (
+                        <div className="space-y-4">
+                          <div className="bg-white border border-gray-200 rounded-xl p-5">
+                            <p className="font-bold text-gray-800 mb-1">📊 Maximum Booking Capacity Per Slot</p>
+                            <p className="text-sm text-gray-500 mb-4">Current: <span className="font-bold text-red-700">{slotCapacity} patients per time slot</span> × 8 slots = <span className="font-bold text-red-700">{slotCapacity * 8} max/day</span></p>
+                            <div className="flex gap-3 items-center">
+                              <input type="number" defaultValue={slotCapacity} min="1" max="200" id="capacity-input"
+                                className="w-32 px-4 py-2.5 border border-gray-300 rounded-xl text-center text-lg font-bold focus:ring-2 focus:ring-red-400" />
+                              <button onClick={() => { saveSlotCapacity(document.getElementById('capacity-input').value); setServiceMgmtMsg('✓ Booking capacity updated!'); }}
+                                className="px-5 py-2.5 text-white font-semibold rounded-xl" style={{background:'var(--ht-primary)'}}>
+                                Save Capacity
+                              </button>
+                            </div>
+                            <div className="mt-4 bg-amber-50 border border-amber-200 rounded-lg p-3">
+                              <p className="text-xs text-amber-700"><strong>Recommended:</strong> 38/slot (304/day) covers 100–300 patients. Adjust based on clinic staffing.</p>
+                            </div>
+                          </div>
+                          <div className="bg-white border border-gray-200 rounded-xl p-5">
+                            <p className="font-bold text-gray-800 mb-3">🔄 Reset Services to Default</p>
+                            <p className="text-sm text-gray-500 mb-3">Restore all service categories and types to the original system defaults.</p>
+                            <button onClick={() => { if(window.confirm('Reset all services to default? Custom services will be lost.')) { saveServiceCategories(DEFAULT_SERVICE_CATEGORIES); setServiceMgmtMsg('✓ Services reset to default.'); } }}
+                              className="px-5 py-2.5 bg-gray-700 text-white font-semibold rounded-xl text-sm hover:bg-gray-800">
+                              Reset to Default
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Footer */}
+                    <div className="px-6 py-4 border-t flex-shrink-0">
+                      <button onClick={() => setShowServiceMgmt(false)}
+                        className="w-full py-2.5 border border-gray-300 rounded-xl text-gray-600 font-semibold hover:bg-gray-50">
+                        Close
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+                            {/* ===== SETTINGS MODAL ===== */}
               {showSettingsModal && (
                 <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4" onClick={() => setShowSettingsModal(false)}>
                   <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md" onClick={e => e.stopPropagation()}>
@@ -3812,6 +4145,14 @@ function normalizeUser(u) {
                                 <span>{item.icon}</span>{item.label}
                               </button>
                             ))}
+                            {userRole === 'admin' && (
+                              <div className="border-t">
+                                <button onClick={() => { setShowSettingsMenu(false); setServiceMgmtTab('categories'); setServiceMgmtMsg(''); setShowServiceMgmt(true); }}
+                                  className="w-full flex items-center gap-3 px-4 py-3 text-sm text-blue-700 hover:bg-blue-50 transition-colors text-left font-semibold">
+                                  <span>⚙️</span> Service Management
+                                </button>
+                              </div>
+                            )}
                             <div className="border-t">
                               <button onClick={() => { setShowSettingsMenu(false); handleLogout(); }}
                                 className="w-full flex items-center gap-3 px-4 py-3 text-sm text-red-600 hover:bg-red-50 transition-colors text-left">
