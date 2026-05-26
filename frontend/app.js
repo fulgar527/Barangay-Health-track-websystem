@@ -1470,12 +1470,14 @@ function normalizeUser(u) {
           // ==================== RESIDENT PORTAL FUNCTIONS ====================
           const submitResidentBooking = async () => {
             // If patient is already on file, use their record directly
-            const myPatientRecord = registeredPatients.find(p =>
-              currentUser && (
-                (p.firstName + ' ' + p.lastName).toLowerCase() === currentUser.fullName?.toLowerCase() ||
-                currentUser.username === p.patientId
-              )
-            );
+            const myPatientRecord = registeredPatients.find(p => {
+              if (!currentUser) return false;
+              if (currentUser.username === p.patientId) return true;
+              const fn = (p.firstName || '').toLowerCase().trim();
+              const ln = (p.lastName || '').toLowerCase().trim();
+              const full = (currentUser.fullName || '').toLowerCase().trim();
+              return full.includes(fn) && full.includes(ln) && fn && ln;
+            });
             // Merge patient record into booking data so all fields are available
             const bookingData = myPatientRecord ? {
               ...residentBooking,
@@ -2735,12 +2737,16 @@ function normalizeUser(u) {
                   {/* Booking View */}
                   {residentView === 'booking' && (() => {
                     // Check if the logged-in resident already has a patient record
-                    const myPatientRecord = registeredPatients.find(p =>
-                      currentUser && (
-                        (p.firstName + ' ' + p.lastName).toLowerCase() === currentUser.fullName?.toLowerCase() ||
-                        currentUser.username === p.patientId
-                      )
-                    );
+                    // fullName from API can be "Juan B Cruz" or "Juan Cruz", so match flexibly
+                    const myPatientRecord = registeredPatients.find(p => {
+                      if (!currentUser) return false;
+                      if (currentUser.username === p.patientId) return true;
+                      const fn = (p.firstName || '').toLowerCase().trim();
+                      const ln = (p.lastName || '').toLowerCase().trim();
+                      const full = (currentUser.fullName || '').toLowerCase().trim();
+                      // Match if both first and last name appear in the fullName string
+                      return full.includes(fn) && full.includes(ln) && fn && ln;
+                    });
 
                     return (
                     <div className="max-w-2xl mx-auto p-4">
