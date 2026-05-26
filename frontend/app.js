@@ -1276,6 +1276,11 @@ function normalizeUser(u) {
             priority: 'Regular',
             chiefComplaint: ''
           });
+          const [walkInType, setWalkInType] = useState('registered'); // 'registered' | 'new'
+          const [walkInNewPatient, setWalkInNewPatient] = useState({
+            firstName: '', lastName: '', middleName: '',
+            dateOfBirth: '', sex: '', contactNumber: '', address: ''
+          });
 
           const priorityLevels = {
             'Priority Case': { color: 'bg-red-500', textColor: 'text-red-700', bgLight: 'bg-red-50', border: 'border-red-200', weight: 1 },
@@ -1346,6 +1351,59 @@ function normalizeUser(u) {
 
           // Add registered patient to queue — POST /api/queue
           const addToQueue = async () => {
+            // For new walk-in: create patient record first
+            if (walkInType === 'new') {
+              if (!walkInNewPatient.firstName.trim() || !walkInNewPatient.lastName.trim() || !walkInNewPatient.sex) {
+                alert('Please enter at least First Name, Last Name, and Sex for the walk-in patient.'); return;
+              }
+              if (!queuePatient.serviceCategory || !queuePatient.serviceType || !queuePatient.chiefComplaint) {
+                alert('Please fill in all required fields.'); return;
+              }
+              try {
+                const today = new Date();
+                const dob = walkInNewPatient.dateOfBirth ? new Date(walkInNewPatient.dateOfBirth + 'T00:00:00') : null;
+                let age = null;
+                if (dob) {
+                  age = today.getFullYear() - dob.getFullYear();
+                  if (today.getMonth() < dob.getMonth() || (today.getMonth() === dob.getMonth() && today.getDate() < dob.getDate())) age--;
+                }
+                const patRow = await api('POST', '/patients', {
+                  firstName: walkInNewPatient.firstName.trim(),
+                  lastName:  walkInNewPatient.lastName.trim(),
+                  middleName: walkInNewPatient.middleName.trim() || null,
+                  dateOfBirth: walkInNewPatient.dateOfBirth || null,
+                  age, sex: walkInNewPatient.sex,
+                  contactNumber: walkInNewPatient.contactNumber.trim() || null,
+                  address: walkInNewPatient.address.trim() || null,
+                });
+                const newPat = normalizePatient(patRow);
+                setRegisteredPatients(prev => [newPat, ...prev]);
+                setQueuePatient(q => ({ ...q, patientId: newPat.patientId }));
+                // Continue with this new patientId
+                const priority = queuePatient.priority ||
+                  SERVICE_CATEGORIES[queuePatient.serviceCategory]?.services
+                    .find(s => s.name === queuePatient.serviceType)?.priority || 'Regular';
+                const qRow = await api('POST', '/queue', {
+                  patientId: newPat.patientId,
+                  serviceCategory: queuePatient.serviceCategory,
+                  serviceName: queuePatient.serviceType,
+                  priority,
+                  chiefComplaint: queuePatient.chiefComplaint,
+                  selfBooked: false,
+                });
+                const entry = normalizeQueue(qRow);
+                setQueue(prev => [...prev, entry].sort((a,b) => priorityLevels[a.priority].weight - priorityLevels[b.priority].weight));
+                writeAudit('ADD_QUEUE', `Walk-in: ${newPat.firstName} ${newPat.lastName} (${newPat.patientId})`);
+                setQueuePatient({ patientId:'', serviceCategory:'', serviceType:'', priority:'Regular', chiefComplaint:'' });
+                setWalkInNewPatient({ firstName:'', lastName:'', middleName:'', dateOfBirth:'', sex:'', contactNumber:'', address:'' });
+                setWalkInType('registered');
+                setShowAddToQueue(false);
+                alert(`✅ Walk-in patient added!\n\nPatient ID: ${newPat.patientId}\nName: ${newPat.firstName} ${newPat.lastName}\nQueue #: ${entry.queueNumber}`);
+              } catch(err) {
+                alert('Failed to add walk-in patient: ' + (err.message || 'Unknown error'));
+              }
+              return;
+            }
             if (!queuePatient.patientId || !queuePatient.serviceCategory || !queuePatient.serviceType || !queuePatient.chiefComplaint) {
               alert('Please select a patient, service category, service type, and enter chief complaint');
               return;
@@ -5825,138 +5883,158 @@ function normalizeUser(u) {
               {/* Add to Queue Modal */}
               {showAddToQueue && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-                  <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full">
-                    <div className="bg-gradient-to-r from-orange-500 to-orange-600 text-white px-6 py-4 rounded-t-xl flex justify-between items-center">
-                      <h2 className="text-2xl font-bold">Add Patient to Queue</h2>
-                      <button
-                        onClick={() => setShowAddToQueue(false)}
-                        className="text-white hover:text-gray-200 text-2xl"
-                      >
-                        ×
-                      </button>
+                  <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[90vh] flex flex-col">
+                    {/* Header */}
+                    <div className="bg-gradient-to-r from-orange-500 to-orange-600 text-white px-6 py-4 rounded-t-xl flex justify-between items-center flex-shrink-0">
+                      <div>
+                        <h2 className="text-xl font-bold">Add Walk-in Patient to Queue</h2>
+                        <p className="text-white/80 text-xs mt-0.5">For patients arriving at the clinic directly</p>
+                      </div>
+                      <button onClick={() => { setShowAddToQueue(false); setWalkInType('registered'); setWalkInNewPatient({firstName:'',lastName:'',middleName:'',dateOfBirth:'',sex:'',contactNumber:'',address:''}); setQueuePatient({patientId:'',serviceCategory:'',serviceType:'',priority:'Regular',chiefComplaint:''}); }}
+                        className="text-white hover:text-gray-200 text-2xl">×</button>
                     </div>
-                    <div className="p-6">
-                      <div className="space-y-4">
+
+                    <div className="overflow-y-auto flex-1 p-6 space-y-5">
+
+                      {/* ── Walk-in Type Selector ── */}
+                      <div>
+                        <p className="text-sm font-bold text-gray-700 mb-3">Walk-in Type <span className="text-red-500">*</span></p>
+                        <div className="grid grid-cols-2 gap-3">
+                          <button type="button" onClick={() => { setWalkInType('registered'); setWalkInNewPatient({firstName:'',lastName:'',middleName:'',dateOfBirth:'',sex:'',contactNumber:'',address:''}); }}
+                            className={`flex items-center gap-3 p-4 rounded-xl border-2 transition-all text-left ${walkInType === 'registered' ? 'border-orange-500 bg-orange-50' : 'border-gray-200 bg-white hover:border-gray-300'}`}>
+                            <div className={`w-10 h-10 rounded-full flex items-center justify-center text-lg flex-shrink-0 ${walkInType === 'registered' ? 'bg-orange-500 text-white' : 'bg-gray-100 text-gray-500'}`}>🔍</div>
+                            <div>
+                              <p className={`text-sm font-bold ${walkInType === 'registered' ? 'text-orange-700' : 'text-gray-700'}`}>Registered Patient</p>
+                              <p className="text-xs text-gray-500">Already has a Patient ID</p>
+                            </div>
+                          </button>
+                          <button type="button" onClick={() => { setWalkInType('new'); setQueuePatient(q => ({...q, patientId:''})); }}
+                            className={`flex items-center gap-3 p-4 rounded-xl border-2 transition-all text-left ${walkInType === 'new' ? 'border-blue-500 bg-blue-50' : 'border-gray-200 bg-white hover:border-gray-300'}`}>
+                            <div className={`w-10 h-10 rounded-full flex items-center justify-center text-lg flex-shrink-0 ${walkInType === 'new' ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-500'}`}>👤</div>
+                            <div>
+                              <p className={`text-sm font-bold ${walkInType === 'new' ? 'text-blue-700' : 'text-gray-700'}`}>New Walk-in</p>
+                              <p className="text-xs text-gray-500">First visit, no Patient ID yet</p>
+                            </div>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* ── REGISTERED: Select from existing patients ── */}
+                      {walkInType === 'registered' && (
                         <div>
-                          <label className="block text-sm font-semibold text-gray-700 mb-2">
-                            Select Patient <span className="text-red-500">*</span>
-                          </label>
-                          <select
-                            value={queuePatient.patientId}
-                            onChange={(e) => setQueuePatient({...queuePatient, patientId: e.target.value})}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                          >
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">Select Patient <span className="text-red-500">*</span></label>
+                          <select value={queuePatient.patientId} onChange={(e) => setQueuePatient({...queuePatient, patientId: e.target.value})}
+                            className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent">
                             <option value="">-- Select Patient --</option>
-                            {registeredPatients.map(patient => (
-                              <option key={patient.id} value={patient.patientId}>
-                                {patient.patientId} - {patient.firstName} {patient.lastName} (Age: {patient.age}, Sex: {patient.sex})
-                              </option>
-                            ))}
+                            {registeredPatients
+                              .filter(p => !queue.some(q => q.patientId === p.patientId && !['Served','Cancelled','Rejected'].includes(q.status)))
+                              .map(p => (
+                                <option key={p.patientId} value={p.patientId}>
+                                  {p.patientId} — {p.firstName} {p.lastName} (Age: {p.age}, Sex: {p.sex})
+                                </option>
+                              ))}
                           </select>
+                          <p className="text-xs text-gray-400 mt-1">Showing patients not currently in queue</p>
                         </div>
+                      )}
 
+                      {/* ── NEW WALK-IN: Enter basic info ── */}
+                      {walkInType === 'new' && (
+                        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 space-y-3">
+                          <p className="text-sm font-bold text-blue-800">Patient Information</p>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-xs font-semibold text-gray-700 mb-1">First Name <span className="text-red-500">*</span></label>
+                              <input type="text" value={walkInNewPatient.firstName} onChange={e => setWalkInNewPatient(p=>({...p,firstName:e.target.value}))}
+                                placeholder="Juan" className="w-full px-3 py-2 border border-blue-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-400 focus:border-transparent" />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-semibold text-gray-700 mb-1">Last Name <span className="text-red-500">*</span></label>
+                              <input type="text" value={walkInNewPatient.lastName} onChange={e => setWalkInNewPatient(p=>({...p,lastName:e.target.value}))}
+                                placeholder="Dela Cruz" className="w-full px-3 py-2 border border-blue-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-400 focus:border-transparent" />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-semibold text-gray-700 mb-1">Middle Name</label>
+                              <input type="text" value={walkInNewPatient.middleName} onChange={e => setWalkInNewPatient(p=>({...p,middleName:e.target.value}))}
+                                placeholder="Santos" className="w-full px-3 py-2 border border-blue-300 rounded-lg text-sm" />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-semibold text-gray-700 mb-1">Sex <span className="text-red-500">*</span></label>
+                              <select value={walkInNewPatient.sex} onChange={e => setWalkInNewPatient(p=>({...p,sex:e.target.value}))}
+                                className="w-full px-3 py-2 border border-blue-300 rounded-lg text-sm">
+                                <option value="">Select</option>
+                                <option value="Male">Male</option>
+                                <option value="Female">Female</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-xs font-semibold text-gray-700 mb-1">Date of Birth</label>
+                              <input type="date" value={walkInNewPatient.dateOfBirth} onChange={e => setWalkInNewPatient(p=>({...p,dateOfBirth:e.target.value}))}
+                                className="w-full px-3 py-2 border border-blue-300 rounded-lg text-sm" />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-semibold text-gray-700 mb-1">Contact Number</label>
+                              <input type="text" value={walkInNewPatient.contactNumber} onChange={e => setWalkInNewPatient(p=>({...p,contactNumber:e.target.value}))}
+                                placeholder="09XXXXXXXXX" className="w-full px-3 py-2 border border-blue-300 rounded-lg text-sm" />
+                            </div>
+                          </div>
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-700 mb-1">Address</label>
+                            <input type="text" value={walkInNewPatient.address} onChange={e => setWalkInNewPatient(p=>({...p,address:e.target.value}))}
+                              placeholder="Barangay, City/Municipality" className="w-full px-3 py-2 border border-blue-300 rounded-lg text-sm" />
+                          </div>
+                        </div>
+                      )}
+
+                      {/* ── Service & Priority (always shown) ── */}
+                      <div className="grid grid-cols-1 gap-4">
                         <div>
-                          <label className="block text-sm font-semibold text-gray-700 mb-2">
-                            Service Category <span className="text-red-500">*</span>
-                          </label>
-                          <select
-                            value={queuePatient.serviceCategory}
-                            onChange={(e) => {
-                              setQueuePatient({
-                                ...queuePatient, 
-                                serviceCategory: e.target.value,
-                                serviceType: '', // Reset service type when category changes
-                                priority: 'Regular' // Reset priority
-                              });
-                            }}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                          >
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">Service Category <span className="text-red-500">*</span></label>
+                          <select value={queuePatient.serviceCategory}
+                            onChange={(e) => setQueuePatient({...queuePatient, serviceCategory: e.target.value, serviceType:'', priority:'Regular'})}
+                            className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent">
                             <option value="">-- Select Service Category --</option>
-                            {Object.keys(SERVICE_CATEGORIES).map(category => (
-                              <option key={category} value={category}>{category}</option>
-                            ))}
+                            {Object.keys(SERVICE_CATEGORIES).filter(c => SERVICE_CATEGORIES[c].enabled !== false).map(c => <option key={c} value={c}>{c}</option>)}
                           </select>
                         </div>
-
                         <div>
-                          <label className="block text-sm font-semibold text-gray-700 mb-2">
-                            Service Type <span className="text-red-500">*</span>
-                          </label>
-                          <select
-                            value={queuePatient.serviceType}
-                            onChange={(e) => {
-                              const selectedService = SERVICE_CATEGORIES[queuePatient.serviceCategory]?.services
-                                .find(s => s.name === e.target.value);
-                              setQueuePatient({
-                                ...queuePatient, 
-                                serviceType: e.target.value,
-                                priority: selectedService?.priority || 'Regular' // Auto-populate priority
-                              });
-                            }}
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">Service Type <span className="text-red-500">*</span></label>
+                          <select value={queuePatient.serviceType}
+                            onChange={(e) => { const s = SERVICE_CATEGORIES[queuePatient.serviceCategory]?.services.find(sv => sv.name === e.target.value); setQueuePatient({...queuePatient, serviceType: e.target.value, priority: s?.priority || 'Regular'}); }}
                             disabled={!queuePatient.serviceCategory}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
-                          >
-                            <option value="">
-                              {queuePatient.serviceCategory ? '-- Select Service Type --' : 'Please select a service category first'}
-                            </option>
-                            {queuePatient.serviceCategory && 
-                              SERVICE_CATEGORIES[queuePatient.serviceCategory]?.services.map(service => (
-                                <option key={service.name} value={service.name}>{service.name}</option>
-                              ))
-                            }
+                            className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed">
+                            <option value="">{queuePatient.serviceCategory ? '-- Select Service Type --' : 'Please select a service category first'}</option>
+                            {queuePatient.serviceCategory && SERVICE_CATEGORIES[queuePatient.serviceCategory]?.services.filter(s => s.enabled !== false).map(s => <option key={s.name} value={s.name}>{s.name}</option>)}
                           </select>
                         </div>
-
                         <div>
-                          <label className="block text-sm font-semibold text-gray-700 mb-2">
-                            Priority Level <span className="text-red-500">*</span>
-                          </label>
-                          <select
-                            value={queuePatient.priority}
-                            onChange={(e) => setQueuePatient({...queuePatient, priority: e.target.value})}
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">Priority Level <span className="text-red-500">*</span></label>
+                          <select value={queuePatient.priority} onChange={(e) => setQueuePatient({...queuePatient, priority: e.target.value})}
                             disabled={!queuePatient.serviceType}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed"
-                          >
-                            <option value="">
-                              {queuePatient.serviceType ? '-- Select Priority Level --' : 'Please select a service type first'}
-                            </option>
-                            <option value="Priority Case">Priority Case</option>
-                            <option value="Urgent">Urgent</option>
+                            className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed">
                             <option value="Regular">Regular</option>
+                            <option value="Urgent">Urgent</option>
+                            <option value="Priority Case">Priority Case</option>
                           </select>
-                          <p className="text-xs text-gray-500 mt-1">
-                            Priority is auto-filled based on service type, but can be changed if needed
-                          </p>
+                          <p className="text-xs text-gray-500 mt-1">Auto-filled based on service type, but can be changed</p>
                         </div>
-
                         <div>
-                          <label className="block text-sm font-semibold text-gray-700 mb-2">
-                            Reason for Visit <span className="text-red-500">*</span>
-                          </label>
-                          <textarea
-                            value={queuePatient.chiefComplaint}
-                            onChange={(e) => setQueuePatient({...queuePatient, chiefComplaint: e.target.value})}
-                            placeholder=""
-                            rows={4}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                          />
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">Reason for Visit <span className="text-red-500">*</span></label>
+                          <textarea value={queuePatient.chiefComplaint} onChange={(e) => setQueuePatient({...queuePatient, chiefComplaint: e.target.value})}
+                            placeholder="Describe the patient's complaint or reason for visit"
+                            rows={3} className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent resize-none" />
                         </div>
                       </div>
+                    </div>
 
-                      <div className="flex justify-end space-x-3 mt-6 pt-4 border-t">
-                        <button
-                          onClick={() => setShowAddToQueue(false)}
-                          className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-semibold transition-colors"
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          onClick={addToQueue}
-                          className="px-6 py-2 bg-gradient-to-r from-orange-500 to-orange-600 text-white rounded-lg hover:from-orange-600 hover:to-orange-700 font-semibold transition-all transform hover:scale-105"
-                        >
-                          Add to Queue
-                        </button>
-                      </div>
+                    {/* Footer */}
+                    <div className="flex justify-end gap-3 px-6 py-4 border-t flex-shrink-0">
+                      <button onClick={() => { setShowAddToQueue(false); setWalkInType('registered'); setWalkInNewPatient({firstName:'',lastName:'',middleName:'',dateOfBirth:'',sex:'',contactNumber:'',address:''}); setQueuePatient({patientId:'',serviceCategory:'',serviceType:'',priority:'Regular',chiefComplaint:''}); }}
+                        className="px-6 py-2.5 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 font-semibold">Cancel</button>
+                      <button onClick={addToQueue}
+                        className="px-6 py-2.5 bg-gradient-to-r from-orange-500 to-orange-600 text-white rounded-xl hover:from-orange-600 hover:to-orange-700 font-semibold shadow-md">
+                        Add to Queue
+                      </button>
                     </div>
                   </div>
                 </div>
