@@ -1265,7 +1265,13 @@ function normalizeUser(u) {
             emergencyContactNumber: '',
             allergies: '',
             chronicConditions: '',
-            currentMedications: ''
+            currentMedications: '',
+            // Queue fields — if addToQueueNow is true
+            addToQueueNow: false,
+            queueServiceCategory: '',
+            queueServiceType: '',
+            queuePriority: 'Regular',
+            queueReason: '',
           });
 
           // State for adding registered patient to queue
@@ -1340,9 +1346,34 @@ function normalizeUser(u) {
               });
               const patient = normalizePatient(row);
               setRegisteredPatients(prev => [patient, ...prev]);
-              setNewPatient({ lastName:'', firstName:'', middleName:'', dateOfBirth:'', sex:'', address:'', contact:'', civilStatus:'', occupation:'', philHealthNumber:'', emergencyContactPerson:'', emergencyContactNumber:'', allergies:'', chronicConditions:'', currentMedications:'' });
+
+              // If "Add to Queue Now" is checked, also queue the patient
+              if (newPatient.addToQueueNow && newPatient.queueServiceCategory && newPatient.queueServiceType && newPatient.queueReason) {
+                try {
+                  const priority = newPatient.queuePriority ||
+                    SERVICE_CATEGORIES[newPatient.queueServiceCategory]?.services
+                      .find(s => s.name === newPatient.queueServiceType)?.priority || 'Regular';
+                  const qRow = await api('POST', '/queue', {
+                    patientId: patient.patientId,
+                    serviceCategory: newPatient.queueServiceCategory,
+                    serviceName: newPatient.queueServiceType,
+                    priority,
+                    chiefComplaint: newPatient.queueReason,
+                    selfBooked: false,
+                  });
+                  const qEntry = normalizeQueue(qRow);
+                  setQueue(prev => [...prev, qEntry].sort((a,b) => priorityLevels[a.priority].weight - priorityLevels[b.priority].weight));
+                  writeAudit('ADD_QUEUE', `Walk-in queued: ${patient.firstName} ${patient.lastName} (${patient.patientId})`);
+                  alert(`✅ Patient registered and added to queue!\n\nPatient ID: ${patient.patientId}\nQueue #: ${qEntry.queueNumber}\nService: ${newPatient.queueServiceType}`);
+                } catch(qErr) {
+                  alert(`Patient registered (ID: ${patient.patientId}) but could not add to queue: ${qErr.message}`);
+                }
+              } else {
+                alert('Patient registered successfully!\nPatient ID: ' + patient.patientId);
+              }
+
+              setNewPatient({ lastName:'', firstName:'', middleName:'', dateOfBirth:'', sex:'', address:'', contact:'', civilStatus:'', occupation:'', philHealthNumber:'', emergencyContactPerson:'', emergencyContactNumber:'', allergies:'', chronicConditions:'', currentMedications:'', addToQueueNow:false, queueServiceCategory:'', queueServiceType:'', queuePriority:'Regular', queueReason:'' });
               setShowRegisterPatient(false);
-              alert('Patient registered successfully! Patient ID: ' + patient.patientId);
               setActiveTab('patients');
             } catch(err) {
               alert('Registration failed: ' + (err.message || 'Unknown error'));
@@ -5873,7 +5904,62 @@ function normalizeUser(u) {
                         </div>
                       </div>
 
-                      <div className="flex justify-end space-x-3 mt-6 pt-4 border-t">
+                      {/* ── Add to Queue Now toggle ── */}
+                      <div className="mt-6 border-t pt-5">
+                        <label className="flex items-center gap-3 cursor-pointer select-none">
+                          <input type="checkbox" checked={newPatient.addToQueueNow}
+                            onChange={e => setNewPatient({...newPatient, addToQueueNow: e.target.checked, queueServiceCategory:'', queueServiceType:'', queuePriority:'Regular', queueReason:''})}
+                            className="w-5 h-5 rounded border-gray-300 text-red-600 focus:ring-red-400" />
+                          <div>
+                            <p className="text-sm font-bold text-gray-800">➕ Add to Queue Immediately</p>
+                            <p className="text-xs text-gray-500">Register and queue this patient in one step</p>
+                          </div>
+                        </label>
+
+                        {newPatient.addToQueueNow && (
+                          <div className="mt-4 bg-orange-50 border border-orange-200 rounded-xl p-4 space-y-3">
+                            <p className="text-sm font-bold text-orange-800">Queue Details</p>
+                            <div>
+                              <label className="block text-xs font-semibold text-gray-700 mb-1">Service Category <span className="text-red-500">*</span></label>
+                              <select value={newPatient.queueServiceCategory}
+                                onChange={e => setNewPatient({...newPatient, queueServiceCategory: e.target.value, queueServiceType:'', queuePriority:'Regular'})}
+                                className="w-full px-3 py-2 border border-orange-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-400">
+                                <option value="">-- Select Service Category --</option>
+                                {Object.keys(SERVICE_CATEGORIES).filter(c => SERVICE_CATEGORIES[c].enabled !== false).map(c => <option key={c} value={c}>{c}</option>)}
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-xs font-semibold text-gray-700 mb-1">Service Type <span className="text-red-500">*</span></label>
+                              <select value={newPatient.queueServiceType}
+                                onChange={e => { const s = SERVICE_CATEGORIES[newPatient.queueServiceCategory]?.services.find(sv => sv.name === e.target.value); setNewPatient({...newPatient, queueServiceType: e.target.value, queuePriority: s?.priority || 'Regular'}); }}
+                                disabled={!newPatient.queueServiceCategory}
+                                className="w-full px-3 py-2 border border-orange-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-400 disabled:bg-gray-100">
+                                <option value="">{newPatient.queueServiceCategory ? '-- Select Service Type --' : 'Select category first'}</option>
+                                {newPatient.queueServiceCategory && SERVICE_CATEGORIES[newPatient.queueServiceCategory]?.services.filter(s => s.enabled !== false).map(s => <option key={s.name} value={s.name}>{s.name}</option>)}
+                              </select>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <label className="block text-xs font-semibold text-gray-700 mb-1">Priority Level</label>
+                                <select value={newPatient.queuePriority} onChange={e => setNewPatient({...newPatient, queuePriority: e.target.value})}
+                                  className="w-full px-3 py-2 border border-orange-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-400">
+                                  <option value="Regular">Regular</option>
+                                  <option value="Urgent">Urgent</option>
+                                  <option value="Priority Case">Priority Case</option>
+                                </select>
+                              </div>
+                              <div>
+                                <label className="block text-xs font-semibold text-gray-700 mb-1">Reason for Visit <span className="text-red-500">*</span></label>
+                                <input type="text" value={newPatient.queueReason} onChange={e => setNewPatient({...newPatient, queueReason: e.target.value})}
+                                  placeholder="Chief complaint"
+                                  className="w-full px-3 py-2 border border-orange-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-400" />
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex justify-end space-x-3 mt-4 pt-4 border-t">
                         <button
                           onClick={() => setShowRegisterPatient(false)}
                           className="px-6 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-semibold transition-colors"
@@ -5882,9 +5968,10 @@ function normalizeUser(u) {
                         </button>
                         <button
                           onClick={registerPatient}
-                          className="px-6 py-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg hover:from-blue-600 hover:to-blue-700 font-semibold transition-all transform hover:scale-105"
+                          className="px-6 py-2 text-white rounded-lg font-semibold transition-all transform hover:scale-105"
+                          style={{background: newPatient.addToQueueNow ? 'linear-gradient(to right,#ea580c,#dc2626)' : 'linear-gradient(to right,#3b82f6,#2563eb)'}}
                         >
-                          Register Patient
+                          {newPatient.addToQueueNow ? '✅ Register & Add to Queue' : 'Register Patient'}
                         </button>
                       </div>
                     </div>
@@ -5933,6 +6020,25 @@ function normalizeUser(u) {
                             ))}
                         </select>
                         <p className="text-xs text-gray-400 mt-1">Showing staff-registered walk-in patients only</p>
+
+                        {/* Patient info preview when selected */}
+                        {queuePatient.patientId && queuePatient.patientId !== 'WALKIN_UNREGISTERED' && (() => {
+                          const sel = registeredPatients.find(p => p.patientId === queuePatient.patientId);
+                          if (!sel) return null;
+                          return (
+                            <div className="mt-2 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 flex items-center gap-3">
+                              <div className="w-10 h-10 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-base flex-shrink-0">
+                                {sel.firstName?.[0]?.toUpperCase()}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="font-bold text-gray-800 text-sm">{sel.firstName} {sel.lastName}</p>
+                                <p className="text-xs text-gray-500">{sel.patientId} · Age: {sel.age || 'N/A'} · Sex: {sel.sex || 'N/A'} · {sel.contactNumber || 'No contact'}</p>
+                                {sel.allergies && <p className="text-xs text-red-600 mt-0.5">⚠️ Allergies: {sel.allergies}</p>}
+                              </div>
+                            </div>
+                          );
+                        })()}
+
                         {queuePatient.patientId === 'WALKIN_UNREGISTERED' && (
                           <div className="mt-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
                             <p className="text-xs text-amber-700">⚠️ Unregistered walk-in. Please register them in the Patients tab after their visit for complete records.</p>
