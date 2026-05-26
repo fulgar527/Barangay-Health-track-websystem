@@ -1880,9 +1880,16 @@ function normalizeUser(u) {
           };
 
           const getResidentVisitHistory = () => {
-            if (!residentPatientId) return [];
-            return visitLog.filter(v => v.patientId === residentPatientId)
-              .sort((a, b) => new Date(b.visitDate) - new Date(a.visitDate));
+            // Match visits by: patientId match, bookedByUsername, or name match
+            return visitLog.filter(v => {
+              if (residentPatientId && v.patientId === residentPatientId) return true;
+              if (v.bookedByUsername && currentUser?.username && v.bookedByUsername === currentUser.username) return true;
+              // Also match by name
+              const fn = (currentUser?.fullName || '').toLowerCase().trim();
+              const vName = (v.name || '').toLowerCase().trim();
+              if (fn && vName && fn.includes(vName.split(' ')[0]) && fn.includes(vName.split(' ').slice(-1)[0])) return true;
+              return false;
+            }).sort((a, b) => new Date(b.visitDate) - new Date(a.visitDate));
           };
 
           // ==================== APPOINTMENT MANAGEMENT FUNCTIONS ====================
@@ -3620,57 +3627,55 @@ function normalizeUser(u) {
                   })()}
 
                   {/* Visit History View */}
-                  {residentView === 'history' && (
-                    <div className="space-y-6">
+                  {residentView === 'history' && (() => {
+                    const myVisits = getResidentVisitHistory();
+                    return (
+                    <div className="space-y-4">
                       <div className="bg-white rounded-xl shadow-md p-6">
-                        <h2 className="text-xl font-bold text-gray-800 mb-4">My Visit History</h2>
-                        
-                        <div className="mb-4">
-                          <label className="block text-sm font-semibold text-gray-700 mb-2">
-                            Enter Patient ID to view history
-                          </label>
-                          <input
-                            type="text"
-                            value={residentPatientId}
-                            onChange={(e) => setResidentPatientId(e.target.value)}
-                            placeholder="Enter your Patient ID"
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
-                          />
+                        <div className="flex items-center justify-between mb-4">
+                          <div>
+                            <h2 className="text-xl font-bold text-gray-800">My Visit History</h2>
+                            <p className="text-sm text-gray-500 mt-0.5">All your completed clinic visits and transactions</p>
+                          </div>
+                          <span className="bg-gray-100 text-gray-600 text-xs px-3 py-1.5 rounded-full font-medium">{myVisits.length} record{myVisits.length !== 1 ? 's' : ''}</span>
                         </div>
 
-                        {residentPatientId && getResidentVisitHistory().length === 0 && (
-                          <div className="text-center py-8 text-gray-500">
-                            <FileText className="w-12 h-12 mx-auto mb-2 text-gray-300" />
-                            <p>No visit history found for this Patient ID</p>
+                        {myVisits.length === 0 ? (
+                          <div className="text-center py-12">
+                            <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                              <FileText className="w-8 h-8 text-gray-300" />
+                            </div>
+                            <p className="text-gray-500 font-medium">No visit history yet</p>
+                            <p className="text-gray-400 text-sm mt-1">Your completed clinic visits will appear here automatically.</p>
                           </div>
-                        )}
-
-                        {residentPatientId && getResidentVisitHistory().length > 0 && (
-                          <div className="space-y-4">
-                            {getResidentVisitHistory().map((visit) => (
-                              <div key={visit.id} className="border rounded-lg p-4 hover:shadow-md transition-shadow">
+                        ) : (
+                          <div className="space-y-3">
+                            {myVisits.map((visit, idx) => (
+                              <div key={visit.id || idx} className="border border-gray-200 rounded-xl p-4 hover:shadow-md transition-shadow">
                                 <div className="flex justify-between items-start mb-3">
                                   <div>
                                     <p className="font-semibold text-gray-800">{visit.service}</p>
-                                    <p className="text-sm text-gray-600">{new Date(visit.visitDate).toLocaleDateString()}</p>
+                                    <p className="text-sm text-gray-500">{visit.serviceCategory && <span className="mr-2 text-purple-600">{visit.serviceCategory}</span>}{new Date(visit.visitDate).toLocaleDateString('en-PH', { year:'numeric', month:'long', day:'numeric' })}</p>
                                   </div>
-                                  <span className={`px-3 py-1 rounded-full text-xs font-semibold ${priorityLevels[visit.priority].color} text-white`}>
+                                  <span className={`px-3 py-1 rounded-full text-xs font-semibold ${priorityLevels[visit.priority]?.color || 'bg-gray-400'} text-white flex-shrink-0`}>
                                     {visit.priority}
                                   </span>
                                 </div>
                                 <div className="grid md:grid-cols-2 gap-3 text-sm">
-                                  <div>
-                                    <p className="text-gray-600"><span className="font-medium">Reason for Visit:</span> {visit.chiefComplaint}</p>
-                                    <p className="text-gray-600"><span className="font-medium">Time Served:</span> {new Date(visit.timeServed).toLocaleTimeString()}</p>
+                                  <div className="space-y-1">
+                                    <p className="text-gray-600"><span className="font-medium text-gray-700">Reason for Visit:</span> {visit.chiefComplaint || 'N/A'}</p>
+                                    <p className="text-gray-600"><span className="font-medium text-gray-700">Time Served:</span> {visit.timeServed ? new Date(visit.timeServed).toLocaleTimeString('en-PH', {hour:'2-digit', minute:'2-digit'}) : 'N/A'}</p>
+                                    <p className="text-gray-600"><span className="font-medium text-gray-700">Attended by:</span> {visit.attendedBy || 'Staff'}</p>
                                   </div>
-                                  <div>
-                                    <p className="text-gray-600"><span className="font-medium">Diagnosis:</span> {visit.diagnosis || 'N/A'}</p>
-                                    <p className="text-gray-600"><span className="font-medium">Treatment:</span> {visit.treatment || 'N/A'}</p>
+                                  <div className="space-y-1">
+                                    <p className="text-gray-600"><span className="font-medium text-gray-700">Diagnosis:</span> {visit.diagnosis || 'N/A'}</p>
+                                    <p className="text-gray-600"><span className="font-medium text-gray-700">Treatment:</span> {visit.treatment || 'N/A'}</p>
+                                    {visit.prescription && <p className="text-gray-600"><span className="font-medium text-gray-700">Prescription:</span> {visit.prescription}</p>}
                                   </div>
                                 </div>
                                 {visit.notes && (
                                   <div className="mt-3 pt-3 border-t">
-                                    <p className="text-sm text-gray-600"><span className="font-medium">Notes:</span> {visit.notes}</p>
+                                    <p className="text-sm text-gray-600"><span className="font-medium text-gray-700">Notes:</span> {visit.notes}</p>
                                   </div>
                                 )}
                               </div>
@@ -3679,7 +3684,8 @@ function normalizeUser(u) {
                         )}
                       </div>
                     </div>
-                  )}
+                    );
+                  })()}
                 </div>
               </div>
             );
