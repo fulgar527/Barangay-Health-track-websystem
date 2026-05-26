@@ -1381,25 +1381,34 @@ function normalizeUser(u) {
 
           // ==================== RESIDENT PORTAL FUNCTIONS ====================
           const submitResidentBooking = async () => {
-            // If patient is already on file, auto-fill their data into residentBooking
+            // If patient is already on file, use their record directly
             const myPatientRecord = registeredPatients.find(p =>
               currentUser && (
                 (p.firstName + ' ' + p.lastName).toLowerCase() === currentUser.fullName?.toLowerCase() ||
                 currentUser.username === p.patientId
               )
             );
-            if (myPatientRecord && !residentBooking.firstName) {
-              residentBooking.firstName = myPatientRecord.firstName;
-              residentBooking.lastName = myPatientRecord.lastName;
-              residentBooking.middleName = myPatientRecord.middleName || '';
-              residentBooking.dateOfBirth = myPatientRecord.dateOfBirth || '';
-              residentBooking.sex = myPatientRecord.sex || '';
-              residentBooking.address = myPatientRecord.address || '';
-              residentBooking.contactNumber = myPatientRecord.contactNumber || '';
-            }
+            // Merge patient record into booking data so all fields are available
+            const bookingData = myPatientRecord ? {
+              ...residentBooking,
+              firstName: myPatientRecord.firstName,
+              lastName: myPatientRecord.lastName,
+              middleName: myPatientRecord.middleName || '',
+              dateOfBirth: myPatientRecord.dateOfBirth || '',
+              sex: myPatientRecord.sex || '',
+              address: myPatientRecord.address || '',
+              contactNumber: myPatientRecord.contactNumber || '',
+              civilStatus: myPatientRecord.civilStatus || '',
+              occupation: myPatientRecord.occupation || '',
+              emergencyContactPerson: myPatientRecord.emergencyContactPerson || '',
+              emergencyContactNumber: myPatientRecord.emergencyContactNumber || '',
+              allergies: myPatientRecord.allergies || '',
+              chronicConditions: myPatientRecord.chronicConditions || '',
+              currentMedications: myPatientRecord.currentMedications || '',
+            } : { ...residentBooking };
             // Validate required fields
-            if (!residentBooking.appointmentDate || !residentBooking.appointmentTime ||
-                !residentBooking.serviceCategory || !residentBooking.serviceType) {
+            if (!bookingData.appointmentDate || !bookingData.appointmentTime ||
+                !bookingData.serviceCategory || !bookingData.serviceType) {
               alert('Please fill in all required appointment fields.'); return;
             }
             if (!myPatientRecord && (!residentBooking.firstName || !residentBooking.lastName ||
@@ -1428,49 +1437,48 @@ function normalizeUser(u) {
 
             try {
               // Calculate age
-              const today = new Date(), birthDate = new Date(residentBooking.dateOfBirth);
+              const today = new Date(), birthDate = new Date(bookingData.dateOfBirth);
               let age = today.getFullYear() - birthDate.getFullYear();
               const m = today.getMonth() - birthDate.getMonth();
               if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) age--;
 
               // Upsert patient: check if exists by name + DOB, else create
-              let patient = registeredPatients.find(p =>
-                p.firstName.toLowerCase() === residentBooking.firstName.toLowerCase() &&
-                p.lastName.toLowerCase()  === residentBooking.lastName.toLowerCase() &&
-                p.dateOfBirth === residentBooking.dateOfBirth
+              let patient = myPatientRecord || registeredPatients.find(p =>
+                p.firstName.toLowerCase() === bookingData.firstName.toLowerCase() &&
+                p.lastName.toLowerCase()  === bookingData.lastName.toLowerCase() &&
+                p.dateOfBirth === bookingData.dateOfBirth
               );
               if (!patient) {
                 const row = await api('POST', '/patients', {
-                  lastName: residentBooking.lastName, firstName: residentBooking.firstName,
-                  middleName: residentBooking.middleName || null,
-                  dateOfBirth: residentBooking.dateOfBirth, age,
-                  sex: residentBooking.sex, address: residentBooking.address,
-                  contactNumber: residentBooking.contactNumber,
-                  civilStatus: residentBooking.civilStatus || null,
-                  occupation: residentBooking.occupation || null,
-                  philhealthNumber: residentBooking.philHealthNumber || null,
-                  emergencyContactPerson: residentBooking.emergencyContactPerson || null,
-                  emergencyContactNumber: residentBooking.emergencyContactNumber || null,
-                  allergies: residentBooking.allergies || null,
-                  chronicConditions: residentBooking.chronicConditions || null,
-                  currentMedications: residentBooking.currentMedications || null,
+                  lastName: bookingData.lastName, firstName: bookingData.firstName,
+                  middleName: bookingData.middleName || null,
+                  dateOfBirth: bookingData.dateOfBirth, age,
+                  sex: bookingData.sex, address: bookingData.address,
+                  contactNumber: bookingData.contactNumber,
+                  civilStatus: bookingData.civilStatus || null,
+                  occupation: bookingData.occupation || null,
+                  emergencyContactPerson: bookingData.emergencyContactPerson || null,
+                  emergencyContactNumber: bookingData.emergencyContactNumber || null,
+                  allergies: bookingData.allergies || null,
+                  chronicConditions: bookingData.chronicConditions || null,
+                  currentMedications: bookingData.currentMedications || null,
                 });
                 patient = normalizePatient(row);
                 setRegisteredPatients(prev => [patient, ...prev]);
               }
 
-              const priority = residentBooking.priorityLevel ||
-                SERVICE_CATEGORIES[residentBooking.serviceCategory]?.services
-                  .find(s => s.name === residentBooking.serviceType)?.priority || 'Regular';
+              const priority = bookingData.priorityLevel ||
+                SERVICE_CATEGORIES[bookingData.serviceCategory]?.services
+                  .find(s => s.name === bookingData.serviceType)?.priority || 'Regular';
 
               const qRow = await api('POST', '/queue', {
                 patientId:       patient.patientId,
-                serviceCategory: residentBooking.serviceCategory,
-                serviceName:     residentBooking.serviceType,
+                serviceCategory: bookingData.serviceCategory,
+                serviceName:     bookingData.serviceType,
                 priority,
                 chiefComplaint:  residentBooking.notes || 'Scheduled appointment',
-                appointmentDate: residentBooking.appointmentDate,
-                appointmentTime: residentBooking.appointmentTime,
+                appointmentDate: bookingData.appointmentDate,
+                appointmentTime: bookingData.appointmentTime,
                 selfBooked:      true,
                 bookedByUsername: currentUser?.username || null,
               });
