@@ -310,12 +310,16 @@ function normalizeUser(u) {
           }
         };
 
+        // Legacy alias — makes SERVICE_CATEGORIES available outside the component
+        // (inside the component, state overrides this via const SERVICE_CATEGORIES = serviceCategories)
+        const SERVICE_CATEGORIES = DEFAULT_SERVICE_CATEGORIES;
+
         // Legacy SERVICES object for backward compatibility
         const SERVICES = {};
         Object.keys(DEFAULT_SERVICE_CATEGORIES).forEach(category => {
           DEFAULT_SERVICE_CATEGORIES[category].services.forEach(service => {
             SERVICES[service.name] = {
-              category: SERVICE_CATEGORIES[category].urgency,
+              category: DEFAULT_SERVICE_CATEGORIES[category].urgency,
               priority: service.priority
             };
           });
