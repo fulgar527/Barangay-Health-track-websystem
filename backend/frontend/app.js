@@ -5913,7 +5913,7 @@ function normalizeUser(u) {
                           <option value="">-- Select Patient --</option>
                           <option value="WALKIN_UNREGISTERED">🚶 Walk-in (Unregistered / No Patient ID)</option>
                           {registeredPatients
-                            .filter(p => !queue.some(q => q.patientId === p.patientId && !['Served','Cancelled','Rejected'].includes(q.status)))
+                            .filter(p => !queue.some(q => q.patientId === p.patientId && ['Waiting','Accepted'].includes(q.status)))
                             .map(p => (
                               <option key={p.patientId} value={p.patientId}>
                                 {p.patientId} — {p.firstName} {p.lastName} (Age: {p.age || 'N/A'}, Sex: {p.sex || 'N/A'})
