@@ -470,13 +470,15 @@ router.put('/change-password', async (req, res) => {
     const { data: { user }, error: getUserErr } = await supabase.auth.getUser(token);
     if (getUserErr || !user) return res.status(401).json({ error: 'Session expired. Please log in again.' });
 
-    // Use Supabase admin client to update password (no bcrypt needed)
-    const supabaseAdmin = require('@supabase/supabase-js').createClient(
+    // Use Supabase user-scoped client with their token to update password
+    const { createClient } = require('@supabase/supabase-js');
+    const userSupabase = createClient(
       process.env.SUPABASE_URL,
-      process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY
+      process.env.SUPABASE_ANON_KEY,
+      { global: { headers: { Authorization: 'Bearer ' + token } } }
     );
 
-    const { error: updateErr } = await supabaseAdmin.auth.admin.updateUserById(user.id, {
+    const { error: updateErr } = await userSupabase.auth.updateUser({
       password: newPassword
     });
 
