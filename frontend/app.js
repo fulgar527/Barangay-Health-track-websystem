@@ -785,34 +785,50 @@ function normalizeUser(u) {
                 email:     pendingAccount.email || '',
                 mobile:    pendingAccount.mobile || '',
               });
-              // Auto-create patient record with personal info
+              // Auto-create OR update patient record with personal info
               const today2 = new Date();
               const dob2 = new Date(pendingAccount.birthday);
               let autoAge = today2.getFullYear() - dob2.getFullYear();
               const mm2 = today2.getMonth() - dob2.getMonth();
               if (mm2 < 0 || (mm2 === 0 && today2.getDate() < dob2.getDate())) autoAge--;
+              const patientPayload = {
+                firstName: pendingAccount._firstName,
+                lastName:  pendingAccount._lastName,
+                middleName: pendingAccount._middleInitial ? pendingAccount._middleInitial + '.' : null,
+                dateOfBirth: pendingAccount.birthday || null,
+                age: autoAge,
+                sex: pendingAccount.sex || null,
+                civilStatus: pendingAccount.civilStatus || null,
+                address: pendingAccount.address || null,
+                contactNumber: pendingAccount.contactNumber || pendingAccount.mobile || null,
+                occupation: pendingAccount.occupation || null,
+                emergencyContactPerson: pendingAccount.emergencyContactPerson || null,
+                emergencyContactNumber: pendingAccount.emergencyContactNumber || null,
+                allergies: pendingAccount.allergies || null,
+                chronicConditions: pendingAccount.chronicConditions || null,
+                currentMedications: pendingAccount.currentMedications || null,
+              };
               try {
-                const patRow = await api('POST', '/patients', {
-                  firstName: pendingAccount._firstName,
-                  lastName:  pendingAccount._lastName,
-                  middleName: pendingAccount._middleInitial ? pendingAccount._middleInitial + '.' : null,
-                  dateOfBirth: pendingAccount.birthday || null,
-                  age: autoAge,
-                  sex: pendingAccount.sex || null,
-                  civilStatus: pendingAccount.civilStatus || null,
-                  address: pendingAccount.address || null,
-                  contactNumber: pendingAccount.contactNumber || null,
-                  occupation: pendingAccount.occupation || null,
-                  emergencyContactPerson: pendingAccount.emergencyContactPerson || null,
-                  emergencyContactNumber: pendingAccount.emergencyContactNumber || null,
-                  allergies: pendingAccount.allergies || null,
-                  chronicConditions: pendingAccount.chronicConditions || null,
-                  currentMedications: pendingAccount.currentMedications || null,
+                // Check if patient record already exists for this user
+                const existingPat = registeredPatients.find(p => {
+                  const fn = (p.firstName||'').toLowerCase();
+                  const ln = (p.lastName||'').toLowerCase();
+                  return fn === pendingAccount._firstName.toLowerCase() && ln === pendingAccount._lastName.toLowerCase();
                 });
-                const newPat = normalizePatient(patRow);
-                setRegisteredPatients(prev => [newPat, ...prev]);
+                let savedPat;
+                if (existingPat) {
+                  // Update existing record with the new complete info
+                  const updRow = await api('PUT', '/patients/' + existingPat.patientId, patientPayload);
+                  savedPat = normalizePatient(updRow);
+                  setRegisteredPatients(prev => prev.map(p => p.patientId === savedPat.patientId ? savedPat : p));
+                } else {
+                  // Create new patient record
+                  const patRow = await api('POST', '/patients', patientPayload);
+                  savedPat = normalizePatient(patRow);
+                  setRegisteredPatients(prev => [savedPat, ...prev]);
+                }
               } catch(patErr) {
-                console.warn('Patient record auto-create failed (non-fatal):', patErr.message);
+                console.warn('Patient record auto-save failed (non-fatal):', patErr.message);
               }
               setOtpStep(false); setPendingAccount(null); setOtpCode(''); setOtpInput('');
               setRegisterSuccess(`Account created successfully! You can now log in as "${pendingAccount.username}".`);
