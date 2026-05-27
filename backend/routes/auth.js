@@ -368,8 +368,8 @@ router.delete('/users/:id', async (req, res) => {
 router.post('/forgot-password', async (req, res) => {
   try {
     const { email, mobile } = req.body;
-    if (!email || !email.trim()) {
-      return res.status(400).json({ error: 'Please enter your email address.' });
+    if ((!email || !email.trim()) && (!mobile || !mobile.trim())) {
+      return res.status(400).json({ error: 'Please enter your email address or mobile number.' });
     }
 
     // Support both email and mobile lookup
@@ -383,13 +383,13 @@ router.post('/forgot-password', async (req, res) => {
         [targetEmail]
       );
     } else if (mobile) {
-      // Look up by mobile number — strip spaces and dashes for flexible match
-      const cleanMobile = mobile.trim().replace(/[\s\-]/g, '');
+      // Look up by mobile — strip all non-digits for flexible match
+      const cleanMobile = mobile.trim().replace(/[^0-9]/g, '');
       result = await db.query(
-        "SELECT user_id, username, full_name, email, supabase_id FROM users WHERE REPLACE(REPLACE(mobile,' ',''),'-','') = $1",
+        "SELECT user_id, username, full_name, email, supabase_id FROM users WHERE REGEXP_REPLACE(mobile, '[^0-9]', '', 'g') = $1",
         [cleanMobile]
       );
-      if (result.rows.length > 0) {
+      if (result && result.rows.length > 0) {
         const userEmail = result.rows[0].email;
         if (!userEmail || userEmail.endsWith('@healthtrack.local')) {
           return res.status(400).json({ error: 'No email address is linked to this account. Please contact the clinic administrator.' });
@@ -440,6 +440,12 @@ router.post('/forgot-password', async (req, res) => {
         pass: process.env.MAIL_PASS
       },
       tls: { rejectUnauthorized: false }
+    });
+
+    // Verify connection before sending
+    await transporter.verify().catch(err => {
+      console.error('Mail server connection failed:', err.message);
+      throw new Error('Mail server not configured. Please contact the clinic administrator.');
     });
 
     await transporter.sendMail({
