@@ -2256,26 +2256,22 @@ function normalizeUser(u) {
 
                           {forgotError && <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm mb-4">{forgotError}</div>}
 
-                          {forgotMethod === 'email' ? (
-                            <div className="mb-4">
-                              <label className="block text-sm font-semibold text-gray-700 mb-1">Email Address</label>
-                              <input type="email" value={forgotEmail}
-                                onChange={(e) => { setForgotEmail(e.target.value); setForgotError(''); }}
-                                placeholder="Enter your registered email"
-                                className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-400 focus:border-transparent" />
-                              <p className="text-xs text-gray-400 mt-1">Temp password will be sent to this email</p>
-                            </div>
-                          ) : (
-                            <div className="mb-4">
-                              <label className="block text-sm font-semibold text-gray-700 mb-1">Mobile Number</label>
-                              <input type="text" value={forgotMobile}
-                                onChange={(e) => { setForgotMobile(e.target.value.replace(/[^0-9+\-\s]/g,'').slice(0,13)); setForgotError(''); }}
-                                placeholder="09XXXXXXXXX"
-                                maxLength={13}
-                                className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-400 focus:border-transparent" />
-                              <p className="text-xs text-gray-400 mt-1">We'll look up your account and send temp password to your registered email</p>
-                            </div>
-                          )}
+                          <div className="mb-4" style={{display: forgotMethod === 'email' ? 'block' : 'none'}}>
+                            <label className="block text-sm font-semibold text-gray-700 mb-1">Email Address</label>
+                            <input type="text" value={forgotEmail}
+                              onChange={(e) => { setForgotEmail(e.target.value); setForgotError(''); }}
+                              placeholder="Enter your registered email"
+                              className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-400 focus:border-transparent" />
+                            <p className="text-xs text-gray-400 mt-1">Temp password will be sent to this email</p>
+                          </div>
+                          <div className="mb-4" style={{display: forgotMethod === 'mobile' ? 'block' : 'none'}}>
+                            <label className="block text-sm font-semibold text-gray-700 mb-1">Mobile Number</label>
+                            <input type="text" value={forgotMobile}
+                              onChange={(e) => { setForgotMobile(e.target.value.replace(/[^0-9]/g,'').slice(0,11)); setForgotError(''); }}
+                              placeholder="09XXXXXXXXX" maxLength={11}
+                              className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-400 focus:border-transparent" />
+                            <p className="text-xs text-gray-400 mt-1">We'll look up your account and send temp password to your registered email</p>
+                          </div>
 
                           <div className="flex gap-3">
                             <button type="button" onClick={() => { setShowForgotPassword(false); setForgotMethod('email'); setForgotMobile(''); setForgotEmail(''); setForgotError(''); }}
@@ -4406,25 +4402,22 @@ function normalizeUser(u) {
                           </button>
                         </div>
                         {forgotError && <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm mb-4">{forgotError}</div>}
-                        {forgotMethod === 'email' ? (
-                          <div className="mb-4">
-                            <label className="block text-sm font-semibold text-gray-700 mb-1">Email Address</label>
-                            <input type="text" value={forgotEmail}
-                              onChange={(e) => { setForgotEmail(e.target.value); setForgotError(''); }}
-                              placeholder="Enter your registered email"
-                              className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-400 focus:border-transparent" />
-                            <p className="text-xs text-gray-400 mt-1">Temp password will be sent to this email</p>
-                          </div>
-                        ) : (
-                          <div className="mb-4">
-                            <label className="block text-sm font-semibold text-gray-700 mb-1">Mobile Number</label>
-                            <input type="text" value={forgotMobile}
-                              onChange={(e) => { setForgotMobile(e.target.value.replace(/[^0-9+\-\s]/g,'').slice(0,13)); setForgotError(''); }}
-                              placeholder="09XXXXXXXXX" maxLength={13}
-                              className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-400 focus:border-transparent" />
-                            <p className="text-xs text-gray-400 mt-1">We'll look up your account and send temp password to your registered email</p>
-                          </div>
-                        )}
+                        <div className="mb-4" style={{display: forgotMethod === 'email' ? 'block' : 'none'}}>
+                          <label className="block text-sm font-semibold text-gray-700 mb-1">Email Address</label>
+                          <input type="text" value={forgotEmail}
+                            onChange={(e) => { setForgotEmail(e.target.value); setForgotError(''); }}
+                            placeholder="Enter your registered email"
+                            className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-400 focus:border-transparent" />
+                          <p className="text-xs text-gray-400 mt-1">Temp password will be sent to this email</p>
+                        </div>
+                        <div className="mb-4" style={{display: forgotMethod === 'mobile' ? 'block' : 'none'}}>
+                          <label className="block text-sm font-semibold text-gray-700 mb-1">Mobile Number</label>
+                          <input type="text" value={forgotMobile}
+                            onChange={(e) => { setForgotMobile(e.target.value.replace(/[^0-9]/g,'').slice(0,11)); setForgotError(''); }}
+                            placeholder="09XXXXXXXXX" maxLength={11}
+                            className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-400 focus:border-transparent" />
+                          <p className="text-xs text-gray-400 mt-1">We'll look up your account and send temp password to your registered email</p>
+                        </div>
                         <div className="flex gap-3">
                           <button type="button" onClick={() => { setShowForgotPassword(false); setForgotMethod('email'); setForgotMobile(''); setForgotEmail(''); setForgotError(''); }}
                             className="flex-1 py-2.5 border border-gray-300 rounded-xl text-gray-600 font-semibold hover:bg-gray-50">Cancel</button>
