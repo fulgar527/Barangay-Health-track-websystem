@@ -367,22 +367,40 @@ router.delete('/users/:id', async (req, res) => {
 // ══════════════════════════════════════════════════════════════════════════════
 router.post('/forgot-password', async (req, res) => {
   try {
-    const { email } = req.body;
+    const { email, mobile } = req.body;
     if (!email || !email.trim()) {
       return res.status(400).json({ error: 'Please enter your email address.' });
     }
 
-    const targetEmail = email.trim().toLowerCase();
+    // Support both email and mobile lookup
+    let targetEmail = email ? email.trim().toLowerCase() : null;
+    let result;
 
-    // Look up user by email
-    const result = await db.query(
-      'SELECT user_id, username, full_name, email, supabase_id FROM users WHERE LOWER(email) = $1',
-      [targetEmail]
-    );
+    if (targetEmail) {
+      // Look up by email
+      result = await db.query(
+        'SELECT user_id, username, full_name, email, supabase_id FROM users WHERE LOWER(email) = $1',
+        [targetEmail]
+      );
+    } else if (mobile) {
+      // Look up by mobile number — strip spaces and dashes for flexible match
+      const cleanMobile = mobile.trim().replace(/[\s\-]/g, '');
+      result = await db.query(
+        "SELECT user_id, username, full_name, email, supabase_id FROM users WHERE REPLACE(REPLACE(mobile,' ',''),'-','') = $1",
+        [cleanMobile]
+      );
+      if (result.rows.length > 0) {
+        const userEmail = result.rows[0].email;
+        if (!userEmail || userEmail.endsWith('@healthtrack.local')) {
+          return res.status(400).json({ error: 'No email address is linked to this account. Please contact the clinic administrator.' });
+        }
+        targetEmail = userEmail;
+      }
+    }
 
-    // Always return success to prevent email enumeration
-    if (result.rows.length === 0) {
-      return res.json({ message: 'If an account with that email exists, a temporary password has been sent.' });
+    // Always return success to prevent enumeration
+    if (!result || result.rows.length === 0) {
+      return res.json({ message: 'If an account with that information exists, a temporary password has been sent to the registered email.' });
     }
 
     const user = result.rows[0];
