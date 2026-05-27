@@ -2103,6 +2103,51 @@ function normalizeUser(u) {
           if (!userRole) {
             return (
               <div className="min-h-screen flex items-center justify-center p-4" style={{background: 'linear-gradient(135deg, #fff0f0 0%, #ffffff 50%, #ffe5e5 100%)'}}>
+
+                {/* ===== FORGOT PASSWORD MODAL (Login Screen) ===== */}
+                {showForgotPassword && (
+                  <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+                      <div className="flex items-center justify-between mb-4">
+                        <h2 className="text-xl font-bold text-gray-800">Forgot Password</h2>
+                        <button onClick={() => setShowForgotPassword(false)} className="text-gray-400 hover:text-gray-600 text-2xl font-bold leading-none">&times;</button>
+                      </div>
+                      {forgotStatus ? (
+                        <div className="text-center py-6">
+                          <div className="text-5xl mb-4">📧</div>
+                          <p className="text-green-700 font-semibold text-base mb-2">Email Sent!</p>
+                          <p className="text-gray-600 text-sm mb-6">{forgotStatus}</p>
+                          <button onClick={() => { setShowForgotPassword(false); setForgotStatus(''); }}
+                            className="px-6 py-2 rounded-xl text-white font-semibold" style={{background:'linear-gradient(to right,var(--ht-primary),var(--ht-accent))'}}>
+                            Back to Login
+                          </button>
+                        </div>
+                      ) : (
+                        <form onSubmit={handleForgotPassword}>
+                          <p className="text-sm text-gray-500 mb-4">Enter the email address linked to your account and we'll send you a password reset link.</p>
+                          {forgotError && <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm mb-4">{forgotError}</div>}
+                          <div className="mb-4">
+                            <label className="block text-sm font-semibold text-gray-700 mb-1">Email Address</label>
+                            <input type="email" value={forgotEmail}
+                              onChange={(e) => { setForgotEmail(e.target.value); setForgotError(''); }}
+                              placeholder="Enter your registered email"
+                              className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-400 focus:border-transparent" required />
+                          </div>
+                          <div className="flex gap-3">
+                            <button type="button" onClick={() => setShowForgotPassword(false)}
+                              className="flex-1 py-2.5 border border-gray-300 rounded-xl text-gray-600 font-semibold hover:bg-gray-50">Cancel</button>
+                            <button type="submit" disabled={forgotLoading}
+                              className="flex-1 py-2.5 rounded-xl text-white font-semibold disabled:opacity-60"
+                              style={{background:'linear-gradient(to right,var(--ht-primary),var(--ht-accent))'}}>
+                              {forgotLoading ? 'Sending...' : 'Send Reset Link'}
+                            </button>
+                          </div>
+                        </form>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 <div className="max-w-md w-full">
                   <div className="bg-white rounded-2xl shadow-2xl p-8">
                     <div className="text-center mb-6">
