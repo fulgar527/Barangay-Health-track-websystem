@@ -6227,7 +6227,17 @@ function normalizeUser(u) {
                       {/* Visit History Section */}
                       {(() => {
                         const patVisits = visitLog
-                          .filter(v => v.patientId === selectedPatient.patientId)
+                          .filter(v => {
+                            if (!v) return false;
+                            // Match by patientId (primary)
+                            if (v.patientId && selectedPatient.patientId && v.patientId === selectedPatient.patientId) return true;
+                            // Fallback: match by name
+                            const vName = (v.name || '').toLowerCase().trim();
+                            const pName = (selectedPatient.firstName + ' ' + selectedPatient.lastName).toLowerCase().trim();
+                            const pNameAlt = (selectedPatient.lastName + ' ' + selectedPatient.firstName).toLowerCase().trim();
+                            if (vName && pName && (vName === pName || vName === pNameAlt || vName.includes(selectedPatient.firstName?.toLowerCase()) && vName.includes(selectedPatient.lastName?.toLowerCase()))) return true;
+                            return false;
+                          })
                           .sort((a, b) => new Date(b.visitDate) - new Date(a.visitDate));
 
                         const printHistory = () => {
@@ -6298,12 +6308,10 @@ function normalizeUser(u) {
                                 📋 Visit History
                                 <span className="text-xs font-normal bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">{patVisits.length} record{patVisits.length !== 1 ? 's' : ''}</span>
                               </h3>
-                              {patVisits.length > 0 && (
-                                <button onClick={printHistory}
-                                  className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors">
-                                  🖨️ Print / Save PDF
-                                </button>
-                              )}
+                              <button onClick={printHistory}
+                                className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors">
+                                🖨️ Print / Save PDF
+                              </button>
                             </div>
                             {patVisits.length === 0 ? (
                               <p className="text-sm text-gray-400 italic py-3 text-center">No visit records yet.</p>
