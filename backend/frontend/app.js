@@ -524,6 +524,12 @@ function normalizeUser(u) {
           const [loginError, setLoginError] = useState('');
           const [showCreateAccount, setShowCreateAccount] = useState(false);
           const [showForgotPassword, setShowForgotPassword] = useState(false);
+          const [showResetPassword, setShowResetPassword] = useState(false);
+          const [resetToken, setResetToken] = useState('');
+          const [resetForm, setResetForm] = useState({ newPassword:'', confirmPassword:'' });
+          const [resetError, setResetError] = useState('');
+          const [resetSuccess, setResetSuccess] = useState('');
+          const [resetLoading, setResetLoading] = useState(false);
 
           // ── Settings / Profile states ─────────────────────────────────────
           const [showSettingsMenu, setShowSettingsMenu] = useState(false);
@@ -1017,7 +1023,52 @@ function normalizeUser(u) {
             setOtpError('');
           };
 
-          // ── Close settings menu on outside click ───────────────────────────
+          // ── Detect password reset token in URL hash ─────────────────────────
+          React.useEffect(() => {
+            const hash = window.location.hash;
+            if (hash && hash.includes('access_token') && hash.includes('type=recovery')) {
+              const params = new URLSearchParams(hash.replace('#', ''));
+              const token = params.get('access_token');
+              if (token) {
+                setResetToken(token);
+                setShowResetPassword(true);
+                // Clean up URL
+                window.history.replaceState(null, '', window.location.pathname);
+              }
+            }
+          }, []);
+
+          // ── Handle reset password submission ─────────────────────────────────
+          const handleResetPassword = async (e) => {
+            e.preventDefault();
+            if (!resetForm.newPassword || !resetForm.confirmPassword) {
+              setResetError('Please fill in both fields.'); return;
+            }
+            if (resetForm.newPassword !== resetForm.confirmPassword) {
+              setResetError('Passwords do not match.'); return;
+            }
+            if (resetForm.newPassword.length < 8) {
+              setResetError('Password must be at least 8 characters.'); return;
+            }
+            setResetLoading(true); setResetError('');
+            try {
+              const res = await fetch('/api/auth/reset-password', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ accessToken: resetToken, newPassword: resetForm.newPassword })
+              });
+              const data = await res.json();
+              if (!res.ok) { setResetError(data.error || 'Failed to reset password.'); }
+              else {
+                setResetSuccess('Password reset successfully! You can now log in with your new password.');
+                setResetForm({ newPassword:'', confirmPassword:'' });
+                setTimeout(() => { setShowResetPassword(false); setResetSuccess(''); setResetToken(''); }, 3000);
+              }
+            } catch { setResetError('Network error. Please try again.'); }
+            finally { setResetLoading(false); }
+          };
+
+                    // ── Close settings menu on outside click ───────────────────────────
           React.useEffect(() => {
             const close = () => { setShowSettingsMenu(false); setHeaderSearchOpen(false); };
             if (showSettingsMenu || headerSearchOpen) document.addEventListener('click', close);
@@ -2103,6 +2154,54 @@ function normalizeUser(u) {
           if (!userRole) {
             return (
               <div className="min-h-screen flex items-center justify-center p-4" style={{background: 'linear-gradient(135deg, #fff0f0 0%, #ffffff 50%, #ffe5e5 100%)'}}>
+
+                {/* ===== RESET PASSWORD MODAL (from email link) ===== */}
+                {showResetPassword && (
+                  <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+                      <div className="text-center mb-5">
+                        <div className="text-5xl mb-3">🔐</div>
+                        <h2 className="text-xl font-bold text-gray-800">Set New Password</h2>
+                        <p className="text-sm text-gray-500 mt-1">Enter your new password below</p>
+                      </div>
+                      {resetSuccess ? (
+                        <div className="text-center py-4">
+                          <div className="text-4xl mb-3">✅</div>
+                          <p className="text-green-700 font-semibold mb-2">{resetSuccess}</p>
+                          <p className="text-sm text-gray-500">Redirecting to login...</p>
+                        </div>
+                      ) : (
+                        <form onSubmit={handleResetPassword} className="space-y-4">
+                          {resetError && <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm">{resetError}</div>}
+                          <div>
+                            <label className="block text-sm font-semibold text-gray-700 mb-1">New Password</label>
+                            <input type="password" value={resetForm.newPassword}
+                              onChange={e => setResetForm(f=>({...f,newPassword:e.target.value}))}
+                              placeholder="Min 8 characters"
+                              className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-400 focus:border-transparent" required />
+                          </div>
+                          <div>
+                            <label className="block text-sm font-semibold text-gray-700 mb-1">Confirm New Password</label>
+                            <input type="password" value={resetForm.confirmPassword}
+                              onChange={e => setResetForm(f=>({...f,confirmPassword:e.target.value}))}
+                              placeholder="Re-enter new password"
+                              className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-400 focus:border-transparent" required />
+                            {resetForm.newPassword && resetForm.confirmPassword && (
+                              <p className={`text-xs mt-1 ${resetForm.newPassword === resetForm.confirmPassword ? 'text-green-600' : 'text-red-500'}`}>
+                                {resetForm.newPassword === resetForm.confirmPassword ? '✓ Passwords match' : '✗ Passwords do not match'}
+                              </p>
+                            )}
+                          </div>
+                          <button type="submit" disabled={resetLoading}
+                            className="w-full py-2.5 rounded-xl text-white font-semibold disabled:opacity-60"
+                            style={{background:'linear-gradient(to right,var(--ht-primary),var(--ht-accent))'}}>
+                            {resetLoading ? 'Resetting...' : 'Reset Password'}
+                          </button>
+                        </form>
+                      )}
+                    </div>
+                  </div>
+                )}
 
                 {/* ===== FORGOT PASSWORD MODAL (Login Screen) ===== */}
                 {showForgotPassword && (
