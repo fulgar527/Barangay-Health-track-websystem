@@ -386,15 +386,28 @@ router.post('/forgot-password', async (req, res) => {
       // Look up by mobile — strip all non-digits for flexible match
       const cleanMobile = mobile.trim().replace(/[^0-9]/g, '');
       result = await db.query(
-        "SELECT user_id, username, full_name, email, supabase_id FROM users WHERE REGEXP_REPLACE(mobile, '[^0-9]', '', 'g') = $1",
+        "SELECT user_id, username, full_name, email, supabase_id FROM users WHERE REGEXP_REPLACE(COALESCE(mobile,''), '[^0-9]', '', 'g') = $1 OR REGEXP_REPLACE(COALESCE(contact_number,''), '[^0-9]', '', 'g') = $1",
         [cleanMobile]
       );
       if (result && result.rows.length > 0) {
         const userEmail = result.rows[0].email;
+        const supabaseId = result.rows[0].supabase_id;
         if (!userEmail || userEmail.endsWith('@healthtrack.local')) {
-          return res.status(400).json({ error: 'No email address is linked to this account. Please contact the clinic administrator.' });
+          // Try to get real email from Supabase Auth using supabase_id
+          if (supabaseId) {
+            try {
+              const { data: { user: sbUser } } = await supabase.auth.admin.getUserById(supabaseId).catch(() => ({ data: { user: null } }));
+              if (sbUser && sbUser.email) {
+                targetEmail = sbUser.email;
+              }
+            } catch {}
+          }
+          if (!targetEmail) {
+            return res.status(400).json({ error: 'No email address is linked to this account. Please register with a valid email or contact the clinic administrator.' });
+          }
+        } else {
+          targetEmail = userEmail;
         }
-        targetEmail = userEmail;
       }
     }
 
