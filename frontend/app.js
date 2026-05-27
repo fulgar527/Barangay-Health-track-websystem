@@ -525,6 +525,7 @@ function normalizeUser(u) {
           const [showCreateAccount, setShowCreateAccount] = useState(false);
           const [showForgotPassword, setShowForgotPassword] = useState(false);
           const [forgotMethod, setForgotMethod] = useState('email'); // 'email' | 'mobile'
+          const forgotMethodRef = React.useRef('email'); // ref always has current value
           const [forgotMobile, setForgotMobile] = useState('');
           const [showResetPassword, setShowResetPassword] = useState(false);
           const [resetToken, setResetToken] = useState('');
@@ -675,14 +676,16 @@ function normalizeUser(u) {
           const handleForgotPassword = async (e) => {
             e.preventDefault();
             setForgotError('');
-            if (forgotMethod === 'email') {
+            // Use ref to get current method (avoids stale closure issue)
+            const currentMethod = forgotMethodRef.current;
+            if (currentMethod === 'email') {
               if (!forgotEmail.trim()) { setForgotError('Please enter your email address.'); return; }
             } else {
               if (!forgotMobile.trim()) { setForgotError('Please enter your mobile number.'); return; }
             }
             setForgotLoading(true); setForgotError(''); setForgotStatus('');
             try {
-              const body = forgotMethod === 'email'
+              const body = currentMethod === 'email'
                 ? { email: forgotEmail.trim() }
                 : { mobile: forgotMobile.trim() };
               const res = await fetch('/api/auth/forgot-password', {
@@ -2238,12 +2241,12 @@ function normalizeUser(u) {
                           {/* ── Method Toggle ── */}
                           <div className="flex bg-gray-100 rounded-xl p-1 mb-4 gap-1">
                             <button type="button"
-                              onClick={() => { setForgotMethod('email'); setForgotError(''); setForgotMobile(''); }}
+                              onClick={() => { setForgotMethod('email'); forgotMethodRef.current = 'email'; setForgotError(''); setForgotMobile(''); }}
                               className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-all flex items-center justify-center gap-2 ${forgotMethod === 'email' ? 'bg-white shadow text-red-700' : 'text-gray-500 hover:text-gray-700'}`}>
                               📧 Email
                             </button>
                             <button type="button"
-                              onClick={() => { setForgotMethod('mobile'); setForgotError(''); setForgotEmail(''); }}
+                              onClick={() => { setForgotMethod('mobile'); forgotMethodRef.current = 'mobile'; setForgotError(''); setForgotEmail(''); }}
                               className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-all flex items-center justify-center gap-2 ${forgotMethod === 'mobile' ? 'bg-white shadow text-red-700' : 'text-gray-500 hover:text-gray-700'}`}>
                               📱 Mobile Number
                             </button>
@@ -4390,12 +4393,12 @@ function normalizeUser(u) {
                         <p className="text-sm text-gray-500 mb-4">We'll send a temporary password to your registered email address.</p>
                         <div className="flex bg-gray-100 rounded-xl p-1 mb-4 gap-1">
                           <button type="button"
-                            onClick={() => { setForgotMethod('email'); setForgotError(''); setForgotMobile(''); }}
+                            onClick={() => { setForgotMethod('email'); forgotMethodRef.current = 'email'; setForgotError(''); setForgotMobile(''); }}
                             className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-all flex items-center justify-center gap-2 ${forgotMethod === 'email' ? 'bg-white shadow text-red-700' : 'text-gray-500 hover:text-gray-700'}`}>
                             📧 Email
                           </button>
                           <button type="button"
-                            onClick={() => { setForgotMethod('mobile'); setForgotError(''); setForgotEmail(''); }}
+                            onClick={() => { setForgotMethod('mobile'); forgotMethodRef.current = 'mobile'; setForgotError(''); setForgotEmail(''); }}
                             className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-all flex items-center justify-center gap-2 ${forgotMethod === 'mobile' ? 'bg-white shadow text-red-700' : 'text-gray-500 hover:text-gray-700'}`}>
                             📱 Mobile Number
                           </button>
