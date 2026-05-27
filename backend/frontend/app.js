@@ -4387,28 +4387,45 @@ function normalizeUser(u) {
                       </div>
                     ) : (
                       <form onSubmit={handleForgotPassword}>
-                        <p className="text-sm text-gray-500 mb-4">Enter the email address linked to your account. We'll send you a temporary password to log in with.</p>
-                        {forgotError && (
-                          <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm mb-4">{forgotError}</div>
-                        )}
-                        <div className="mb-4">
-                          <label className="block text-sm font-semibold text-gray-700 mb-1">Email Address</label>
-                          <input
-                            type="email"
-                            value={forgotEmail}
-                            onChange={(e) => { setForgotEmail(e.target.value); setForgotError(''); }}
-                            placeholder="Enter your registered email"
-                            className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-400 focus:border-transparent"
-                            required
-                          />
-                        </div>
-                        <div className="flex gap-3">
-                          <button type="button" onClick={() => setShowForgotPassword(false)}
-                            className="flex-1 py-2.5 border border-gray-300 rounded-xl text-gray-600 font-semibold hover:bg-gray-50">
-                            Cancel
+                        <p className="text-sm text-gray-500 mb-4">We'll send a temporary password to your registered email address.</p>
+                        <div className="flex bg-gray-100 rounded-xl p-1 mb-4 gap-1">
+                          <button type="button"
+                            onClick={() => { setForgotMethod('email'); setForgotError(''); setForgotMobile(''); }}
+                            className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-all flex items-center justify-center gap-2 ${forgotMethod === 'email' ? 'bg-white shadow text-red-700' : 'text-gray-500 hover:text-gray-700'}`}>
+                            📧 Email
                           </button>
+                          <button type="button"
+                            onClick={() => { setForgotMethod('mobile'); setForgotError(''); setForgotEmail(''); }}
+                            className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-all flex items-center justify-center gap-2 ${forgotMethod === 'mobile' ? 'bg-white shadow text-red-700' : 'text-gray-500 hover:text-gray-700'}`}>
+                            📱 Mobile Number
+                          </button>
+                        </div>
+                        {forgotError && <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm mb-4">{forgotError}</div>}
+                        {forgotMethod === 'email' ? (
+                          <div className="mb-4">
+                            <label className="block text-sm font-semibold text-gray-700 mb-1">Email Address</label>
+                            <input type="text" value={forgotEmail}
+                              onChange={(e) => { setForgotEmail(e.target.value); setForgotError(''); }}
+                              placeholder="Enter your registered email"
+                              className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-400 focus:border-transparent" />
+                            <p className="text-xs text-gray-400 mt-1">Temp password will be sent to this email</p>
+                          </div>
+                        ) : (
+                          <div className="mb-4">
+                            <label className="block text-sm font-semibold text-gray-700 mb-1">Mobile Number</label>
+                            <input type="text" value={forgotMobile}
+                              onChange={(e) => { setForgotMobile(e.target.value.replace(/[^0-9+\-\s]/g,'').slice(0,13)); setForgotError(''); }}
+                              placeholder="09XXXXXXXXX" maxLength={13}
+                              className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-400 focus:border-transparent" />
+                            <p className="text-xs text-gray-400 mt-1">We'll look up your account and send temp password to your registered email</p>
+                          </div>
+                        )}
+                        <div className="flex gap-3">
+                          <button type="button" onClick={() => { setShowForgotPassword(false); setForgotMethod('email'); setForgotMobile(''); setForgotEmail(''); setForgotError(''); }}
+                            className="flex-1 py-2.5 border border-gray-300 rounded-xl text-gray-600 font-semibold hover:bg-gray-50">Cancel</button>
                           <button type="submit" disabled={forgotLoading}
-                            className="flex-1 py-2.5 rounded-xl text-white font-semibold disabled:opacity-60" style={{background:'linear-gradient(to right,var(--ht-primary),var(--ht-accent))'}}>
+                            className="flex-1 py-2.5 rounded-xl text-white font-semibold disabled:opacity-60"
+                            style={{background:'linear-gradient(to right,var(--ht-primary),var(--ht-accent))'}}>
                             {forgotLoading ? 'Sending...' : 'Send Temporary Password'}
                           </button>
                         </div>
