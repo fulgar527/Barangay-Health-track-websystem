@@ -504,4 +504,45 @@ router.put('/change-password', async (req, res) => {
   }
 });
 
+
+// ══════════════════════════════════════════════════════════════════════════════
+// POST /api/auth/reset-password — Set new password using access token from email
+// ══════════════════════════════════════════════════════════════════════════════
+router.post('/reset-password', async (req, res) => {
+  try {
+    const { accessToken, newPassword } = req.body;
+    if (!accessToken || !newPassword) {
+      return res.status(400).json({ error: 'Access token and new password are required.' });
+    }
+    if (newPassword.length < 8) {
+      return res.status(400).json({ error: 'Password must be at least 8 characters.' });
+    }
+    // Use the access token to create a session then update password
+    const { createClient } = require('@supabase/supabase-js');
+    const sessionSupabase = createClient(
+      process.env.SUPABASE_URL,
+      process.env.SUPABASE_ANON_KEY
+    );
+    // Set the session using the recovery token
+    const { data: sessionData, error: sessionErr } = await sessionSupabase.auth.setSession({
+      access_token: accessToken,
+      refresh_token: accessToken  // recovery tokens work as both
+    });
+    if (sessionErr) {
+      console.error('Session error:', sessionErr.message);
+      return res.status(400).json({ error: 'Reset link is invalid or has expired. Please request a new one.' });
+    }
+    // Update the password
+    const { error: updateErr } = await sessionSupabase.auth.updateUser({ password: newPassword });
+    if (updateErr) {
+      console.error('Password update error:', updateErr.message);
+      return res.status(400).json({ error: updateErr.message || 'Failed to update password.' });
+    }
+    res.json({ message: 'Password reset successfully!' });
+  } catch (err) {
+    console.error('POST /auth/reset-password error:', err);
+    res.status(500).json({ error: 'Failed to reset password: ' + err.message });
+  }
+});
+
 module.exports = router;
