@@ -674,8 +674,12 @@ function normalizeUser(u) {
 
           const handleForgotPassword = async (e) => {
             e.preventDefault();
-            if (forgotMethod === 'email' && !forgotEmail.trim()) { setForgotError('Please enter your email address.'); return; }
-            if (forgotMethod === 'mobile' && !forgotMobile.trim()) { setForgotError('Please enter your mobile number.'); return; }
+            setForgotError('');
+            if (forgotMethod === 'email') {
+              if (!forgotEmail.trim()) { setForgotError('Please enter your email address.'); return; }
+            } else {
+              if (!forgotMobile.trim()) { setForgotError('Please enter your mobile number.'); return; }
+            }
             setForgotLoading(true); setForgotError(''); setForgotStatus('');
             try {
               const body = forgotMethod === 'email'
@@ -2253,7 +2257,7 @@ function normalizeUser(u) {
                               <input type="email" value={forgotEmail}
                                 onChange={(e) => { setForgotEmail(e.target.value); setForgotError(''); }}
                                 placeholder="Enter your registered email"
-                                className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-400 focus:border-transparent" required />
+                                className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-400 focus:border-transparent" />
                               <p className="text-xs text-gray-400 mt-1">Temp password will be sent to this email</p>
                             </div>
                           ) : (
@@ -2263,7 +2267,7 @@ function normalizeUser(u) {
                                 onChange={(e) => { setForgotMobile(e.target.value.replace(/[^0-9+\-\s]/g,'').slice(0,13)); setForgotError(''); }}
                                 placeholder="09XXXXXXXXX"
                                 maxLength={13}
-                                className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-400 focus:border-transparent" required />
+                                className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-red-400 focus:border-transparent" />
                               <p className="text-xs text-gray-400 mt-1">We'll look up your account and send temp password to your registered email</p>
                             </div>
                           )}
