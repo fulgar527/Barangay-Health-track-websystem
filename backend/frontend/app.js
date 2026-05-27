@@ -6229,12 +6229,82 @@ function normalizeUser(u) {
                         const patVisits = visitLog
                           .filter(v => v.patientId === selectedPatient.patientId)
                           .sort((a, b) => new Date(b.visitDate) - new Date(a.visitDate));
+
+                        const printHistory = () => {
+                          const win = window.open('', '_blank');
+                          win.document.write(`
+                            <html><head><title>Visit History - ${selectedPatient.firstName} ${selectedPatient.lastName}</title>
+                            <style>
+                              body { font-family: Arial, sans-serif; padding: 24px; color: #333; }
+                              .header { border-bottom: 3px solid #cc0000; padding-bottom: 16px; margin-bottom: 20px; }
+                              .logo-row { display: flex; align-items: center; gap: 16px; margin-bottom: 8px; }
+                              h1 { color: #cc0000; font-size: 22px; margin: 0; }
+                              h2 { font-size: 15px; color: #555; margin: 4px 0 0; }
+                              .patient-info { background: #f8f8f8; border: 1px solid #ddd; border-radius: 8px; padding: 14px; margin-bottom: 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+                              .patient-info p { margin: 2px 0; font-size: 13px; }
+                              .visit { border: 1px solid #e0e0e0; border-radius: 8px; padding: 14px; margin-bottom: 14px; page-break-inside: avoid; }
+                              .visit-header { display: flex; justify-content: space-between; margin-bottom: 6px; }
+                              .visit-service { font-weight: bold; font-size: 14px; color: #cc0000; }
+                              .visit-date { font-size: 12px; color: #888; }
+                              .visit-detail { font-size: 13px; margin: 3px 0; }
+                              .badge { background: #cc0000; color: white; font-size: 11px; padding: 2px 8px; border-radius: 12px; }
+                              .footer { margin-top: 30px; border-top: 1px solid #ddd; padding-top: 12px; font-size: 11px; color: #999; text-align: center; }
+                              @media print { body { padding: 12px; } }
+                            </style></head><body>
+                            <div class="header">
+                              <div class="logo-row">
+                                <div><h1>HealthTrack</h1><h2>Patient Information System with Queueing</h2><h2>Barangay Upper Bicutan Health Clinics - City of Taguig</h2></div>
+                              </div>
+                              <h2 style="margin-top:12px;font-size:16px;color:#333;">Patient Visit History Report</h2>
+                            </div>
+                            <div class="patient-info">
+                              <p><strong>Patient ID:</strong> ${selectedPatient.patientId}</p>
+                              <p><strong>Name:</strong> ${selectedPatient.firstName} ${selectedPatient.middleName || ''} ${selectedPatient.lastName}</p>
+                              <p><strong>Date of Birth:</strong> ${selectedPatient.dateOfBirth ? new Date(selectedPatient.dateOfBirth).toLocaleDateString('en-PH') : 'N/A'}</p>
+                              <p><strong>Age:</strong> ${selectedPatient.age || 'N/A'}</p>
+                              <p><strong>Sex:</strong> ${selectedPatient.sex || 'N/A'}</p>
+                              <p><strong>Contact:</strong> ${selectedPatient.contactNumber || 'N/A'}</p>
+                              <p><strong>Address:</strong> ${selectedPatient.address || 'N/A'}</p>
+                              <p><strong>Total Visits:</strong> ${patVisits.length}</p>
+                            </div>
+                            ${patVisits.length === 0 ? '<p style="color:#999;text-align:center;padding:20px">No visit records found.</p>' :
+                              patVisits.map(v => `
+                                <div class="visit">
+                                  <div class="visit-header">
+                                    <span class="visit-service">${v.service || 'N/A'}</span>
+                                    <span class="badge">${v.priority || 'Regular'}</span>
+                                  </div>
+                                  <p class="visit-date">📅 ${v.visitDate ? new Date(v.visitDate).toLocaleDateString('en-PH', {weekday:'long',year:'numeric',month:'long',day:'numeric'}) : 'N/A'}</p>
+                                  ${v.serviceCategory ? `<p class="visit-detail"><strong>Category:</strong> ${v.serviceCategory}</p>` : ''}
+                                  ${v.chiefComplaint ? `<p class="visit-detail"><strong>Reason for Visit:</strong> ${v.chiefComplaint}</p>` : ''}
+                                  ${v.diagnosis ? `<p class="visit-detail"><strong>Diagnosis:</strong> ${v.diagnosis}</p>` : ''}
+                                  ${v.treatment ? `<p class="visit-detail"><strong>Treatment:</strong> ${v.treatment}</p>` : ''}
+                                  ${v.prescription ? `<p class="visit-detail"><strong>Prescription:</strong> ${v.prescription}</p>` : ''}
+                                  ${v.notes ? `<p class="visit-detail"><strong>Notes:</strong> ${v.notes}</p>` : ''}
+                                </div>`).join('')}
+                            <div class="footer">
+                              Printed on ${new Date().toLocaleDateString('en-PH', {year:'numeric',month:'long',day:'numeric',hour:'2-digit',minute:'2-digit'})} &nbsp;|&nbsp; HealthTrack — FOR CAPSTONE PROJECT USE ONLY
+                            </div>
+                            </body></html>`);
+                          win.document.close();
+                          win.focus();
+                          setTimeout(() => { win.print(); }, 500);
+                        };
+
                         return (
                           <div className="mt-6 pt-4 border-t">
-                            <h3 className="text-base font-bold text-gray-800 mb-3 flex items-center gap-2">
-                              📋 Visit History
-                              <span className="text-xs font-normal bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">{patVisits.length} record{patVisits.length !== 1 ? 's' : ''}</span>
-                            </h3>
+                            <div className="flex items-center justify-between mb-3">
+                              <h3 className="text-base font-bold text-gray-800 flex items-center gap-2">
+                                📋 Visit History
+                                <span className="text-xs font-normal bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">{patVisits.length} record{patVisits.length !== 1 ? 's' : ''}</span>
+                              </h3>
+                              {patVisits.length > 0 && (
+                                <button onClick={printHistory}
+                                  className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors">
+                                  🖨️ Print / Save PDF
+                                </button>
+                              )}
+                            </div>
                             {patVisits.length === 0 ? (
                               <p className="text-sm text-gray-400 italic py-3 text-center">No visit records yet.</p>
                             ) : (
