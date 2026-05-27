@@ -3908,6 +3908,59 @@ function normalizeUser(u) {
                   {/* Visit History View */}
                   {residentView === 'history' && (() => {
                     const myVisits = getResidentVisitHistory();
+
+                    const printMyHistory = () => {
+                      const win = window.open('', '_blank');
+                      win.document.write(`
+                        <html><head><title>My Visit History - ${currentUser?.fullName || currentUser?.username}</title>
+                        <style>
+                          body { font-family: Arial, sans-serif; padding: 24px; color: #333; }
+                          .header { border-bottom: 3px solid #cc0000; padding-bottom: 16px; margin-bottom: 20px; }
+                          h1 { color: #cc0000; font-size: 22px; margin: 0; }
+                          h2 { font-size: 13px; color: #555; margin: 4px 0 0; }
+                          .patient-info { background: #f8f8f8; border: 1px solid #ddd; border-radius: 8px; padding: 14px; margin-bottom: 20px; }
+                          .visit { border: 1px solid #e0e0e0; border-radius: 8px; padding: 14px; margin-bottom: 14px; page-break-inside: avoid; }
+                          .visit-header { display: flex; justify-content: space-between; margin-bottom: 6px; }
+                          .visit-service { font-weight: bold; font-size: 14px; color: #cc0000; }
+                          .visit-date { font-size: 12px; color: #888; }
+                          .visit-detail { font-size: 13px; margin: 3px 0; }
+                          .badge { background: #cc0000; color: white; font-size: 11px; padding: 2px 8px; border-radius: 12px; }
+                          .footer { margin-top: 30px; border-top: 1px solid #ddd; padding-top: 12px; font-size: 11px; color: #999; text-align: center; }
+                        </style></head><body>
+                        <div class="header">
+                          <h1>HealthTrack</h1>
+                          <h2>Patient Information System with Queueing</h2>
+                          <h2>Barangay Upper Bicutan Health Clinics - City of Taguig</h2>
+                          <h2 style="margin-top:10px;font-size:15px;color:#333;">My Visit History Report</h2>
+                        </div>
+                        <div class="patient-info">
+                          <p><strong>Name:</strong> ${currentUser?.fullName || currentUser?.username}</p>
+                          <p><strong>Total Visits:</strong> ${myVisits.length}</p>
+                        </div>
+                        ${myVisits.length === 0 ? '<p style="color:#999;text-align:center;">No visit records found.</p>' :
+                          myVisits.map(v => `
+                            <div class="visit">
+                              <div class="visit-header">
+                                <span class="visit-service">${v.service || 'N/A'}</span>
+                                <span class="badge">${v.priority || 'Regular'}</span>
+                              </div>
+                              <p class="visit-date">📅 ${v.visitDate ? new Date(v.visitDate).toLocaleDateString('en-PH', {weekday:'long',year:'numeric',month:'long',day:'numeric'}) : 'N/A'}</p>
+                              ${v.serviceCategory ? `<p class="visit-detail"><strong>Category:</strong> ${v.serviceCategory}</p>` : ''}
+                              ${v.chiefComplaint ? `<p class="visit-detail"><strong>Reason for Visit:</strong> ${v.chiefComplaint}</p>` : ''}
+                              ${v.diagnosis ? `<p class="visit-detail"><strong>Diagnosis:</strong> ${v.diagnosis}</p>` : ''}
+                              ${v.treatment ? `<p class="visit-detail"><strong>Treatment:</strong> ${v.treatment}</p>` : ''}
+                              ${v.attendedBy ? `<p class="visit-detail"><strong>Attended by:</strong> ${v.attendedBy}</p>` : ''}
+                              ${v.notes ? `<p class="visit-detail"><strong>Notes:</strong> ${v.notes}</p>` : ''}
+                            </div>`).join('')}
+                        <div class="footer">
+                          Printed on ${new Date().toLocaleDateString('en-PH', {year:'numeric',month:'long',day:'numeric',hour:'2-digit',minute:'2-digit'})} | HealthTrack — FOR CAPSTONE PROJECT USE ONLY
+                        </div>
+                        </body></html>`);
+                      win.document.close();
+                      win.focus();
+                      setTimeout(() => win.print(), 500);
+                    };
+
                     return (
                     <div className="space-y-4">
                       <div className="bg-white rounded-xl shadow-md p-6">
@@ -3916,7 +3969,13 @@ function normalizeUser(u) {
                             <h2 className="text-xl font-bold text-gray-800">My Visit History</h2>
                             <p className="text-sm text-gray-500 mt-0.5">All your completed clinic visits and transactions</p>
                           </div>
-                          <span className="bg-gray-100 text-gray-600 text-xs px-3 py-1.5 rounded-full font-medium">{myVisits.length} record{myVisits.length !== 1 ? 's' : ''}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="bg-gray-100 text-gray-600 text-xs px-3 py-1.5 rounded-full font-medium">{myVisits.length} record{myVisits.length !== 1 ? 's' : ''}</span>
+                            <button onClick={printMyHistory}
+                              className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors">
+                              🖨️ Print / Save PDF
+                            </button>
+                          </div>
                         </div>
 
                         {myVisits.length === 0 ? (
