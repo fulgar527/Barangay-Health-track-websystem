@@ -676,13 +676,15 @@ function normalizeUser(u) {
           const handleForgotPassword = async (e) => {
             e.preventDefault();
             setForgotError('');
-            // Use ref to get current method (avoids stale closure issue)
-            const currentMethod = forgotMethodRef.current;
-            if (currentMethod === 'email') {
-              if (!forgotEmail.trim()) { setForgotError('Please enter your email address.'); return; }
-            } else {
-              if (!forgotMobile.trim()) { setForgotError('Please enter your mobile number.'); return; }
+            // Detect which field the user filled in — bulletproof approach
+            const hasEmail = forgotEmail.trim().length > 0;
+            const hasMobile = forgotMobile.trim().length > 0;
+            if (!hasEmail && !hasMobile) {
+              setForgotError('Please enter your email address or mobile number.');
+              return;
             }
+            // Use whichever field has content (mobile takes priority if both filled)
+            const currentMethod = hasMobile ? 'mobile' : 'email';
             setForgotLoading(true); setForgotError(''); setForgotStatus('');
             try {
               const body = currentMethod === 'email'
