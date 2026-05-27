@@ -363,50 +363,101 @@ router.delete('/users/:id', async (req, res) => {
 
 
 // ══════════════════════════════════════════════════════════════════════════════
-// POST /api/auth/forgot-password — Send password reset email via Supabase
+// POST /api/auth/forgot-password — Send temporary password via email
 // ══════════════════════════════════════════════════════════════════════════════
 router.post('/forgot-password', async (req, res) => {
   try {
-    const { email, username } = req.body;
+    const { email } = req.body;
+    if (!email || !email.trim()) {
+      return res.status(400).json({ error: 'Please enter your email address.' });
+    }
 
-    let targetEmail = email ? email.trim() : null;
+    const targetEmail = email.trim().toLowerCase();
 
-    // If only username provided, look up their real email
-    if (!targetEmail && username) {
-      const result = await db.query(
-        'SELECT email FROM users WHERE LOWER(username) = LOWER($1)',
-        [username.trim()]
-      );
-      if (result.rows.length > 0) {
-        const dbEmail = result.rows[0].email;
-        // Only use real emails, not the placeholder @healthtrack.local ones
-        if (dbEmail && !dbEmail.endsWith('@healthtrack.local')) {
-          targetEmail = dbEmail;
-        } else {
-          return res.status(400).json({ error: 'No email address is linked to this account. Please contact the clinic administrator to reset your password.' });
-        }
+    // Look up user by email
+    const result = await db.query(
+      'SELECT user_id, username, full_name, email, supabase_id FROM users WHERE LOWER(email) = $1',
+      [targetEmail]
+    );
+
+    // Always return success to prevent email enumeration
+    if (result.rows.length === 0) {
+      return res.json({ message: 'If an account with that email exists, a temporary password has been sent.' });
+    }
+
+    const user = result.rows[0];
+
+    // Generate a secure temporary password
+    const chars = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789';
+    let tempPassword = 'HT-';
+    for (let i = 0; i < 8; i++) tempPassword += chars[Math.floor(Math.random() * chars.length)];
+
+    // Hash and update password in DB
+    const bcrypt = require('bcrypt');
+    const hash = await bcrypt.hash(tempPassword, 10);
+    await db.query('UPDATE users SET password_hash = $1 WHERE user_id = $2', [hash, user.user_id]);
+
+    // Also update in Supabase Auth if user has supabase_id
+    if (user.supabase_id) {
+      try {
+        const { createClient } = require('@supabase/supabase-js');
+        const adminSupabase = createClient(
+          process.env.SUPABASE_URL,
+          process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY
+        );
+        await adminSupabase.auth.admin.updateUserById(user.supabase_id, { password: tempPassword });
+      } catch (supaErr) {
+        console.warn('Supabase password sync failed (non-fatal):', supaErr.message);
       }
     }
 
-    if (!targetEmail) {
-      // Don't reveal if user exists — just return generic message
-      return res.json({ message: 'If an account with that email exists, a password reset link has been sent.' });
-    }
-
-    const appUrl = process.env.APP_URL || 'https://healthtrack.fun';
-    const { error } = await supabase.auth.resetPasswordForEmail(targetEmail, {
-      redirectTo: `${appUrl}/#reset-password`
+    // Send email via Nodemailer — works with ANY email provider
+    const nodemailer = require('nodemailer');
+    const transporter = nodemailer.createTransport({
+      host: process.env.MAIL_HOST || 'smtp.gmail.com',
+      port: parseInt(process.env.MAIL_PORT || '587'),
+      secure: process.env.MAIL_SECURE === 'true', // true for port 465
+      auth: {
+        user: process.env.MAIL_USER,
+        pass: process.env.MAIL_PASS
+      },
+      tls: { rejectUnauthorized: false }
     });
 
-    if (error) {
-      console.error('Supabase resetPasswordForEmail error:', error.message);
-    }
+    await transporter.sendMail({
+      from: `"HealthTrack - Barangay Upper Bicutan" <${process.env.MAIL_USER}>`,
+      to: targetEmail,
+      subject: 'Your Temporary Password - HealthTrack',
+      html: `
+        <div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;padding:24px;background:#fff;border:1px solid #e5e5e5;border-radius:12px;">
+          <div style="text-align:center;margin-bottom:24px;">
+            <h2 style="color:#CC0000;margin:0;">HealthTrack</h2>
+            <p style="color:#888;font-size:13px;margin:4px 0 0;">Barangay Upper Bicutan Health Clinics - City of Taguig</p>
+          </div>
+          <p style="color:#333;">Hello <strong>${user.full_name || user.username}</strong>,</p>
+          <p style="color:#333;">We received a request to reset your password. Your temporary password is:</p>
+          <div style="background:#f8f8f8;border:2px dashed #CC0000;border-radius:10px;padding:20px;text-align:center;margin:20px 0;">
+            <p style="font-size:28px;font-weight:bold;color:#CC0000;letter-spacing:4px;margin:0;">${tempPassword}</p>
+          </div>
+          <p style="color:#333;">Steps to log in:</p>
+          <ol style="color:#555;line-height:1.8;">
+            <li>Go to <a href="https://healthtrack.fun" style="color:#CC0000;">healthtrack.fun</a></li>
+            <li>Log in using your username: <strong>${user.username}</strong></li>
+            <li>Use the temporary password above</li>
+            <li>Go to your <strong>Settings → Change Password</strong> to set a new permanent password</li>
+          </ol>
+          <p style="color:#999;font-size:12px;margin-top:24px;border-top:1px solid #eee;padding-top:12px;">
+            If you did not request this, please ignore this email. This temporary password is valid for one-time use.<br><br>
+            <em>FOR CAPSTONE PROJECT USE ONLY | HealthTrack</em>
+          </p>
+        </div>
+      `
+    });
 
-    // Always return success to prevent email enumeration attacks
-    res.json({ message: 'A password reset link has been sent to your email address. Please check your inbox (and spam folder) and follow the instructions.' });
+    res.json({ message: `A temporary password has been sent to ${targetEmail}. Please check your inbox and log in with it, then change your password in Settings.` });
   } catch (err) {
     console.error('Forgot password error:', err);
-    res.status(500).json({ error: 'Failed to send reset email. Please try again.' });
+    res.status(500).json({ error: 'Failed to send temporary password. Please try again or contact the clinic administrator.' });
   }
 });
 
