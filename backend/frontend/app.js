@@ -810,6 +810,22 @@ function normalizeUser(u) {
             saveServiceCategories(updated);
           };
 
+                    // ── Header patient search ────────────────────────────────────────────
+          const handleHeaderSearch = (val) => {
+            setHeaderSearch(val);
+            if (!val.trim()) { setHeaderSearchResults([]); setHeaderSearchOpen(false); return; }
+            const q = val.toLowerCase().trim();
+            const results = registeredPatients.filter(p =>
+              (p.firstName + ' ' + p.lastName).toLowerCase().includes(q) ||
+              (p.lastName + ' ' + p.firstName).toLowerCase().includes(q) ||
+              (p.patientId || '').toLowerCase().includes(q) ||
+              (p.contactNumber || '').includes(q) ||
+              (p.middleName || '').toLowerCase().includes(q)
+            ).slice(0, 8);
+            setHeaderSearchResults(results);
+            setHeaderSearchOpen(results.length > 0);
+          };
+
                     // ── Audit logger — writes to backend (fire-and-forget) ──────────────
           const writeAudit = (action, details = '') => {
             // Best-effort: POST to /api/audit. Never blocks UI.
@@ -1003,10 +1019,10 @@ function normalizeUser(u) {
 
           // ── Close settings menu on outside click ───────────────────────────
           React.useEffect(() => {
-            const close = () => setShowSettingsMenu(false);
-            if (showSettingsMenu) document.addEventListener('click', close);
+            const close = () => { setShowSettingsMenu(false); setHeaderSearchOpen(false); };
+            if (showSettingsMenu || headerSearchOpen) document.addEventListener('click', close);
             return () => document.removeEventListener('click', close);
-          }, [showSettingsMenu]);
+          }, [showSettingsMenu, headerSearchOpen]);
 
           // Handle Create Account (alias kept for form onSubmit)
           const handleCreateAccount = handleSendOTP;
@@ -1083,6 +1099,9 @@ function normalizeUser(u) {
           const [showRegisterPatient, setShowRegisterPatient] = useState(false);
           const [showAddToQueue, setShowAddToQueue] = useState(false);
           const [selectedPatient, setSelectedPatient] = useState(null);
+          const [headerSearch, setHeaderSearch] = useState('');
+          const [headerSearchOpen, setHeaderSearchOpen] = useState(false);
+          const [headerSearchResults, setHeaderSearchResults] = useState([]);
           const [searchTerm, setSearchTerm] = useState('');
           const [editingPatient, setEditingPatient] = useState(null);
           
@@ -4224,7 +4243,64 @@ function normalizeUser(u) {
                         <p className="text-sm" style={{color:'rgba(255,255,255,0.85)'}}>Patient Information System with Queueing for Barangay Upper Bicutan Health Clinics - City of Taguig</p>
                       </div>
                     </div>
-                    <div className="flex items-center space-x-2">
+                    <div className="flex items-center gap-3">
+
+                      {/* ── Patient Quick Search ── */}
+                      <div className="relative hidden md:block" onClick={e => e.stopPropagation()}>
+                        <div className="flex items-center bg-white/15 hover:bg-white/25 rounded-xl px-3 py-2 transition-colors">
+                          <svg className="w-4 h-4 text-white/70 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                          </svg>
+                          <input
+                            type="text"
+                            value={headerSearch}
+                            onChange={e => handleHeaderSearch(e.target.value)}
+                            onFocus={() => headerSearch && setHeaderSearchOpen(true)}
+                            placeholder="Search patient..."
+                            className="bg-transparent text-white placeholder-white/60 text-sm outline-none w-48 focus:w-64 transition-all"
+                          />
+                          {headerSearch && (
+                            <button onClick={() => { setHeaderSearch(''); setHeaderSearchResults([]); setHeaderSearchOpen(false); }}
+                              className="text-white/60 hover:text-white ml-1 text-lg leading-none">×</button>
+                          )}
+                        </div>
+
+                        {/* Search Results Dropdown */}
+                        {headerSearchOpen && headerSearchResults.length > 0 && (
+                          <div className="absolute right-0 top-full mt-2 w-80 bg-white rounded-xl shadow-2xl border border-gray-100 z-50 overflow-hidden">
+                            <div className="px-4 py-2 bg-gray-50 border-b">
+                              <p className="text-xs font-semibold text-gray-500">{headerSearchResults.length} patient{headerSearchResults.length !== 1 ? 's' : ''} found</p>
+                            </div>
+                            <div className="max-h-72 overflow-y-auto">
+                              {headerSearchResults.map(p => {
+                                const patientVisits = visitLog.filter(v => v.patientId === p.patientId);
+                                return (
+                                  <button key={p.patientId}
+                                    onClick={() => { setSelectedPatient(p); setHeaderSearch(''); setHeaderSearchResults([]); setHeaderSearchOpen(false); setActiveTab('patients'); }}
+                                    className="w-full flex items-center gap-3 px-4 py-3 hover:bg-blue-50 transition-colors text-left border-b border-gray-50 last:border-0">
+                                    <div className="w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-base flex-shrink-0"
+                                      style={{background:'var(--ht-primary)'}}>
+                                      {p.firstName?.[0]?.toUpperCase()}
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                      <p className="text-sm font-bold text-gray-800 truncate">{p.firstName} {p.middleName ? p.middleName + ' ' : ''}{p.lastName}</p>
+                                      <p className="text-xs text-gray-500">{p.patientId} · {p.age || 'N/A'}y · {p.sex || 'N/A'}</p>
+                                      <p className="text-xs text-gray-400">{p.contactNumber || 'No contact'} · {patientVisits.length} visit{patientVisits.length !== 1 ? 's' : ''}</p>
+                                    </div>
+                                    <svg className="w-4 h-4 text-gray-300 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                    </svg>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                            <div className="px-4 py-2 bg-gray-50 border-t">
+                              <p className="text-xs text-gray-400">Click a patient to view their full profile</p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
                       <div className="relative">
                         <button onClick={(e) => { e.stopPropagation(); setShowSettingsMenu(v => !v); }}
                           className="flex items-center gap-2 hover:bg-white/10 rounded-xl px-3 py-2 transition-colors cursor-pointer">
@@ -6147,6 +6223,39 @@ function normalizeUser(u) {
                           </div>
                         </div>
                       </div>
+
+                      {/* Visit History Section */}
+                      {(() => {
+                        const patVisits = visitLog
+                          .filter(v => v.patientId === selectedPatient.patientId)
+                          .sort((a, b) => new Date(b.visitDate) - new Date(a.visitDate));
+                        return (
+                          <div className="mt-6 pt-4 border-t">
+                            <h3 className="text-base font-bold text-gray-800 mb-3 flex items-center gap-2">
+                              📋 Visit History
+                              <span className="text-xs font-normal bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">{patVisits.length} record{patVisits.length !== 1 ? 's' : ''}</span>
+                            </h3>
+                            {patVisits.length === 0 ? (
+                              <p className="text-sm text-gray-400 italic py-3 text-center">No visit records yet.</p>
+                            ) : (
+                              <div className="space-y-3 max-h-60 overflow-y-auto pr-1">
+                                {patVisits.map((v, i) => (
+                                  <div key={i} className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-3">
+                                    <div className="flex items-center justify-between mb-1">
+                                      <p className="text-sm font-semibold text-gray-800">{v.service}</p>
+                                      <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${priorityLevels[v.priority]?.color || 'bg-gray-400'} text-white`}>{v.priority}</span>
+                                    </div>
+                                    <p className="text-xs text-gray-500">{new Date(v.visitDate).toLocaleDateString('en-PH', {year:'numeric',month:'long',day:'numeric'})}</p>
+                                    {v.chiefComplaint && <p className="text-xs text-gray-600 mt-1"><span className="font-medium">Reason:</span> {v.chiefComplaint}</p>}
+                                    {v.diagnosis && <p className="text-xs text-gray-600"><span className="font-medium">Diagnosis:</span> {v.diagnosis}</p>}
+                                    {v.treatment && <p className="text-xs text-gray-600"><span className="font-medium">Treatment:</span> {v.treatment}</p>}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
 
                       <div className="flex justify-end mt-6 pt-4 border-t">
                         <button
