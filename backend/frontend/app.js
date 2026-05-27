@@ -2507,8 +2507,9 @@ function normalizeUser(u) {
                             <div className="grid grid-cols-2 gap-3 mb-3">
                               <div>
                                 <label className="block text-xs font-medium text-gray-600 mb-1">Contact Number <span className="text-red-500">*</span></label>
-                                <input type="text" value={newAccount.contactNumber} onChange={(e) => setNewAccount({...newAccount, contactNumber: e.target.value})}
-                                  placeholder="09XXXXXXXXX"
+                                <input type="text" value={newAccount.contactNumber}
+                                  onChange={(e) => setNewAccount({...newAccount, contactNumber: e.target.value.replace(/[^0-9+\-\s]/g, '').slice(0,13)})}
+                                  placeholder="09XXXXXXXXX" maxLength={13}
                                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-400 focus:border-transparent" />
                               </div>
                               <div>
@@ -2527,8 +2528,9 @@ function normalizeUser(u) {
                               </div>
                               <div>
                                 <label className="block text-xs font-medium text-gray-600 mb-1">Emergency Contact Number</label>
-                                <input type="text" value={newAccount.emergencyContactNumber} onChange={(e) => setNewAccount({...newAccount, emergencyContactNumber: e.target.value})}
-                                  placeholder="09XXXXXXXXX"
+                                <input type="text" value={newAccount.emergencyContactNumber}
+                                  onChange={(e) => setNewAccount({...newAccount, emergencyContactNumber: e.target.value.replace(/[^0-9+\-\s]/g, '').slice(0,13)})}
+                                  placeholder="09XXXXXXXXX" maxLength={13}
                                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-400 focus:border-transparent" />
                               </div>
                             </div>
