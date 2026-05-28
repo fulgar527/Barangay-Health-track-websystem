@@ -315,7 +315,7 @@ router.post('/', async (req, res) => {
 
     // ────── AUDIT LOG (NON-CRITICAL) ──────
     try {
-      await logAudit(db, req.user?.id, 'ADD_QUEUE', 'queue', result.rows[0].queue_id, 
+      await logAudit(db, req.user?.username, 'ADD_QUEUE', 'queue', result.rows[0].queue_id, 
         { patientId, serviceName, priority }, req.ip);
     } catch (auditErr) {
       console.warn('⚠️  Audit log failed (non-critical):', auditErr.message);
@@ -361,7 +361,7 @@ router.patch('/:queueId/status', async (req, res) => {
       return res.status(404).json({ error: 'Queue entry not found' });
     }
 
-    await logAudit(db, req.user?.id, `QUEUE_${status.toUpperCase().replace(' ','_')}`, 'queue', queueId,
+    await logAudit(db, req.user?.username, `QUEUE_${status.toUpperCase().replace(' ','_')}`, 'queue', queueId,
       { status, rejectedReason: req.body.rejectedReason || null }, req.ip);
     res.json(result.rows[0]);
   } catch (err) {
@@ -470,7 +470,7 @@ router.put('/:queueId', async (req, res) => {
 
     if (result.rows.length === 0) return res.status(404).json({ error: 'Queue entry not found' });
 
-    await logAudit(db, req.user?.id, 'EDIT_QUEUE', 'queue', queueId, 
+    await logAudit(db, req.user?.username, 'EDIT_QUEUE', 'queue', queueId, 
       { serviceName, appointmentDate, appointmentTime }, req.ip);
     res.json(result.rows[0]);
   } catch (err) {
@@ -492,7 +492,7 @@ router.delete('/:queueId', async (req, res) => {
       return res.status(404).json({ error: 'Queue entry not found' });
     }
 
-    await logAudit(db, req.user?.id, 'DELETE_QUEUE', 'queue', queueId, {}, req.ip);
+    await logAudit(db, req.user?.username, 'DELETE_QUEUE', 'queue', queueId, {}, req.ip);
     res.json({ message: 'Queue entry deleted successfully' });
   } catch (err) {
     console.error('❌ DELETE /queue/:queueId failed:', err.message);
