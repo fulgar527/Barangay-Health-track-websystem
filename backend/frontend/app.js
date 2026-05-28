@@ -415,7 +415,16 @@ function normalizeUser(u) {
         }
 
         
-        // ── Avatar color palette ────────────────────────────────────────────
+        // ── Default Doctors ───────────────────────────────────────────────────
+        const DEFAULT_DOCTORS = [
+          { id: 'doc-1', name: 'Dr. Maria Santos', specialty: 'General Physician', schedules: [{day:'Monday',start:'08:00',end:'17:00'},{day:'Wednesday',start:'08:00',end:'17:00'},{day:'Friday',start:'08:00',end:'17:00'}], enabled: true },
+          { id: 'doc-2', name: 'Dr. Jose Reyes', specialty: 'Pediatrician', schedules: [{day:'Tuesday',start:'09:00',end:'16:00'},{day:'Thursday',start:'09:00',end:'16:00'}], enabled: true },
+          { id: 'doc-3', name: 'Dr. Ana Garcia', specialty: 'OB-GYN', schedules: [{day:'Monday',start:'08:00',end:'12:00'},{day:'Wednesday',start:'13:00',end:'17:00'},{day:'Friday',start:'08:00',end:'17:00'}], enabled: true },
+        ];
+        const DAYS_OF_WEEK = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+        const SPECIALTIES = ['General Physician','Pediatrician','OB-GYN','Dentist','Cardiologist','Dermatologist','Ophthalmologist','ENT Specialist','Orthopedic','Nurse Practitioner','Other'];
+
+                // ── Avatar color palette ────────────────────────────────────────────
         const AVATAR_COLORS = ['#b91c1c','#1d4ed8','#047857','#7c3aed','#c2410c','#0e7490','#be185d','#4338ca','#065f46','#92400e'];
 
         // ── Philippine Public Holidays (Regular + Special Non-Working) ────────
@@ -1112,7 +1121,32 @@ function normalizeUser(u) {
           ];
 
           // Returns Set of booked time-values for a given date (excluding an optional appointment id)
-          // ── Service Management State (admin-configurable) ───────────────
+          // ── Doctors State ────────────────────────────────────────────────────
+          const [doctors, setDoctors] = React.useState(() => {
+            try { const s = localStorage.getItem('ht_doctors'); return s ? JSON.parse(s) : DEFAULT_DOCTORS; } catch { return DEFAULT_DOCTORS; }
+          });
+          const saveDoctors = (updated) => { setDoctors(updated); try { localStorage.setItem('ht_doctors', JSON.stringify(updated)); } catch {} };
+
+          // ── Doctor Management States ──────────────────────────────────────────
+          const [showDoctorMgmt, setShowDoctorMgmt] = useState(false);
+          const [doctorForm, setDoctorForm] = useState({ id:'', name:'', specialty:'General Physician', schedules:[], enabled:true });
+          const [editingDoctorId, setEditingDoctorId] = useState(null);
+          const [doctorMsg, setDoctorMsg] = useState('');
+
+          // ── Helper: is doctor available today ───────────────────────────────
+          const isDoctorAvailableToday = (doctor) => {
+            if (!doctor.enabled) return false;
+            const today = new Date().toLocaleDateString('en-US', {weekday:'long'});
+            return doctor.schedules.some(s => s.day === today);
+          };
+          const getDoctorScheduleDisplay = (doctor) => {
+            if (!doctor.schedules || doctor.schedules.length === 0) return 'No schedule set';
+            const days = doctor.schedules.map(s => s.day.slice(0,3)).join(', ');
+            const first = doctor.schedules[0];
+            return `${days} · ${first.start} - ${first.end}`;
+          };
+
+                    // ── Service Management State (admin-configurable) ───────────────
           const [serviceCategories, setServiceCategories] = React.useState(() => {
             try {
               const saved = localStorage.getItem('ht_service_categories');
@@ -2925,6 +2959,10 @@ function normalizeUser(u) {
                                   className="w-full flex items-center gap-3 px-4 py-3 text-sm text-blue-700 hover:bg-blue-50 transition-colors text-left font-semibold">
                                   <span>⚙️</span> Service Management
                                 </button>
+                                <button onClick={() => { setShowSettingsMenu(false); setDoctorMsg(''); setDoctorForm({id:'',name:'',specialty:'General Physician',schedules:[],enabled:true}); setEditingDoctorId(null); setShowDoctorMgmt(true); }}
+                                  className="w-full flex items-center gap-3 px-4 py-3 text-sm text-green-700 hover:bg-green-50 transition-colors text-left font-semibold">
+                                  <span>👨‍⚕️</span> Doctor Management
+                                </button>
                               </div>
                             )}
                             <div className="border-t">
@@ -3782,6 +3820,31 @@ function normalizeUser(u) {
                             </div>
                           )}
 
+                          {/* ── AVAILABLE DOCTORS TODAY ── */}
+                          {(() => {
+                            const availableDocs = doctors.filter(d => isDoctorAvailableToday(d));
+                            if (availableDocs.length === 0) return null;
+                            return (
+                              <div className="bg-green-50 border border-green-200 rounded-xl p-4">
+                                <p className="text-sm font-bold text-green-800 mb-3">👨‍⚕️ Available Doctors Today</p>
+                                <div className="space-y-2">
+                                  {availableDocs.map(doc => (
+                                    <div key={doc.id} className="flex items-center gap-3 bg-white rounded-lg px-3 py-2 border border-green-100">
+                                      <div className="w-8 h-8 rounded-full bg-green-600 text-white flex items-center justify-center text-sm font-bold flex-shrink-0">
+                                        {doc.name.split(' ').slice(-1)[0][0]}
+                                      </div>
+                                      <div className="flex-1 min-w-0">
+                                        <p className="text-sm font-semibold text-gray-800">{doc.name}</p>
+                                        <p className="text-xs text-gray-500">{doc.specialty} · {getDoctorScheduleDisplay(doc)}</p>
+                                      </div>
+                                      <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-semibold flex-shrink-0">✓ Available</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            );
+                          })()}
+
                           {/* ── APPOINTMENT SCHEDULE (always shown) ── */}
                           <div>
                             <h3 className="text-base font-bold text-gray-800 mb-3 pb-2 border-b border-gray-200">Appointment Schedule</h3>
@@ -4033,7 +4096,149 @@ function normalizeUser(u) {
           return (
             <div className="min-h-screen bg-gray-50">
 
-              {/* ===== SERVICE MANAGEMENT MODAL ===== */}
+              {/* ===== DOCTOR MANAGEMENT MODAL ===== */}
+              {showDoctorMgmt && (
+                <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4" onClick={() => setShowDoctorMgmt(false)}>
+                  <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+                    <div className="flex items-center justify-between px-6 py-4 border-b flex-shrink-0" style={{background:'linear-gradient(to right,#047857,#065f46)'}}>
+                      <div>
+                        <h2 className="text-white font-bold text-lg">👨‍⚕️ Doctor Management</h2>
+                        <p className="text-white/80 text-xs mt-0.5">Manage clinic doctors and their schedules</p>
+                      </div>
+                      <button onClick={() => setShowDoctorMgmt(false)} className="text-white/80 hover:text-white text-2xl font-bold">&times;</button>
+                    </div>
+                    <div className="flex-1 overflow-y-auto p-6 space-y-4">
+                      {doctorMsg && (
+                        <div className={`px-4 py-2 rounded-lg text-sm font-medium ${doctorMsg.startsWith('✓') ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+                          {doctorMsg}
+                        </div>
+                      )}
+
+                      {/* Add / Edit Doctor Form */}
+                      <div className="bg-green-50 border border-green-200 rounded-xl p-4">
+                        <p className="text-sm font-bold text-green-800 mb-3">{editingDoctorId ? '✏️ Edit Doctor' : '➕ Add New Doctor'}</p>
+                        <div className="grid grid-cols-2 gap-3 mb-3">
+                          <div className="col-span-2">
+                            <label className="block text-xs font-semibold text-gray-700 mb-1">Full Name <span className="text-red-500">*</span></label>
+                            <input type="text" value={doctorForm.name} onChange={e => setDoctorForm(f=>({...f,name:e.target.value}))}
+                              placeholder="e.g. Dr. Maria Santos"
+                              className="w-full px-3 py-2 border border-green-300 rounded-lg text-sm focus:ring-2 focus:ring-green-400" />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-700 mb-1">Specialty</label>
+                            <select value={doctorForm.specialty} onChange={e => setDoctorForm(f=>({...f,specialty:e.target.value}))}
+                              className="w-full px-3 py-2 border border-green-300 rounded-lg text-sm">
+                              {SPECIALTIES.map(s => <option key={s} value={s}>{s}</option>)}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-700 mb-1">Status</label>
+                            <select value={doctorForm.enabled ? 'active' : 'inactive'} onChange={e => setDoctorForm(f=>({...f,enabled:e.target.value==='active'}))}
+                              className="w-full px-3 py-2 border border-green-300 rounded-lg text-sm">
+                              <option value="active">● Active</option>
+                              <option value="inactive">○ Inactive</option>
+                            </select>
+                          </div>
+                        </div>
+
+                        {/* Schedule Builder */}
+                        <div className="mb-3">
+                          <label className="block text-xs font-semibold text-gray-700 mb-2">Weekly Schedule</label>
+                          <div className="space-y-2">
+                            {DAYS_OF_WEEK.slice(0,5).map(day => {
+                              const existing = doctorForm.schedules.find(s => s.day === day);
+                              return (
+                                <div key={day} className="flex items-center gap-2">
+                                  <input type="checkbox" checked={!!existing}
+                                    onChange={e => {
+                                      if (e.target.checked) setDoctorForm(f=>({...f,schedules:[...f.schedules,{day,start:'08:00',end:'17:00'}]}));
+                                      else setDoctorForm(f=>({...f,schedules:f.schedules.filter(s=>s.day!==day)}));
+                                    }}
+                                    className="w-4 h-4 rounded" />
+                                  <span className="text-xs font-medium text-gray-700 w-20">{day}</span>
+                                  {existing && (
+                                    <>
+                                      <input type="time" value={existing.start}
+                                        onChange={e => setDoctorForm(f=>({...f,schedules:f.schedules.map(s=>s.day===day?{...s,start:e.target.value}:s)}))}
+                                        className="px-2 py-1 border border-gray-300 rounded text-xs" />
+                                      <span className="text-xs text-gray-400">to</span>
+                                      <input type="time" value={existing.end}
+                                        onChange={e => setDoctorForm(f=>({...f,schedules:f.schedules.map(s=>s.day===day?{...s,end:e.target.value}:s)}))}
+                                        className="px-2 py-1 border border-gray-300 rounded text-xs" />
+                                    </>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        <div className="flex gap-2">
+                          {editingDoctorId && (
+                            <button onClick={() => { setEditingDoctorId(null); setDoctorForm({id:'',name:'',specialty:'General Physician',schedules:[],enabled:true}); }}
+                              className="px-4 py-2 bg-gray-200 text-gray-700 text-sm font-semibold rounded-lg">Cancel</button>
+                          )}
+                          <button onClick={() => {
+                            if (!doctorForm.name.trim()) { setDoctorMsg('Doctor name is required.'); return; }
+                            if (editingDoctorId) {
+                              saveDoctors(doctors.map(d => d.id === editingDoctorId ? {...doctorForm, id: editingDoctorId} : d));
+                              setDoctorMsg('✓ Doctor updated successfully!');
+                            } else {
+                              const newDoc = {...doctorForm, id: 'doc-' + Date.now()};
+                              saveDoctors([...doctors, newDoc]);
+                              setDoctorMsg('✓ Doctor added successfully!');
+                            }
+                            setEditingDoctorId(null);
+                            setDoctorForm({id:'',name:'',specialty:'General Physician',schedules:[],enabled:true});
+                          }}
+                            className="flex-1 px-4 py-2 text-white text-sm font-semibold rounded-lg" style={{background:'#047857'}}>
+                            {editingDoctorId ? 'Update Doctor' : 'Add Doctor'}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Doctor List */}
+                      <div className="space-y-3">
+                        <p className="text-sm font-bold text-gray-700">{doctors.length} Doctor{doctors.length !== 1 ? 's' : ''} Registered</p>
+                        {doctors.length === 0 ? (
+                          <p className="text-sm text-gray-400 text-center py-4 italic">No doctors added yet.</p>
+                        ) : doctors.map(doc => (
+                          <div key={doc.id} className={`border rounded-xl p-4 ${doc.enabled ? 'bg-white border-gray-200' : 'bg-gray-50 border-gray-200 opacity-60'}`}>
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex-1">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <p className="font-bold text-gray-800 text-sm">{doc.name}</p>
+                                  <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${isDoctorAvailableToday(doc) ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                                    {isDoctorAvailableToday(doc) ? '● Available Today' : '○ Not Today'}
+                                  </span>
+                                </div>
+                                <p className="text-xs text-gray-500">🏥 {doc.specialty}</p>
+                                <p className="text-xs text-gray-400 mt-0.5">📅 {getDoctorScheduleDisplay(doc)}</p>
+                              </div>
+                              <div className="flex gap-1 flex-shrink-0">
+                                <button onClick={() => { setEditingDoctorId(doc.id); setDoctorForm({...doc}); setDoctorMsg(''); }}
+                                  className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded-lg font-semibold">Edit</button>
+                                <button onClick={() => { if(window.confirm(`Remove ${doc.name}?`)) { saveDoctors(doctors.filter(d=>d.id!==doc.id)); setDoctorMsg('✓ Doctor removed.'); }}}
+                                  className="text-xs px-2 py-1 bg-red-100 text-red-700 rounded-lg font-semibold">Remove</button>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                        <button onClick={() => { if(window.confirm('Reset to default doctors?')) { saveDoctors(DEFAULT_DOCTORS); setDoctorMsg('✓ Reset to defaults.'); }}}
+                          className="w-full py-2 text-xs text-gray-500 border border-gray-200 rounded-lg hover:bg-gray-50">
+                          Reset to Default Doctors
+                        </button>
+                      </div>
+                    </div>
+                    <div className="px-6 py-4 border-t flex-shrink-0">
+                      <button onClick={() => setShowDoctorMgmt(false)}
+                        className="w-full py-2.5 border border-gray-300 rounded-xl text-gray-600 font-semibold hover:bg-gray-50">Close</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+                            {/* ===== SERVICE MANAGEMENT MODAL ===== */}
               {showServiceMgmt && (
                 <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4" onClick={() => setShowServiceMgmt(false)}>
                   <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
@@ -4554,6 +4759,10 @@ function normalizeUser(u) {
                                   className="w-full flex items-center gap-3 px-4 py-3 text-sm text-blue-700 hover:bg-blue-50 transition-colors text-left font-semibold">
                                   <span>⚙️</span> Service Management
                                 </button>
+                                <button onClick={() => { setShowSettingsMenu(false); setDoctorMsg(''); setDoctorForm({id:'',name:'',specialty:'General Physician',schedules:[],enabled:true}); setEditingDoctorId(null); setShowDoctorMgmt(true); }}
+                                  className="w-full flex items-center gap-3 px-4 py-3 text-sm text-green-700 hover:bg-green-50 transition-colors text-left font-semibold">
+                                  <span>👨‍⚕️</span> Doctor Management
+                                </button>
                               </div>
                             )}
                             <div className="border-t">
@@ -4830,6 +5039,9 @@ function normalizeUser(u) {
                                     <div className="grid md:grid-cols-2 gap-x-6 gap-y-1 ml-12 text-sm text-gray-600">
                                       <p><span className="font-medium">Service:</span> {item.service}</p>
                                       <p><span className="font-medium">Priority:</span> {item.priority}</p>
+                                      {item.assignedDoctor && (
+                                        <p className="text-sm font-semibold text-green-700 mt-1">👨‍⚕️ {item.assignedDoctor}</p>
+                                      )}
                                       <p><span className="font-medium">Category:</span> {item.serviceCategory}</p>
                                       <p><span className="font-medium">Queued at:</span> {new Date(item.timeQueued).toLocaleTimeString()}</p>
                                     </div>
@@ -4870,13 +5082,24 @@ function normalizeUser(u) {
                                     {item.status !== 'Rejected' && item.status !== 'Completed' && (
                                       <>
                                         {item.status !== 'Accepted' && (
-                                          <button
-                                            onClick={() => acceptAppointment(item)}
-                                            className="flex items-center justify-center gap-1.5 bg-blue-500 hover:bg-blue-600 text-white px-3 py-2 rounded-lg text-xs font-bold transition-colors w-full"
-                                          >
-                                            <CheckCircle className="w-3.5 h-3.5" />
-                                            Accept
-                                          </button>
+                                          <div className="flex flex-col gap-1">
+                                            <button
+                                              onClick={() => acceptAppointment(item)}
+                                              className="flex items-center justify-center gap-1.5 bg-blue-500 hover:bg-blue-600 text-white px-3 py-2 rounded-lg text-xs font-bold transition-colors w-full"
+                                            >
+                                              <CheckCircle className="w-3.5 h-3.5" />
+                                              Accept
+                                            </button>
+                                            <select
+                                              defaultValue=""
+                                              onChange={e => { if(e.target.value) { acceptAppointment({...item, assignedDoctor: e.target.value}); e.target.value=''; } }}
+                                              className="text-xs px-2 py-1.5 border border-blue-200 rounded-lg bg-white text-gray-600 w-full cursor-pointer">
+                                              <option value="">👨‍⚕️ Assign Doctor</option>
+                                              {doctors.filter(d => d.enabled).map(d => (
+                                                <option key={d.id} value={d.name}>{d.name}</option>
+                                              ))}
+                                            </select>
+                                          </div>
                                         )}
                                         <button
                                           onClick={() => markAsServed(item)}
