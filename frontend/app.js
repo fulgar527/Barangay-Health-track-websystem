@@ -2017,6 +2017,15 @@ function normalizeUser(u) {
             if (bookedSlots.has(bookingData.appointmentTime)) {
               alert('This time slot is already fully booked. Please choose another time.'); return;
             }
+            // Block past time slots for today
+            const isBookingToday = bookingData.appointmentDate === new Date().toISOString().split('T')[0];
+            if (isBookingToday && bookingData.appointmentTime) {
+              const [slotH] = bookingData.appointmentTime.split(':').map(Number);
+              const nowH = new Date().getHours();
+              if (nowH >= slotH) {
+                alert('⚠️ This time slot has already passed. Please select a future time slot or a different date.'); return;
+              }
+            }
 
             try {
               // Calculate age
@@ -3882,8 +3891,16 @@ function normalizeUser(u) {
                                     const isBooked = residentBooking.appointmentDate && getBookedSlots(residentBooking.appointmentDate).has(slot.value);
                                     const count = residentBooking.appointmentDate ? getSlotCount(residentBooking.appointmentDate, slot.value) : 0;
                                     const remaining = SLOT_CAPACITY - count;
-                                    return <option key={slot.value} value={slot.value} disabled={isBooked}>
-                                      {slot.label}{isBooked ? ' (Full)' : count > 0 ? ` (${remaining} slots left)` : ''}
+                                    // Disable past slots for today
+                                    const isToday = residentBooking.appointmentDate === new Date().toISOString().split('T')[0];
+                                    const isPast = isToday && (() => {
+                                      const [h, m] = slot.value.split(':').map(Number);
+                                      const now = new Date();
+                                      return now.getHours() > h || (now.getHours() === h && now.getMinutes() >= m);
+                                    })();
+                                    const disabled = isBooked || isPast;
+                                    return <option key={slot.value} value={slot.value} disabled={disabled}>
+                                      {slot.label}{isBooked ? ' (Full)' : isPast ? ' (Passed)' : count > 0 ? ` (${remaining} slots left)` : ''}
                                     </option>;
                                   })}
                                 </select>
