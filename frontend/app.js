@@ -6,7 +6,11 @@ const API_BASE_URL = window.location.hostname === 'localhost'
   ? 'http://localhost:3000/api'
   : '/api';
 
-// JWT lives in sessionStorage: survives page refresh, cleared on tab close
+// Local date helper — avoids UTC offset issues (e.g. PH is UTC+8)
+const getLocalDateStr = (d = new Date()) =>
+  `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+
+
 let _authToken = (() => { try { return sessionStorage.getItem('ht_token') || null; } catch { return null; } })();
 const getToken = () => _authToken;
 const setToken = (t) => {
@@ -1872,7 +1876,7 @@ function normalizeUser(u) {
             const ws = XLSX.utils.json_to_sheet(data);
             const wb = XLSX.utils.book_new();
             XLSX.utils.book_append_sheet(wb, ws, "Data");
-            XLSX.writeFile(wb, `${filename}_${new Date().toISOString().split('T')[0]}.xlsx`);
+            XLSX.writeFile(wb, `${filename}_${getLocalDateStr()}.xlsx`);
           };
 
           const exportPatients = () => {
@@ -2015,7 +2019,7 @@ function normalizeUser(u) {
               XLSX.utils.book_append_sheet(wb, detailedSheet, "Detailed Visits");
             }
             
-            XLSX.writeFile(wb, `HealthTrack_${timeRangeLabel}_Report_${new Date().toISOString().split('T')[0]}.xlsx`);
+            XLSX.writeFile(wb, `HealthTrack_${timeRangeLabel}_Report_${getLocalDateStr()}.xlsx`);
           };
 
           // ==================== RESIDENT PORTAL FUNCTIONS ====================
@@ -2085,7 +2089,7 @@ function normalizeUser(u) {
               alert('This time slot is already fully booked. Please choose another time.'); return;
             }
             // Block past time slots for today
-            const isBookingToday = bookingData.appointmentDate === new Date().toISOString().split('T')[0];
+            const isBookingToday = bookingData.appointmentDate === getLocalDateStr();
             if (isBookingToday && bookingData.appointmentTime) {
               const [slotH] = bookingData.appointmentTime.split(':').map(Number);
               const nowH = new Date().getHours();
@@ -3537,7 +3541,7 @@ function normalizeUser(u) {
                                       }
                                       setEditingAppointment({...editingAppointment, newAppointmentDate: val});
                                     }}
-                                    min={new Date().toISOString().split('T')[0]}
+                                    min={getLocalDateStr()}
                                     className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                                   />
                                 </div>
@@ -3980,7 +3984,7 @@ function normalizeUser(u) {
                                     }
                                     setResidentBooking({...residentBooking, appointmentDate: val, appointmentTime: ''});
                                   }}
-                                  min={new Date().toISOString().split('T')[0]}
+                                  min={getLocalDateStr()}
                                   className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all ${isPHHoliday(residentBooking.appointmentDate) ? 'border-red-400 bg-red-50' : 'border-gray-300'}`} />
                                 <p className="text-xs text-gray-400 mt-1">📅 Weekdays only (Mon–Fri) · No bookings on PH holidays</p>
                                 {isPHHoliday(residentBooking.appointmentDate) && (
