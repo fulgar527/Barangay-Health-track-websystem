@@ -331,19 +331,26 @@ function normalizeUser(u) {
           const [auditEntries, setAuditEntries] = React.useState([]);
           React.useEffect(() => {
             api('GET', '/audit').then(rows => {
-              // Normalize all fields to strings to avoid React "objects as children" error
               const safe = (v) => {
                 if (v === null || v === undefined) return '';
                 if (typeof v === 'object') return JSON.stringify(v);
                 return String(v);
               };
-              const normalized = (Array.isArray(rows) ? rows : []).map(r => ({
-                action:    safe(r.action),
-                username:  safe(r.username || (r.details && typeof r.details === 'object' ? r.details.username : '')),
-                role:      safe(r.role || (r.details && typeof r.details === 'object' ? r.details.role : '')),
-                details:   safe(r.details && typeof r.details === 'object' ? r.details.details : r.details),
-                timestamp: safe(r.created_at || r.timestamp),
-              }));
+              const normalized = (Array.isArray(rows) ? rows : []).map(r => {
+                // action: try column first, then details.action, then 'SYSTEM'
+                const action = safe(r.action) ||
+                  safe(r.details && typeof r.details === 'object' ? r.details.action : '') ||
+                  'SYSTEM';
+                // username: try column first (skip UUIDs), then details.username
+                const rawUser = safe(r.username);
+                const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(rawUser);
+                const username = (!rawUser || isUUID)
+                  ? safe(r.details && typeof r.details === 'object' ? r.details.username : '')
+                  : rawUser;
+                const role = safe(r.role || (r.details && typeof r.details === 'object' ? r.details.role : ''));
+                const details = safe(r.details && typeof r.details === 'object' ? r.details.details : r.details);
+                return { action, username, role, details, timestamp: safe(r.created_at || r.timestamp) };
+              });
               setAuditEntries(normalized);
             }).catch(() => {});
           }, []);
