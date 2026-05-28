@@ -3839,9 +3839,15 @@ function normalizeUser(u) {
                                 <div>
                                   <label className="block text-sm font-semibold text-gray-700 mb-1">Contact Number <span className="text-red-500">*</span></label>
                                   <input type="text" value={residentBooking.contactNumber}
-                                    onChange={(e) => setResidentBooking({...residentBooking, contactNumber: sanitizePhone(e.target.value)})}
-                                    placeholder="09XXXXXXXXX"
-                                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all" />
+                                    onChange={(e) => setResidentBooking({...residentBooking, contactNumber: sanitizePhone(e.target.value).slice(0,12)})}
+                                    placeholder="09XXXXXXXXX or 8-digit landline" maxLength={12}
+                                    className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all ${residentBooking.contactNumber && validateContactNumber(residentBooking.contactNumber).msg ? 'border-red-400 bg-red-50' : 'border-gray-300'}`} />
+                                  {residentBooking.contactNumber && validateContactNumber(residentBooking.contactNumber).msg && (
+                                    <p className="text-xs text-red-500 mt-1">{validateContactNumber(residentBooking.contactNumber).msg}</p>
+                                  )}
+                                  {residentBooking.contactNumber && !validateContactNumber(residentBooking.contactNumber).msg && (
+                                    <p className="text-xs text-green-600 mt-1">✓ Valid number</p>
+                                  )}
                                 </div>
                                 <div>
                                   <label className="block text-sm font-semibold text-gray-700 mb-1">Occupation</label>
@@ -3866,7 +3872,13 @@ function normalizeUser(u) {
                                   <input type="text" value={residentBooking.emergencyContactNumber}
                                     onChange={(e) => setResidentBooking({...residentBooking, emergencyContactNumber: sanitizePhone(e.target.value).slice(0,12)})}
                                     placeholder="09XXXXXXXXX or 8-digit landline" maxLength={12}
-                                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all" />
+                                    className={`w-full px-4 py-2.5 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all ${residentBooking.emergencyContactNumber && validateContactNumber(residentBooking.emergencyContactNumber).msg ? 'border-red-400 bg-red-50' : 'border-gray-300'}`} />
+                                  {residentBooking.emergencyContactNumber && validateContactNumber(residentBooking.emergencyContactNumber).msg && (
+                                    <p className="text-xs text-red-500 mt-1">{validateContactNumber(residentBooking.emergencyContactNumber).msg}</p>
+                                  )}
+                                  {residentBooking.emergencyContactNumber && !validateContactNumber(residentBooking.emergencyContactNumber).msg && (
+                                    <p className="text-xs text-green-600 mt-1">✓ Valid number</p>
+                                  )}
                                 </div>
                               </div>
 
