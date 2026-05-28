@@ -1,184 +1,96 @@
+// HealthTrack — Audit Log Route
 const express = require('express');
-const router = express.Router();
-const db = require('../db');
+const router  = express.Router();
+const db      = require('../db');
 
-// Get all patients
-router.get('/', async (req, res) => {
+// ──────────────────────────────────────────────────────────────────────────────
+// BUG FIX #1 + #4 + #5:
+//   - Removed `require('jsonwebtoken')` — it was never in package.json, so the
+//     require threw "Cannot find module" at startup, crashing the server → 503.
+//   - requireAdmin now reads req.user.role (set by server.js requireAuth) instead
+//     of re-verifying the Supabase token with JWT_SECRET. Supabase tokens are
+//     signed by Supabase's private key, so jwt.verify(tok, JWT_SECRET) always
+//     threw JsonWebTokenError: invalid signature — every admin check silently
+//     failed and audit log user IDs were always null.
+//   - POST /api/audit now reads req.user from the middleware rather than doing
+//     its own token verification.
+// ──────────────────────────────────────────────────────────────────────────────
+
+// ── Auth middleware ───────────────────────────────────────────────────────────
+// requireAuth in server.js already ran before we get here, so req.user is set.
+const requireAdmin = (req, res, next) => {
+  if (!req.user) return res.status(401).json({ error: 'Not authenticated.' });
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin access required.' });
+  next();
+};
+
+// ── Helper to write an audit entry ───────────────────────────────────────────
+const logAudit = async (dbClient, userId, action, targetTable, targetId, details, ipAddress) => {
   try {
-    const result = await db.query(
-      'SELECT * FROM patients ORDER BY created_at DESC'
+    await dbClient.query(
+      `INSERT INTO audit_log (username, action, target_table, target_id, details, ip_address)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [userId || null, action, targetTable || null, String(targetId || ''), JSON.stringify(details || {}), ipAddress || null]
     );
+  } catch (err) {
+    console.error('Audit log error:', err.message);
+  }
+};
+
+// ── GET /api/audit — Admin only, paginated ────────────────────────────────────
+router.get('/', requireAdmin, async (req, res) => {
+  try {
+    const page  = Math.max(1, parseInt(req.query.page)  || 1);
+    const limit = Math.min(100, parseInt(req.query.limit) || 50);
+    const offset = (page - 1) * limit;
+
+    const result = await db.query(
+      `SELECT
+    log_id, username, action, target_table, target_id,
+    details, ip_address, created_at
+  FROM audit_log
+  ORDER BY created_at DESC
+  LIMIT $1 OFFSET $2`,
+      [limit, offset]
+    );
+    const countResult = await db.query('SELECT COUNT(*) FROM audit_log');
+    const total = parseInt(countResult.rows[0].count);
+
     res.json(result.rows);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Failed to fetch patients' });
+    res.status(500).json({ error: 'Failed to fetch audit logs.' });
   }
 });
 
-// ──────────────────────────────────────────────────────────────────────────────
-// BUG FIX #2: /search/:query MUST come before /:patientId.
-// Express matches in registration order — if /:patientId is first, a request
-// for /search/john hits the wildcard with patientId="search" and returns 404.
-// ──────────────────────────────────────────────────────────────────────────────
-
-// Search patients  ← MOVED ABOVE /:patientId
-router.get('/search/:query', async (req, res) => {
-  try {
-    const { query } = req.params;
-    const result = await db.query(
-      `SELECT * FROM patients 
-       WHERE last_name ILIKE $1 OR first_name ILIKE $1 OR patient_id ILIKE $1
-       ORDER BY last_name, first_name`,
-      [`%${query}%`]
-    );
-    res.json(result.rows);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Failed to search patients' });
-  }
-});
-
-// Get patient by ID  ← wildcard stays below specific routes
-router.get('/:patientId', async (req, res) => {
-  try {
-    const { patientId } = req.params;
-    const result = await db.query(
-      'SELECT * FROM patients WHERE patient_id = $1',
-      [patientId]
-    );
-    
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Patient not found' });
-    }
-    
-    res.json(result.rows[0]);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Failed to fetch patient' });
-  }
-});
-
-// Create new patient
+// ── POST /api/audit — any authenticated user can log an action ───────────────
 router.post('/', async (req, res) => {
   try {
-    const {
-      lastName, firstName, middleName, dateOfBirth, age, sex,
-      address, contactNumber, civilStatus, occupation, philhealthNumber,
-      emergencyContactPerson, emergencyContactNumber, allergies,
-      chronicConditions, currentMedications
-    } = req.body;
+    const { action, details, username: bodyUsername, role: bodyRole } = req.body;
+    if (!action) return res.status(400).json({ error: 'action is required' });
 
-    // ────────────────────────────────────────────────────────────────────────
-    // Required-field check with a clean 400 response.
-    // Both staff manual-register and resident on-the-fly booking call this.
-    // Without this guard, missing fields produce a 500 with a raw Postgres
-    // "null value violates not-null constraint" error.
-    // ────────────────────────────────────────────────────────────────────────
-    if (!firstName || !lastName) {
-      return res.status(400).json({ error: 'First name and last name are required.' });
-    }
+    // Prefer req.user (from token), fall back to body values sent by frontend
+    const username = req.user?.username || bodyUsername || null;
+    const role     = req.user?.role     || bodyRole     || null;
 
-    // Apply safe defaults for NOT NULL columns so on-the-fly resident bookings
-    // succeed even when profile is incomplete. Resident can update later.
-    const safeDob     = dateOfBirth || '2000-01-01';
-    const safeAge     = (age && age > 0) ? age
-                        : Math.max(0, Math.floor((Date.now() - new Date(safeDob)) / 31557600000));
-    const safeSex     = ['Male', 'Female'].includes(sex) ? sex : 'Male';
-    const safeAddr    = (address && String(address).trim()) || 'To be updated';
-    const safeContact = (contactNumber && String(contactNumber).trim()) || 'N/A';
-
-    const idResult = await db.query('SELECT generate_patient_id() as patient_id');
-    const patientId = idResult.rows[0].patient_id;
-
-    const result = await db.query(
-      `INSERT INTO patients (
-        patient_id, last_name, first_name, middle_name, date_of_birth, age, sex,
-        address, contact_number, civil_status, occupation, philhealth_number,
-        emergency_contact_person, emergency_contact_number, allergies,
-        chronic_conditions, current_medications
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
-      RETURNING *`,
-      [patientId, lastName.trim(), firstName.trim(), middleName, safeDob, safeAge, safeSex,
-       safeAddr, safeContact, civilStatus, occupation, philhealthNumber,
-       emergencyContactPerson, emergencyContactNumber, allergies,
-       chronicConditions, currentMedications]
-    );
-
-    res.status(201).json(result.rows[0]);
+    await logAudit(db, username, action, null, null, { username, role, details }, req.ip);
+    res.status(201).json({ ok: true });
   } catch (err) {
-    console.error('POST /patients failed:', err.message);
-    res.status(500).json({ error: 'Failed to create patient: ' + err.message });
+    console.error('POST /audit error:', err.message);
+    res.status(500).json({ error: 'Failed to write audit entry.' });
   }
 });
 
-// Update patient
-router.put('/:patientId', async (req, res) => {
+// ── DELETE /api/audit — Admin only, clears all logs ──────────────────────────
+router.delete('/', requireAdmin, async (req, res) => {
   try {
-    const { patientId } = req.params;
-    const {
-      lastName, firstName, middleName, dateOfBirth, age, sex,
-      address, contactNumber, civilStatus, occupation, philhealthNumber,
-      emergencyContactPerson, emergencyContactNumber, allergies,
-      chronicConditions, currentMedications
-    } = req.body;
-
-    if (!firstName || !lastName) {
-      return res.status(400).json({ error: 'First name and last name are required.' });
-    }
-
-    // Safe defaults — same as POST route, so NOT NULL constraints are never violated
-    const safeDob     = dateOfBirth || '2000-01-01';
-    const safeAge     = (age && age > 0) ? age
-                        : Math.max(0, Math.floor((Date.now() - new Date(safeDob)) / 31557600000));
-    const safeSex     = ['Male', 'Female'].includes(sex) ? sex : 'Male';
-    const safeAddr    = (address && String(address).trim()) || 'To be updated';
-    const safeContact = (contactNumber && String(contactNumber).trim()) || 'N/A';
-
-    const result = await db.query(
-      `UPDATE patients SET
-        last_name = $2, first_name = $3, middle_name = $4, date_of_birth = $5,
-        age = $6, sex = $7, address = $8, contact_number = $9, civil_status = $10,
-        occupation = $11, philhealth_number = $12, emergency_contact_person = $13,
-        emergency_contact_number = $14, allergies = $15, chronic_conditions = $16,
-        current_medications = $17, updated_at = CURRENT_TIMESTAMP
-      WHERE patient_id = $1
-      RETURNING *`,
-      [patientId, lastName.trim(), firstName.trim(), middleName || null,
-       safeDob, safeAge, safeSex, safeAddr, safeContact,
-       civilStatus || null, occupation || null, philhealthNumber || null,
-       emergencyContactPerson || null, emergencyContactNumber || null,
-       allergies || null, chronicConditions || null, currentMedications || null]
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Patient not found' });
-    }
-
-    res.json(result.rows[0]);
-  } catch (err) {
-    console.error('PUT /patients error:', err.message);
-    res.status(500).json({ error: 'Failed to update patient: ' + err.message });
-  }
-});
-
-// Delete patient
-router.delete('/:patientId', async (req, res) => {
-  try {
-    const { patientId } = req.params;
-    const result = await db.query(
-      'DELETE FROM patients WHERE patient_id = $1 RETURNING *',
-      [patientId]
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Patient not found' });
-    }
-
-    res.json({ message: 'Patient deleted successfully' });
+    await db.query('TRUNCATE audit_log RESTART IDENTITY');
+    res.json({ message: 'Audit log cleared.' });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Failed to delete patient' });
+    res.status(500).json({ error: 'Failed to clear audit log.' });
   }
 });
 
 module.exports = router;
+module.exports.logAudit = logAudit;
