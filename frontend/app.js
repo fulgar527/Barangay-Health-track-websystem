@@ -849,6 +849,24 @@ function normalizeUser(u) {
             setHeaderSearchOpen(results.length > 0);
           };
 
+          
+          // ── Helper: calculate age from DOB string ────────────────────────────
+          const calcAge = (dob) => {
+            if (!dob) return null;
+            const birth = new Date(dob + (dob.includes('T') ? '' : 'T00:00:00'));
+            const today = new Date();
+            let age = today.getFullYear() - birth.getFullYear();
+            const m = today.getMonth() - birth.getMonth();
+            if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--;
+            return age;
+          };
+          const validateCivilStatus = (dob, status) => {
+            if (!dob || !status) return true;
+            const age = calcAge(dob);
+            if (age !== null && age < 15 && (status === 'Married' || status === 'Separated' || status === 'Widowed')) return false;
+            return true;
+          };
+
                     // ── Audit logger — writes to backend (fire-and-forget) ──────────────
           const writeAudit = (action, details = '') => {
             // Best-effort: POST to /api/audit. Never blocks UI.
@@ -2643,7 +2661,14 @@ function normalizeUser(u) {
                               </div>
                               <div>
                                 <label className="block text-xs font-medium text-gray-600 mb-1">Civil Status</label>
-                                <select value={newAccount.civilStatus} onChange={(e) => setNewAccount({...newAccount, civilStatus: e.target.value})}
+                                <select value={newAccount.civilStatus} onChange={(e) => {
+                                    const age = calcAge(newAccount.birthday);
+                                    if (age !== null && age < 15 && ['Married','Separated','Widowed'].includes(e.target.value)) {
+                                      alert('⚠️ Civil status cannot be Married, Separated, or Widowed for users under 15 years old.');
+                                      return;
+                                    }
+                                    setNewAccount({...newAccount, civilStatus: e.target.value});
+                                  }}
                                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-400 focus:border-transparent">
                                   <option value="">Select</option>
                                   <option value="Single">Single</option>
@@ -3747,7 +3772,13 @@ function normalizeUser(u) {
                                 <div>
                                   <label className="block text-sm font-semibold text-gray-700 mb-1">Civil Status</label>
                                   <select value={residentBooking.civilStatus}
-                                    onChange={(e) => setResidentBooking({...residentBooking, civilStatus: e.target.value})}
+                                    onChange={(e) => {
+                                      if (!validateCivilStatus(residentBooking.dateOfBirth, e.target.value)) {
+                                        alert('⚠️ Civil status cannot be Married, Separated, or Widowed for patients under 15 years old.');
+                                        return;
+                                      }
+                                      setResidentBooking({...residentBooking, civilStatus: e.target.value});
+                                    }}
                                     className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all">
                                     <option value="">Select</option>
                                     <option value="Single">Single</option>
@@ -6311,7 +6342,13 @@ function normalizeUser(u) {
                           </label>
                           <select
                             value={newPatient.civilStatus}
-                            onChange={(e) => setNewPatient({...newPatient, civilStatus: e.target.value})}
+                            onChange={(e) => {
+                              if (!validateCivilStatus(newPatient.dateOfBirth, e.target.value)) {
+                                alert('⚠️ Civil status cannot be Married, Separated, or Widowed for patients under 15 years old.');
+                                return;
+                              }
+                              setNewPatient({...newPatient, civilStatus: e.target.value});
+                            }}
                             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                           >
                             <option value="">Select</option>
@@ -7059,7 +7096,13 @@ function normalizeUser(u) {
                           <label className="block text-sm font-semibold text-gray-700 mb-2">Civil Status</label>
                           <select
                             value={editingPatient.civilStatus}
-                            onChange={(e) => setEditingPatient({...editingPatient, civilStatus: e.target.value})}
+                            onChange={(e) => {
+                              if (!validateCivilStatus(editingPatient.dateOfBirth, e.target.value)) {
+                                alert('⚠️ Civil status cannot be Married, Separated, or Widowed for patients under 15 years old.');
+                                return;
+                              }
+                              setEditingPatient({...editingPatient, civilStatus: e.target.value});
+                            }}
                             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                           >
                             <option value="">Select</option>
