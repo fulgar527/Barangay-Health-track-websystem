@@ -339,12 +339,12 @@ function normalizeUser(u) {
               };
               const normalized = (Array.isArray(rows) ? rows : []).map(r => ({
                 action:    safe(r.action),
-                username:  safe(r.username),
-                role:      safe(r.role),
-                details:   safe(r.details),
-                timestamp: safe(r.timestamp),
+                username:  safe(r.username || (r.details && typeof r.details === 'object' ? r.details.username : '')),
+                role:      safe(r.role || (r.details && typeof r.details === 'object' ? r.details.role : '')),
+                details:   safe(r.details && typeof r.details === 'object' ? r.details.details : r.details),
+                timestamp: safe(r.created_at || r.timestamp),
               }));
-              setAuditEntries(normalized.slice().reverse());
+              setAuditEntries(normalized);
             }).catch(() => {});
           }, []);
           const actionColors = {
