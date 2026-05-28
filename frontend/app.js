@@ -678,6 +678,13 @@ function normalizeUser(u) {
               setLoginUsername(''); setLoginPassword('');
               setLoginError(''); setShowPassword(false);
               setLastActivity(Date.now());
+              // Audit: log successful login (backend also logs, this is belt+suspenders)
+              api('POST', '/audit', {
+                action: 'LOGIN',
+                username: user.username,
+                role: user.role,
+                details: `${user.username} logged in`
+              }).catch(() => {});
             } catch (err) {
               const newAttempts = loginAttempts + 1;
               setLoginAttempts(newAttempts);
