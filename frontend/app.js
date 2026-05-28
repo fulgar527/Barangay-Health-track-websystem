@@ -470,9 +470,19 @@ function normalizeUser(u) {
           };
           const PhoneMsg = ({ val }) => {
             if (!val) return null;
-            if (/[a-zA-Z]/.test(val)) return React.createElement('p', {style:{color:'#dc2626',fontSize:'11px',marginTop:'3px'}}, 'Numbers only — letters not allowed.');
-            if (!isValidPhone(val)) return React.createElement('p', {style:{color:'#CC0000',fontSize:'11px',marginTop:'3px'}}, 'Enter a valid phone number (7–15 digits).');
-            return React.createElement('p', {style:{color:'#111827',fontSize:'11px',marginTop:'3px'}}, '✓ Valid phone number');
+            const clean = val.replace(/[\s\-]/g, '');
+            if (/[a-zA-Z]/.test(clean)) return React.createElement('p', {style:{color:'#dc2626',fontSize:'11px',marginTop:'3px'}}, 'Numbers only — letters not allowed.');
+            if (clean.startsWith('09')) {
+              if (clean.length < 11) return React.createElement('p', {style:{color:'#f59e0b',fontSize:'11px',marginTop:'3px'}}, `Mobile: needs ${11-clean.length} more digit(s). Format: 09XXXXXXXXX`);
+              if (clean.length > 11) return React.createElement('p', {style:{color:'#dc2626',fontSize:'11px',marginTop:'3px'}}, 'Mobile number must be exactly 11 digits.');
+              return React.createElement('p', {style:{color:'#16a34a',fontSize:'11px',marginTop:'3px'}}, '✓ Valid mobile number');
+            }
+            if (/^\d+$/.test(clean)) {
+              if (clean.length < 7) return React.createElement('p', {style:{color:'#f59e0b',fontSize:'11px',marginTop:'3px'}}, 'Landline must be 7-8 digits.');
+              if (clean.length > 8) return React.createElement('p', {style:{color:'#dc2626',fontSize:'11px',marginTop:'3px'}}, 'Landline must be 7-8 digits only.');
+              return React.createElement('p', {style:{color:'#16a34a',fontSize:'11px',marginTop:'3px'}}, '✓ Valid landline number');
+            }
+            return null;
           };
           // ==================== END PHONE HELPER ====================
 
@@ -546,6 +556,7 @@ function normalizeUser(u) {
           // ── Settings / Profile states ─────────────────────────────────────
           const [showSettingsMenu, setShowSettingsMenu] = useState(false);
           const [showServiceMgmt, setShowServiceMgmt] = useState(false);
+          const [contactNumberError, setContactNumberError] = useState('');
           const [serviceMgmtTab, setServiceMgmtTab] = useState('categories');
           const [editingCategory, setEditingCategory] = useState(null); // {name, urgency} or null
           const [newCategoryForm, setNewCategoryForm] = useState({ name:'', urgency:'Non-Urgent', enabled:true });
@@ -733,7 +744,9 @@ function normalizeUser(u) {
                 setSettingsSuccess('Profile updated successfully!');
               } else if (settingsTab === 'contact') {
                 if (!settingsForm.contactNumber.trim()) { setSettingsError('Contact number is required.'); setSettingsLoading(false); return; }
-                if (/[a-zA-Z]/.test(settingsForm.contactNumber)) { setSettingsError('Contact number must contain digits only.'); setSettingsLoading(false); return; }
+                const cn = settingsForm.contactNumber.replace(/[\s\-]/g,'');
+                if (cn && !/^(09\d{9}|\d{7,8}|0\d{1,2}-?\d{7,8})$/.test(cn)) {
+                  setSettingsError('Enter a valid mobile number (09XXXXXXXXX) or landline (8 digits).'); setSettingsLoading(false); return; }
                 await api('PUT', '/auth/profile', { contactNumber: settingsForm.contactNumber.trim() });
                 setSettingsSuccess('Contact number updated!');
               } else if (settingsTab === 'email') {
@@ -850,7 +863,24 @@ function normalizeUser(u) {
           };
 
           
-          // ── Helper: calculate age from DOB string ────────────────────────────
+          // ── Contact number validator ─────────────────────────────────────────
+          const validateContactNumber = (val) => {
+            if (!val || !val.trim()) return { valid: true, msg: '' };
+            const clean = val.trim().replace(/[\s\-]/g, '');
+            if (/[a-zA-Z]/.test(clean)) return { valid: false, msg: 'Letters are not allowed.' };
+            if (/^09\d+$/.test(clean)) {
+              if (clean.length < 11) return { valid: false, msg: `Mobile number needs ${11 - clean.length} more digit(s). Format: 09XXXXXXXXX` };
+              if (clean.length > 11) return { valid: false, msg: 'Mobile number must be exactly 11 digits. Format: 09XXXXXXXXX' };
+              return { valid: true, msg: '' };
+            }
+            if (/^\d+$/.test(clean)) {
+              if (clean.length < 7 || clean.length > 8) return { valid: false, msg: 'Landline must be 7-8 digits.' };
+              return { valid: true, msg: '' };
+            }
+            return { valid: true, msg: '' };
+          };
+
+                    // ── Helper: calculate age from DOB string ────────────────────────────
           const calcAge = (dob) => {
             if (!dob) return null;
             const birth = new Date(dob + (dob.includes('T') ? '' : 'T00:00:00'));
@@ -2688,9 +2718,17 @@ function normalizeUser(u) {
                               <div>
                                 <label className="block text-xs font-medium text-gray-600 mb-1">Contact Number <span className="text-red-500">*</span></label>
                                 <input type="text" value={newAccount.contactNumber}
-                                  onChange={(e) => setNewAccount({...newAccount, contactNumber: e.target.value.replace(/[^0-9+\-\s]/g, '').slice(0,13)})}
-                                  placeholder="09XXXXXXXXX" maxLength={13}
-                                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-400 focus:border-transparent" />
+                                  onChange={(e) => {
+                                    const val = e.target.value.replace(/[^0-9+\-\s]/g,'').slice(0,12);
+                                    setNewAccount({...newAccount, contactNumber: val});
+                                    const {msg} = validateContactNumber(val);
+                                    setContactNumberError(msg);
+                                  }}
+                                  placeholder="09XXXXXXXXX or 8-digit landline" maxLength={12}
+                                  className={`w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-blue-400 focus:border-transparent ${contactNumberError && newAccount.contactNumber ? 'border-red-400 bg-red-50' : 'border-gray-300'}`} />
+                                {contactNumberError && newAccount.contactNumber && (
+                                  <p className="text-xs text-red-500 mt-1">{contactNumberError}</p>
+                                )}
                               </div>
                               <div>
                                 <label className="block text-xs font-medium text-gray-600 mb-1">Occupation</label>
@@ -2710,7 +2748,7 @@ function normalizeUser(u) {
                                 <label className="block text-xs font-medium text-gray-600 mb-1">Emergency Contact Number</label>
                                 <input type="text" value={newAccount.emergencyContactNumber}
                                   onChange={(e) => setNewAccount({...newAccount, emergencyContactNumber: e.target.value.replace(/[^0-9+\-\s]/g, '').slice(0,13)})}
-                                  placeholder="09XXXXXXXXX" maxLength={13}
+                                  placeholder="09XXXXXXXXX or 8-digit landline" maxLength={12}
                                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-400 focus:border-transparent" />
                               </div>
                             </div>
@@ -6381,9 +6419,9 @@ function normalizeUser(u) {
                           <input
                             type="tel"
                             value={newPatient.contact}
-                            onChange={(e) => setNewPatient({...newPatient, contact: sanitizePhone(e.target.value)})}
-                            placeholder="09XXXXXXXXX"
-                            maxLength={16}
+                            onChange={(e) => setNewPatient({...newPatient, contact: sanitizePhone(e.target.value).slice(0,12)})}
+                            placeholder="09XXXXXXXXX or 8-digit landline"
+                            maxLength={12}
                             className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${phoneClass(newPatient.contact)}`}
                           />
                           <PhoneMsg val={newPatient.contact} />
