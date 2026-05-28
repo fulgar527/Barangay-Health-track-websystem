@@ -863,7 +863,7 @@ function normalizeUser(u) {
           const validateCivilStatus = (dob, status) => {
             if (!dob || !status) return true;
             const age = calcAge(dob);
-            if (age !== null && age < 15 && (status === 'Married' || status === 'Separated' || status === 'Widowed')) return false;
+            if (age !== null && age < 18 && (status === 'Married' || status === 'Separated' || status === 'Widowed')) return false;
             return true;
           };
 
@@ -2664,7 +2664,7 @@ function normalizeUser(u) {
                                 <select value={newAccount.civilStatus} onChange={(e) => {
                                     const age = calcAge(newAccount.birthday);
                                     if (age !== null && age < 15 && ['Married','Separated','Widowed'].includes(e.target.value)) {
-                                      alert('⚠️ Civil status cannot be Married, Separated, or Widowed for users under 15 years old.');
+                                      alert('⚠️ Under Philippine Family Code (RA 386), the minimum age for marriage is 18 years old. Civil status cannot be Married, Separated, or Widowed for users under 18.');
                                       return;
                                     }
                                     setNewAccount({...newAccount, civilStatus: e.target.value});
@@ -3774,7 +3774,7 @@ function normalizeUser(u) {
                                   <select value={residentBooking.civilStatus}
                                     onChange={(e) => {
                                       if (!validateCivilStatus(residentBooking.dateOfBirth, e.target.value)) {
-                                        alert('⚠️ Civil status cannot be Married, Separated, or Widowed for patients under 15 years old.');
+                                        alert('⚠️ Under Philippine Family Code (RA 386), the minimum age for marriage is 18 years old. Please select Single for patients under 18.');
                                         return;
                                       }
                                       setResidentBooking({...residentBooking, civilStatus: e.target.value});
@@ -6344,7 +6344,7 @@ function normalizeUser(u) {
                             value={newPatient.civilStatus}
                             onChange={(e) => {
                               if (!validateCivilStatus(newPatient.dateOfBirth, e.target.value)) {
-                                alert('⚠️ Civil status cannot be Married, Separated, or Widowed for patients under 15 years old.');
+                                alert('⚠️ Under Philippine Family Code (RA 386), the minimum age for marriage is 18 years old. Please select Single for patients under 18.');
                                 return;
                               }
                               setNewPatient({...newPatient, civilStatus: e.target.value});
@@ -7098,7 +7098,7 @@ function normalizeUser(u) {
                             value={editingPatient.civilStatus}
                             onChange={(e) => {
                               if (!validateCivilStatus(editingPatient.dateOfBirth, e.target.value)) {
-                                alert('⚠️ Civil status cannot be Married, Separated, or Widowed for patients under 15 years old.');
+                                alert('⚠️ Under Philippine Family Code (RA 386), the minimum age for marriage is 18 years old. Please select Single for patients under 18.');
                                 return;
                               }
                               setEditingPatient({...editingPatient, civilStatus: e.target.value});
