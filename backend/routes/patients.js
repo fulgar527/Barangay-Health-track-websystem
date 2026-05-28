@@ -122,6 +122,18 @@ router.put('/:patientId', async (req, res) => {
       chronicConditions, currentMedications
     } = req.body;
 
+    if (!firstName || !lastName) {
+      return res.status(400).json({ error: 'First name and last name are required.' });
+    }
+
+    // Safe defaults — same as POST route, so NOT NULL constraints are never violated
+    const safeDob     = dateOfBirth || '2000-01-01';
+    const safeAge     = (age && age > 0) ? age
+                        : Math.max(0, Math.floor((Date.now() - new Date(safeDob)) / 31557600000));
+    const safeSex     = ['Male', 'Female'].includes(sex) ? sex : 'Male';
+    const safeAddr    = (address && String(address).trim()) || 'To be updated';
+    const safeContact = (contactNumber && String(contactNumber).trim()) || 'N/A';
+
     const result = await db.query(
       `UPDATE patients SET
         last_name = $2, first_name = $3, middle_name = $4, date_of_birth = $5,
@@ -131,10 +143,11 @@ router.put('/:patientId', async (req, res) => {
         current_medications = $17, updated_at = CURRENT_TIMESTAMP
       WHERE patient_id = $1
       RETURNING *`,
-      [patientId, lastName, firstName, middleName, dateOfBirth, age, sex,
-       address, contactNumber, civilStatus, occupation, philhealthNumber,
-       emergencyContactPerson, emergencyContactNumber, allergies,
-       chronicConditions, currentMedications]
+      [patientId, lastName.trim(), firstName.trim(), middleName || null,
+       safeDob, safeAge, safeSex, safeAddr, safeContact,
+       civilStatus || null, occupation || null, philhealthNumber || null,
+       emergencyContactPerson || null, emergencyContactNumber || null,
+       allergies || null, chronicConditions || null, currentMedications || null]
     );
 
     if (result.rows.length === 0) {
@@ -143,8 +156,8 @@ router.put('/:patientId', async (req, res) => {
 
     res.json(result.rows[0]);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Failed to update patient' });
+    console.error('PUT /patients error:', err.message);
+    res.status(500).json({ error: 'Failed to update patient: ' + err.message });
   }
 });
 
