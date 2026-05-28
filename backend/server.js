@@ -1,296 +1,184 @@
-process.env.SUPABASE_URL = process.env.SUPABASE_URL || 'https://rfxomnrzlqiopfexnlfx.supabase.co';
-process.env.SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || 'sb_publishable_gDKVGPRUV6pYd2qwEPAzzg_nbbV6Y66';
-process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgresql://postgres.rfxomnrzlqiopfexnlfx:Cuty0urs3lf2026@aws-1-ap-northeast-1.pooler.supabase.com:6543/postgres';
-process.env.NODE_ENV = process.env.NODE_ENV || 'production';
-process.env.PORT = process.env.PORT || '3000';
 const express = require('express');
-const cors = require('cors');
-const helmet = require('helmet');
-const morgan = require('morgan');
-const rateLimit = require('express-rate-limit');
-const path = require('path');
-const { createClient } = require('@supabase/supabase-js');
+const router = express.Router();
+const db = require('../db');
 
-const app = express();
-const PORT = process.env.PORT || 3000;
-
-// Behind Hostinger's reverse proxy — required so req.ip / X-Forwarded-For
-// resolve to the real client, and so express-rate-limit doesn't throw.
-app.set('trust proxy', 1);
-
-// ══════════════════════════════════════════════════════════════════════════════
-// ENVIRONMENT VALIDATION  (fail fast with a clear message, not a cryptic crash)
-// ══════════════════════════════════════════════════════════════════════════════
-
-// createClient() throws "supabaseUrl is required" at startup if these are
-// missing, and ./db will crash without DATABASE_URL. Catch it here so
-// `pm2 logs` tells you exactly what's wrong instead of a silent 503.
-const REQUIRED_ENV = ['SUPABASE_URL', 'SUPABASE_ANON_KEY', 'DATABASE_URL'];
-const missingEnv = REQUIRED_ENV.filter((key) => !process.env[key]);
-if (missingEnv.length > 0) {
-  console.error('❌ Missing required environment variables: ' + missingEnv.join(', '));
-  console.error('   Make sure a .env file exists on the server (it is gitignored,');
-  console.error('   so it does NOT get deployed automatically) or set them in PM2.');
-}
-
-// ══════════════════════════════════════════════════════════════════════════════
-// CONFIGURATION
-// ══════════════════════════════════════════════════════════════════════════════
-
-const NODE_ENV = process.env.NODE_ENV || 'development';
-
-// Supports a single origin or a comma-separated list. Defaults to '*'.
-// NOTE: set ALLOWED_ORIGIN explicitly in production (e.g. https://yourdomain.com).
-const allowedOrigins = (process.env.ALLOWED_ORIGIN || '*')
-  .split(',')
-  .map((o) => o.trim())
-  .filter(Boolean);
-
-// Initialize Supabase client for server-side operations
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_ANON_KEY
-);
-
-// Database connection (for business logic, not auth)
-const db = require('./db');
-
-// ══════════════════════════════════════════════════════════════════════════════
-// SECURITY MIDDLEWARE
-// ══════════════════════════════════════════════════════════════════════════════
-
-app.use(helmet({
-  contentSecurityPolicy: {
-    directives: {
-      defaultSrc: ["'self'"],
-      scriptSrc:  ["'self'", "'unsafe-inline'", "'unsafe-eval'",
-                   "https://unpkg.com", "https://cdn.jsdelivr.net",
-                   "https://cdn.tailwindcss.com"],
-      styleSrc:   ["'self'", "'unsafe-inline'", "https://cdn.tailwindcss.com"],
-      imgSrc:     ["'self'", "data:", "blob:"],
-      fontSrc:    ["'self'", "data:", "https://fonts.gstatic.com"],
-      connectSrc: ["'self'", process.env.SUPABASE_URL].filter(Boolean),
-    }
-  },
-  crossOriginEmbedderPolicy: false,
-  crossOriginResourcePolicy: { policy: "cross-origin" }
-}));
-
-// CORS: a wildcard origin ('*') CANNOT be combined with credentials:true —
-// browsers reject it. Using a function that reflects the request origin keeps
-// it permissive while staying valid for credentialed requests.
-app.use(cors({
-  origin(origin, callback) {
-    // Allow non-browser requests (curl, server-to-server) which have no origin.
-    if (!origin || allowedOrigins.includes('*') || allowedOrigins.includes(origin)) {
-      return callback(null, true);
-    }
-    return callback(new Error('Not allowed by CORS'));
-  },
-  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-  credentials: true,
-  optionsSuccessStatus: 204
-}));
-
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-
-if (NODE_ENV !== 'test') {
-  app.use(morgan('combined'));
-}
-
-// Rate limiting
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 1000,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Too many requests, please try again later' }
-});
-app.use('/api/', limiter);
-
-// ══════════════════════════════════════════════════════════════════════════════
-// SUPABASE AUTH MIDDLEWARE
-// ══════════════════════════════════════════════════════════════════════════════
-
-/**
- * Middleware to verify Supabase JWT token
- * Attaches user info to req.user if valid
- */
-async function requireAuth(req, res, next) {
+// Get all patients
+router.get('/', async (req, res) => {
   try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({ error: 'No token provided' });
-    }
-
-    const token = authHeader.split(' ')[1];
-    // Allow local-dev-token for default accounts
-    if (token === 'local-dev-token') {
-      req.user = {
-        id: 'local-admin',
-        email: 'admin@healthtrack.local',
-        role: 'admin',
-        username: 'admin'
-      };
-      return next();
-    }
-
-    // Verify token with Supabase
-    const { data: { user }, error } = await supabase.auth.getUser(token);
-
-    if (error || !user) {
-      return res.status(401).json({ error: 'Invalid or expired token' });
-    }
-
-    // Attach user to request
-    req.user = {
-      id: user.id,
-      email: user.email,
-      role: user.user_metadata?.role || 'staff',
-      username: user.user_metadata?.username || (user.email ? user.email.split('@')[0] : 'user')
-    };
-
-    next();
-  } catch (error) {
-    console.error('Auth middleware error:', error);
-    return res.status(401).json({ error: 'Authentication failed' });
-  }
-}
-
-// Optional auth - doesn't fail if no token, just doesn't set req.user
-async function optionalAuth(req, res, next) {
-  try {
-    const authHeader = req.headers.authorization;
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-      const token = authHeader.split(' ')[1];
-      const { data: { user } } = await supabase.auth.getUser(token);
-      if (user) {
-        req.user = {
-          id: user.id,
-          email: user.email,
-          role: user.user_metadata?.role || 'staff',
-          username: user.user_metadata?.username || (user.email ? user.email.split('@')[0] : 'user')
-        };
-      }
-    }
-    next();
-  } catch (error) {
-    next(); // Continue even if auth fails
-  }
-}
-
-// ══════════════════════════════════════════════════════════════════════════════
-// FRONTEND STATIC FILES
-// ══════════════════════════════════════════════════════════════════════════════
-
-app.use(express.static(path.join(__dirname, 'frontend')));
-
-// ══════════════════════════════════════════════════════════════════════════════
-// API ROUTES
-// ══════════════════════════════════════════════════════════════════════════════
-
-// Health check (no auth required)
-app.get('/health', async (req, res) => {
-  try {
-    await db.query('SELECT 1');
-    res.json({
-      status: 'OK',
-      api: 'running',
-      database: 'connected',
-      auth: 'supabase',
-      timestamp: new Date().toISOString(),
-      env: NODE_ENV,
-      hasSupabaseUrl: !!process.env.SUPABASE_URL,
-      hasDbUrl: !!process.env.DATABASE_URL
-    });
-  } catch (error) {
-    res.status(503).json({
-      status: 'DEGRADED',
-      api: 'running',
-      database: error.message,
-      auth: 'supabase',
-      timestamp: new Date().toISOString(),
-      env: NODE_ENV,
-      hasSupabaseUrl: !!process.env.SUPABASE_URL,
-      hasDbUrl: !!process.env.DATABASE_URL
-    });
+    const result = await db.query(
+      'SELECT * FROM patients ORDER BY created_at DESC'
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch patients' });
   }
 });
 
-// Auth info endpoint (returns current user if authenticated)
-app.use('/api/auth', require('./routes/auth'));
+// ──────────────────────────────────────────────────────────────────────────────
+// BUG FIX #2: /search/:query MUST come before /:patientId.
+// Express matches in registration order — if /:patientId is first, a request
+// for /search/john hits the wildcard with patientId="search" and returns 404.
+// ──────────────────────────────────────────────────────────────────────────────
 
-// Business logic routes (all require authentication)
-app.use('/api/patients', requireAuth, require('./routes/patients'));
-app.use('/api/queue', requireAuth, require('./routes/queue'));
-app.use('/api/services', requireAuth, require('./routes/services'));
-app.use('/api/visit-log', requireAuth, require('./routes/visitLog'));
-app.use('/api/analytics', requireAuth, require('./routes/analytics'));
-app.use('/api/audit', requireAuth, require('./routes/audit'));
-app.use('/api/service-categories', requireAuth, require('./routes/serviceCategories'));
-
-// Serve React SPA for all non-API GET requests.
-// Uses app.use() (no path) instead of app.get('*') — the literal '*' pattern
-// is INVALID in Express 5 (path-to-regexp v8) and throws at startup. This form
-// works in both Express 4 and 5.
-app.use((req, res, next) => {
-  if (req.method !== 'GET') return next();
-  if (req.path.startsWith('/api/')) return next();
-res.sendFile(path.join(__dirname, 'frontend', 'index.html'));
+// Search patients  ← MOVED ABOVE /:patientId
+router.get('/search/:query', async (req, res) => {
+  try {
+    const { query } = req.params;
+    const result = await db.query(
+      `SELECT * FROM patients 
+       WHERE last_name ILIKE $1 OR first_name ILIKE $1 OR patient_id ILIKE $1
+       ORDER BY last_name, first_name`,
+      [`%${query}%`]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to search patients' });
+  }
 });
 
-// ══════════════════════════════════════════════════════════════════════════════
-// ERROR HANDLERS
-// ══════════════════════════════════════════════════════════════════════════════
-
-app.use((req, res) => {
-  res.status(404).json({ error: 'Route not found' });
+// Get patient by ID  ← wildcard stays below specific routes
+router.get('/:patientId', async (req, res) => {
+  try {
+    const { patientId } = req.params;
+    const result = await db.query(
+      'SELECT * FROM patients WHERE patient_id = $1',
+      [patientId]
+    );
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Patient not found' });
+    }
+    
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch patient' });
+  }
 });
 
-app.use((err, req, res, next) => {
-  console.error('❌ Error:', err);
-  const status = err.status || 500;
-  res.status(status).json({
-    error: NODE_ENV === 'production' ? 'Something went wrong!' : err.message,
-    ...(NODE_ENV !== 'production' && { stack: err.stack })
-  });
+// Create new patient
+router.post('/', async (req, res) => {
+  try {
+    const {
+      lastName, firstName, middleName, dateOfBirth, age, sex,
+      address, contactNumber, civilStatus, occupation, philhealthNumber,
+      emergencyContactPerson, emergencyContactNumber, allergies,
+      chronicConditions, currentMedications
+    } = req.body;
+
+    // ────────────────────────────────────────────────────────────────────────
+    // Required-field check with a clean 400 response.
+    // Both staff manual-register and resident on-the-fly booking call this.
+    // Without this guard, missing fields produce a 500 with a raw Postgres
+    // "null value violates not-null constraint" error.
+    // ────────────────────────────────────────────────────────────────────────
+    if (!firstName || !lastName) {
+      return res.status(400).json({ error: 'First name and last name are required.' });
+    }
+
+    // Apply safe defaults for NOT NULL columns so on-the-fly resident bookings
+    // succeed even when profile is incomplete. Resident can update later.
+    const safeDob     = dateOfBirth || '2000-01-01';
+    const safeAge     = (age && age > 0) ? age
+                        : Math.max(0, Math.floor((Date.now() - new Date(safeDob)) / 31557600000));
+    const safeSex     = ['Male', 'Female'].includes(sex) ? sex : 'Male';
+    const safeAddr    = (address && String(address).trim()) || 'To be updated';
+    const safeContact = (contactNumber && String(contactNumber).trim()) || 'N/A';
+
+    const idResult = await db.query('SELECT generate_patient_id() as patient_id');
+    const patientId = idResult.rows[0].patient_id;
+
+    const result = await db.query(
+      `INSERT INTO patients (
+        patient_id, last_name, first_name, middle_name, date_of_birth, age, sex,
+        address, contact_number, civil_status, occupation, philhealth_number,
+        emergency_contact_person, emergency_contact_number, allergies,
+        chronic_conditions, current_medications
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+      RETURNING *`,
+      [patientId, lastName.trim(), firstName.trim(), middleName, safeDob, safeAge, safeSex,
+       safeAddr, safeContact, civilStatus, occupation, philhealthNumber,
+       emergencyContactPerson, emergencyContactNumber, allergies,
+       chronicConditions, currentMedications]
+    );
+
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error('POST /patients failed:', err.message);
+    res.status(500).json({ error: 'Failed to create patient: ' + err.message });
+  }
 });
 
-// ══════════════════════════════════════════════════════════════════════════════
-// STARTUP
-// ══════════════════════════════════════════════════════════════════════════════
+// Update patient
+router.put('/:patientId', async (req, res) => {
+  try {
+    const { patientId } = req.params;
+    const {
+      lastName, firstName, middleName, dateOfBirth, age, sex,
+      address, contactNumber, civilStatus, occupation, philhealthNumber,
+      emergencyContactPerson, emergencyContactNumber, allergies,
+      chronicConditions, currentMedications
+    } = req.body;
 
-process.on('uncaughtException', (error) => {
-  console.error('❌ Uncaught Exception:', error);
-  process.exit(1);
+    if (!firstName || !lastName) {
+      return res.status(400).json({ error: 'First name and last name are required.' });
+    }
+
+    // Safe defaults — same as POST route, so NOT NULL constraints are never violated
+    const safeDob     = dateOfBirth || '2000-01-01';
+    const safeAge     = (age && age > 0) ? age
+                        : Math.max(0, Math.floor((Date.now() - new Date(safeDob)) / 31557600000));
+    const safeSex     = ['Male', 'Female'].includes(sex) ? sex : 'Male';
+    const safeAddr    = (address && String(address).trim()) || 'To be updated';
+    const safeContact = (contactNumber && String(contactNumber).trim()) || 'N/A';
+
+    const result = await db.query(
+      `UPDATE patients SET
+        last_name = $2, first_name = $3, middle_name = $4, date_of_birth = $5,
+        age = $6, sex = $7, address = $8, contact_number = $9, civil_status = $10,
+        occupation = $11, philhealth_number = $12, emergency_contact_person = $13,
+        emergency_contact_number = $14, allergies = $15, chronic_conditions = $16,
+        current_medications = $17, updated_at = CURRENT_TIMESTAMP
+      WHERE patient_id = $1
+      RETURNING *`,
+      [patientId, lastName.trim(), firstName.trim(), middleName || null,
+       safeDob, safeAge, safeSex, safeAddr, safeContact,
+       civilStatus || null, occupation || null, philhealthNumber || null,
+       emergencyContactPerson || null, emergencyContactNumber || null,
+       allergies || null, chronicConditions || null, currentMedications || null]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Patient not found' });
+    }
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('PUT /patients error:', err.message);
+    res.status(500).json({ error: 'Failed to update patient: ' + err.message });
+  }
 });
 
-process.on('unhandledRejection', (error) => {
-  console.error('❌ Unhandled Rejection:', error);
+// Delete patient
+router.delete('/:patientId', async (req, res) => {
+  try {
+    const { patientId } = req.params;
+    const result = await db.query(
+      'DELETE FROM patients WHERE patient_id = $1 RETURNING *',
+      [patientId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Patient not found' });
+    }
+
+    res.json({ message: 'Patient deleted successfully' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to delete patient' });
+  }
 });
 
-const server = app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 HealthTrack API Server running on port ${PORT}`);
-  console.log(`📊 Environment: ${NODE_ENV}`);
-  console.log(`🔗 API URL: http://localhost:${PORT}`);
-  console.log(`💚 Health check: http://localhost:${PORT}/health`);
-  console.log(`🔒 CORS origin: ${allowedOrigins.join(', ')}`);
-  console.log(`🔐 Auth: Supabase`);
-});
-
-// Graceful shutdown — lets PM2 reload/restart cleanly instead of being killed.
-function shutdown(signal) {
-  console.log(`\n${signal} received — shutting down gracefully...`);
-  server.close(() => {
-    console.log('HTTP server closed.');
-    process.exit(0);
-  });
-  // Force-exit if connections don't drain in time.
-  setTimeout(() => process.exit(1), 10000).unref();
-}
-process.on('SIGTERM', () => shutdown('SIGTERM'));
-process.on('SIGINT', () => shutdown('SIGINT'));
-
-module.exports = { app, server };
+module.exports = router;
