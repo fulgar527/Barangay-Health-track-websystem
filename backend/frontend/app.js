@@ -331,26 +331,19 @@ function normalizeUser(u) {
           const [auditEntries, setAuditEntries] = React.useState([]);
           React.useEffect(() => {
             api('GET', '/audit').then(rows => {
+              // Normalize all fields to strings to avoid React "objects as children" error
               const safe = (v) => {
                 if (v === null || v === undefined) return '';
                 if (typeof v === 'object') return JSON.stringify(v);
                 return String(v);
               };
-              const normalized = (Array.isArray(rows) ? rows : []).map(r => {
-                // action: try column first, then details.action, then 'SYSTEM'
-                const action = safe(r.action) ||
-                  safe(r.details && typeof r.details === 'object' ? r.details.action : '') ||
-                  'SYSTEM';
-                // username: try column first (skip UUIDs), then details.username
-                const rawUser = safe(r.username);
-                const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(rawUser);
-                const username = (!rawUser || isUUID)
-                  ? safe(r.details && typeof r.details === 'object' ? r.details.username : '')
-                  : rawUser;
-                const role = safe(r.role || (r.details && typeof r.details === 'object' ? r.details.role : ''));
-                const details = safe(r.details && typeof r.details === 'object' ? r.details.details : r.details);
-                return { action, username, role, details, timestamp: safe(r.created_at || r.timestamp) };
-              });
+              const normalized = (Array.isArray(rows) ? rows : []).map(r => ({
+                action:    safe(r.action),
+                username:  safe(r.username || (r.details && typeof r.details === 'object' ? r.details.username : '')),
+                role:      safe(r.role || (r.details && typeof r.details === 'object' ? r.details.role : '')),
+                details:   safe(r.details && typeof r.details === 'object' ? r.details.details : r.details),
+                timestamp: safe(r.created_at || r.timestamp),
+              }));
               setAuditEntries(normalized);
             }).catch(() => {});
           }, []);
@@ -685,13 +678,6 @@ function normalizeUser(u) {
               setLoginUsername(''); setLoginPassword('');
               setLoginError(''); setShowPassword(false);
               setLastActivity(Date.now());
-              // Audit: log successful login (backend also logs, this is belt+suspenders)
-              api('POST', '/audit', {
-                action: 'LOGIN',
-                username: user.username,
-                role: user.role,
-                details: `${user.username} logged in`
-              }).catch(() => {});
             } catch (err) {
               const newAttempts = loginAttempts + 1;
               setLoginAttempts(newAttempts);
@@ -1758,14 +1744,13 @@ function normalizeUser(u) {
           const updatePatient = async () => {
             if (!editingPatient) return;
             try {
-              const payload = {
+              const row = await api('PUT', '/patients/' + editingPatient.patientId, {
                 lastName: editingPatient.lastName, firstName: editingPatient.firstName,
                 middleName: editingPatient.middleName || null,
-                dateOfBirth: editingPatient.dateOfBirth || '2000-01-01',
-                age: calculateAge(editingPatient.dateOfBirth || '2000-01-01'),
-                sex: editingPatient.sex || 'Male',
-                address: editingPatient.address || 'To be updated',
-                contactNumber: editingPatient.contact || editingPatient.contactNumber || 'N/A',
+                dateOfBirth: editingPatient.dateOfBirth,
+                age: calculateAge(editingPatient.dateOfBirth),
+                sex: editingPatient.sex, address: editingPatient.address,
+                contactNumber: editingPatient.contact || editingPatient.contactNumber,
                 civilStatus: editingPatient.civilStatus || null,
                 occupation: editingPatient.occupation || null,
                 philhealthNumber: editingPatient.philHealthNumber || null,
@@ -1774,16 +1759,12 @@ function normalizeUser(u) {
                 allergies: editingPatient.allergies || null,
                 chronicConditions: editingPatient.chronicConditions || null,
                 currentMedications: editingPatient.currentMedications || null,
-              };
-              const row = await api('PUT', '/patients/' + editingPatient.patientId, payload);
+              });
               const updated = normalizePatient(row);
               setRegisteredPatients(prev => prev.map(p => p.patientId === updated.patientId ? updated : p));
               setEditingPatient(null);
               alert('Patient information updated successfully');
-            } catch(err) {
-              console.error('updatePatient error:', err);
-              alert('Update failed: ' + (err.message || 'Unknown error. Check console for details.'));
-            }
+            } catch(err) { alert('Update failed: ' + (err.message||'Error')); }
           };
 
           // Delete patient — DELETE /api/patients/:id
