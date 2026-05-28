@@ -3557,10 +3557,17 @@ function normalizeUser(u) {
                                         {CLINIC_SLOTS.map(s => {
                                           const isBooked = booked.has(s.value);
                                           const isLunch  = s.lunch;
-                                          const disabled = isBooked || isLunch;
+                                          const now = new Date();
+                                          const localToday = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+                                          const isToday = editingAppointment.newAppointmentDate === localToday;
+                                          const isPast = isToday && (() => {
+                                            const [h] = s.value.split(':').map(Number);
+                                            return now.getHours() >= h;
+                                          })();
+                                          const disabled = isBooked || isLunch || isPast;
                                           return (
                                             <option key={s.value} value={s.value} disabled={disabled}>
-                                              {`Slot ${s.slot}: ${s.label}${isLunch ? ' 🍽 Lunch Break' : isBooked ? ' ✗ Fully Booked' : ''}`}
+                                              {`Slot ${s.slot}: ${s.label}${isLunch ? ' 🍽 Lunch Break' : isPast ? '' : isBooked ? ' ✗ Fully Booked' : ''}`}
                                             </option>
                                           );
                                         })}
@@ -3991,16 +3998,18 @@ function normalizeUser(u) {
                                     const isBooked = residentBooking.appointmentDate && getBookedSlots(residentBooking.appointmentDate).has(slot.value);
                                     const count = residentBooking.appointmentDate ? getSlotCount(residentBooking.appointmentDate, slot.value) : 0;
                                     const remaining = SLOT_CAPACITY - count;
-                                    // Disable past slots for today
-                                    const isToday = residentBooking.appointmentDate === new Date().toISOString().split('T')[0];
+                                    // Use local date (not UTC) for correct PH timezone comparison
+                                    const now = new Date();
+                                    const localToday = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+                                    const isToday = residentBooking.appointmentDate === localToday;
                                     const isPast = isToday && (() => {
-                                      const [h, m] = slot.value.split(':').map(Number);
-                                      const now = new Date();
-                                      return now.getHours() > h || (now.getHours() === h && now.getMinutes() >= m);
+                                      const [h] = slot.value.split(':').map(Number);
+                                      // Disable if current hour >= slot start hour
+                                      return now.getHours() >= h;
                                     })();
                                     const disabled = isBooked || isPast;
                                     return <option key={slot.value} value={slot.value} disabled={disabled}>
-                                      {slot.label}{isBooked ? ' (Full)' : isPast ? ' (Passed)' : count > 0 ? ` (${remaining} slots left)` : ''}
+                                      {slot.label}{isBooked ? ' (Full)' : isPast ? '' : count > 0 ? ` (${remaining} slots left)` : ''}
                                     </option>;
                                   })}
                                 </select>
