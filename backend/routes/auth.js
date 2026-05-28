@@ -2,7 +2,6 @@ const express = require('express');
 const router = express.Router();
 const { createClient } = require('@supabase/supabase-js');
 const db = require('../db');
-const { logAudit } = require('./audit');
 
 // Supabase client
 const supabase = createClient(
@@ -111,11 +110,6 @@ router.post('/register', async (req, res) => {
     );
 
     const user = result.rows[0];
-    // Audit: log account registration
-    logAudit(db, user.username, 'REGISTER', 'users', user.user_id,
-      { username: user.username, role: user.role, fullName: user.full_name },
-      req.ip
-    ).catch(() => {});
     // Auto-create patient record so booking form auto-fills.
     //
     // FIX: original version was broken — patient_id is the PRIMARY KEY with
@@ -239,12 +233,6 @@ router.post('/login', async (req, res) => {
 
     // Update last login
     await db.query('UPDATE users SET last_login = NOW() WHERE user_id = $1', [dbUser.user_id]).catch(() => {});
-
-    // Audit: log successful login
-    logAudit(db, dbUser.username, 'LOGIN', 'users', dbUser.user_id,
-      { username: dbUser.username, role: dbUser.role },
-      req.ip
-    ).catch(() => {});
 
     res.json({
       token: authData.session.access_token,
