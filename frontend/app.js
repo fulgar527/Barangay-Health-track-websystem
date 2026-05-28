@@ -1751,13 +1751,14 @@ function normalizeUser(u) {
           const updatePatient = async () => {
             if (!editingPatient) return;
             try {
-              const row = await api('PUT', '/patients/' + editingPatient.patientId, {
+              const payload = {
                 lastName: editingPatient.lastName, firstName: editingPatient.firstName,
                 middleName: editingPatient.middleName || null,
-                dateOfBirth: editingPatient.dateOfBirth,
-                age: calculateAge(editingPatient.dateOfBirth),
-                sex: editingPatient.sex, address: editingPatient.address,
-                contactNumber: editingPatient.contact || editingPatient.contactNumber,
+                dateOfBirth: editingPatient.dateOfBirth || '2000-01-01',
+                age: calculateAge(editingPatient.dateOfBirth || '2000-01-01'),
+                sex: editingPatient.sex || 'Male',
+                address: editingPatient.address || 'To be updated',
+                contactNumber: editingPatient.contact || editingPatient.contactNumber || 'N/A',
                 civilStatus: editingPatient.civilStatus || null,
                 occupation: editingPatient.occupation || null,
                 philhealthNumber: editingPatient.philHealthNumber || null,
@@ -1766,12 +1767,16 @@ function normalizeUser(u) {
                 allergies: editingPatient.allergies || null,
                 chronicConditions: editingPatient.chronicConditions || null,
                 currentMedications: editingPatient.currentMedications || null,
-              });
+              };
+              const row = await api('PUT', '/patients/' + editingPatient.patientId, payload);
               const updated = normalizePatient(row);
               setRegisteredPatients(prev => prev.map(p => p.patientId === updated.patientId ? updated : p));
               setEditingPatient(null);
               alert('Patient information updated successfully');
-            } catch(err) { alert('Update failed: ' + (err.message||'Error')); }
+            } catch(err) {
+              console.error('updatePatient error:', err);
+              alert('Update failed: ' + (err.message || 'Unknown error. Check console for details.'));
+            }
           };
 
           // Delete patient — DELETE /api/patients/:id
