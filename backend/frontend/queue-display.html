@@ -535,6 +535,15 @@
   const API_BASE = window.location.origin + '/api';
   const REFRESH_MS = 5000;
 
+  // ── Helpers ──────────────────────────────────────────────────────────────────
+  function formatTime(t) {
+    if (!t) return '';
+    const [h, m] = t.split(':').map(Number);
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    const h12 = h % 12 || 12;
+    return `${h12}:${String(m).padStart(2,'0')} ${ampm}`;
+  }
+
   // ── Clock ───────────────────────────────────────────────────────────────────
   function updateClock() {
     const now = new Date();
@@ -567,6 +576,7 @@
         name: ((q.first_name || q.firstName || '') + ' ' + (q.last_name || q.lastName || '')).trim() || q.name || 'Patient',
         service: q.service_category || q.serviceCategory || '',
         status: q.status || 'Waiting',
+        appointmentTime: q.appointment_time || q.appointmentTime || '',
       }));
 
       // Find currently serving (In Progress)
@@ -653,7 +663,7 @@
           <div class="num">${numStr}</div>
           <div class="info">
             <div class="name">${display}</div>
-            <div class="svc">${q.service || 'Walk-in'}</div>
+            <div class="svc">${q.service || 'Walk-in'}${q.appointmentTime ? ` · ${formatTime(q.appointmentTime)}` : ''}</div>
           </div>
           ${isNext
             ? `<div class="badge-next">Next</div>`
