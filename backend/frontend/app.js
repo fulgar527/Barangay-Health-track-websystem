@@ -1843,7 +1843,36 @@ function normalizeUser(u) {
             } catch(err) { alert('Failed to remove: ' + (err.message||'Error')); }
           };
 
-          // Update patient information — PUT /api/patients/:id
+          // Call a specific patient to the TV display (set to In Progress)
+          const callToTV = async (queueItem) => {
+            try {
+              // Clear any currently In Progress first
+              const currentlyServing = queue.find(q => q.status === 'In Progress');
+              if (currentlyServing && currentlyServing.queueId !== queueItem.queueId) {
+                await api('PATCH', '/queue/' + currentlyServing.queueId + '/status', { status: 'Accepted' });
+              }
+              await api('PATCH', '/queue/' + queueItem.queueId + '/status', { status: 'In Progress' });
+              setQueue(prev => prev.map(q =>
+                q.queueId === queueItem.queueId
+                  ? {...q, status: 'In Progress'}
+                  : q.queueId === currentlyServing?.queueId
+                  ? {...q, status: 'Accepted'}
+                  : q
+              ));
+              writeAudit('CALL_QUEUE', `Called to TV: ${queueItem.name} (#${queueItem.queueNumber})`);
+            } catch(err) { alert('Failed to call patient: ' + (err.message||'Error')); }
+          };
+
+          // Call next patient in line (lowest queue number with Accepted/Waiting status)
+          const callNextPatient = async () => {
+            const next = queue
+              .filter(q => q.status === 'Accepted' || q.status === 'Waiting')
+              .sort((a, b) => a.queueNumber - b.queueNumber)[0];
+            if (!next) { alert('No patients in queue to call.'); return; }
+            await callToTV(next);
+          };
+
+
           const updatePatient = async () => {
             if (!editingPatient) return;
             try {
@@ -3306,7 +3335,29 @@ function normalizeUser(u) {
                             </div>
                           ) : (
                             <div className={`border-2 rounded-xl p-5 ${sc.bg}`}>
-                              {/* Status badge + queue position */}
+                              {/* BIG QUEUE NUMBER */}
+                              {myEntry.queueNumber && myEntry.status !== 'Rejected' && myEntry.status !== 'Completed' && (
+                                <div className="flex flex-col items-center justify-center bg-white border-2 rounded-2xl py-5 mb-4" style={{borderColor:'var(--ht-primary)'}}>
+                                  <p className="text-xs font-bold uppercase tracking-widest mb-1" style={{color:'var(--ht-primary)'}}>
+                                    {lang === 'fil' ? 'Iyong Numero sa Pila' : 'Your Queue Number'}
+                                  </p>
+                                  <p className="font-black leading-none" style={{fontSize:'5rem', color:'var(--ht-primary)'}}>
+                                    {String(myEntry.queueNumber).padStart(3, '0')}
+                                  </p>
+                                  {myEntry.status === 'In Progress' && (
+                                    <span className="mt-2 bg-green-500 text-white text-xs font-bold px-4 py-1 rounded-full animate-pulse">
+                                      🔔 {lang === 'fil' ? 'Ikaw na ang susunod! Pumunta na sa window.' : 'Your turn! Please proceed to the window.'}
+                                    </span>
+                                  )}
+                                  {myEntry.status !== 'In Progress' && queuePosition && (
+                                    <p className="mt-2 text-xs text-gray-400">
+                                      {lang === 'fil' ? `Posisyon sa pila: #${queuePosition}` : `Position in queue: #${queuePosition}`}
+                                    </p>
+                                  )}
+                                </div>
+                              )}
+
+                              {/* Status badge */}
                               <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
                                 <div className="flex items-center gap-2">
                                   <span className="text-xl">{sc.icon}</span>
@@ -3314,12 +3365,6 @@ function normalizeUser(u) {
                                     {sc.label}
                                   </span>
                                 </div>
-                                {queuePosition && myEntry.status !== 'Rejected' && myEntry.status !== 'Completed' && (
-                                  <div className="bg-white border border-gray-200 rounded-lg px-3 py-1 text-center">
-                                    <p className="text-xs text-gray-400 leading-none">Queue Position</p>
-                                    <p className="text-2xl font-bold text-gray-800 leading-tight">#{queuePosition}</p>
-                                  </div>
-                                )}
                               </div>
 
                               {/* Patient + service info */}
@@ -5190,13 +5235,22 @@ function normalizeUser(u) {
                   <div className="space-y-6">
                     <div className="flex justify-between items-center">
                       <h2 className="text-2xl font-bold text-gray-800">Queue Management</h2>
-                      <button
-                        onClick={() => setShowRegisterPatient(true)}
-                        className="flex items-center space-x-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:from-blue-600 hover:to-blue-700 transition-all transform hover:scale-105 shadow-md"
-                      >
-                        <UserPlus className="w-5 h-5" />
-                        <span>Walk-in Queue</span>
-                      </button>
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={callNextPatient}
+                          className="flex items-center space-x-2 bg-gradient-to-r from-green-500 to-green-600 text-white px-5 py-3 rounded-lg font-semibold hover:from-green-600 hover:to-green-700 transition-all transform hover:scale-105 shadow-md"
+                        >
+                          <span>📺</span>
+                          <span>Call Next</span>
+                        </button>
+                        <button
+                          onClick={() => setShowRegisterPatient(true)}
+                          className="flex items-center space-x-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:from-blue-600 hover:to-blue-700 transition-all transform hover:scale-105 shadow-md"
+                        >
+                          <UserPlus className="w-5 h-5" />
+                          <span>Walk-in Queue</span>
+                        </button>
+                      </div>
                     </div>
 
                     {/* Queue Stats */}
@@ -5342,6 +5396,13 @@ function normalizeUser(u) {
                                         >
                                           <CheckCircle className="w-3.5 h-3.5" />
                                           Served
+                                        </button>
+                                        <button
+                                          onClick={() => callToTV(item)}
+                                          className={`flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold transition-colors w-full ${item.status === 'In Progress' ? 'bg-purple-600 text-white' : 'bg-purple-100 hover:bg-purple-500 hover:text-white text-purple-700'}`}
+                                        >
+                                          <span>📺</span>
+                                          {item.status === 'In Progress' ? 'On TV' : 'Call'}
                                         </button>
                                         <button
                                           onClick={() => openRejectModal(item)}
