@@ -325,13 +325,14 @@ setInterval(async () => {
     if (inProgressCheck.rows.length > 0) return; // someone already on TV
 
     // Find the next appointment whose time slot matches now
+    // Use LEFT(appointment_time, 5) to handle both 'HH:MM' and 'HH:MM:SS' formats
     const result = await db.query(
       `UPDATE queue
        SET status = 'In Progress', time_started = NOW()
        WHERE queue_id = (
          SELECT queue_id FROM queue
          WHERE DATE(appointment_date) = $1
-           AND appointment_time = $2
+           AND LEFT(appointment_time::text, 5) = $2
            AND status IN ('Accepted', 'Waiting')
          ORDER BY queue_number ASC
          LIMIT 1
