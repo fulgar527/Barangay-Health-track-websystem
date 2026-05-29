@@ -577,15 +577,22 @@
         service: q.service_category || q.serviceCategory || '',
         status: q.status || 'Waiting',
         appointmentTime: q.appointment_time || q.appointmentTime || '',
+        priority: q.priority || 'Regular',
       }));
 
       // Find currently serving (In Progress)
       const serving = queue.find(q => q.status === 'In Progress');
 
-      // Next in line: Accepted + Waiting, sorted by queue number
+      // Next in line: Accepted + Waiting, sorted by priority then queue number
+      const PRIORITY_WEIGHT = { 'Priority Case': 0, 'Urgent': 1, 'Regular': 2 };
       const waiting = queue
         .filter(q => q.status === 'Accepted' || q.status === 'Waiting')
-        .sort((a, b) => a.queueNumber - b.queueNumber);
+        .sort((a, b) => {
+          const pa = PRIORITY_WEIGHT[a.priority] ?? 2;
+          const pb = PRIORITY_WEIGHT[b.priority] ?? 2;
+          if (pa !== pb) return pa - pb;
+          return a.queueNumber - b.queueNumber; // same priority → earliest first
+        });
 
       // Stats
       const servedCount = queue.filter(q => q.status === 'Completed').length;
@@ -662,7 +669,7 @@
         <div class="queue-item ${isNext ? 'next' : ''}" style="animation-delay:${i * 0.06}s">
           <div class="num">${numStr}</div>
           <div class="info">
-            <div class="name">${display}</div>
+            <div class="name">${display}${q.priority === 'Priority Case' ? ' <span style="color:#F39C12;font-size:0.7rem;font-weight:700;letter-spacing:1px;">⚡ PRIORITY</span>' : q.priority === 'Urgent' ? ' <span style="color:#E74C3C;font-size:0.7rem;font-weight:700;letter-spacing:1px;">🔴 URGENT</span>' : ''}</div>
             <div class="svc">${q.service || 'Walk-in'}${q.appointmentTime ? ` · ${formatTime(q.appointmentTime)}` : ''}</div>
           </div>
           ${isNext
