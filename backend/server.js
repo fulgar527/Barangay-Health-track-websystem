@@ -224,6 +224,25 @@ app.get('/health', async (req, res) => {
 app.use('/api/auth', require('./routes/auth'));
 
 // Business logic routes (all require authentication)
+// ── PUBLIC: TV Queue Display endpoint — no auth needed ───────────────────────
+app.get('/api/queue-display/live', async (req, res) => {
+  try {
+    const result = await db.query(
+      `SELECT q.queue_number, q.service_category, q.status,
+              COALESCE(p.first_name, split_part(q.patient_id,'-',1)) AS first_name,
+              COALESCE(p.last_name, '') AS last_name
+       FROM queue q
+       LEFT JOIN patients p ON q.patient_id = p.patient_id
+       WHERE DATE(q.created_at) = CURRENT_DATE
+       ORDER BY q.queue_number`
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error('queue-display/live error:', err.message);
+    res.status(500).json({ error: 'Failed to fetch queue' });
+  }
+});
+
 app.use('/api/patients', requireAuth, require('./routes/patients'));
 app.use('/api/queue', requireAuth, require('./routes/queue'));
 app.use('/api/services', requireAuth, require('./routes/services'));
@@ -235,6 +254,11 @@ app.use('/api/service-categories', requireAuth, require('./routes/serviceCategor
 // Serve React SPA for all non-API GET requests.
 // Uses app.use() (no path) instead of app.get('*') — the literal '*' pattern
 // is INVALID in Express 5 (path-to-regexp v8) and throws at startup. This form
+// TV Queue Display — no auth required, public read-only page
+app.get('/queue-display', (req, res) => {
+  res.sendFile(path.join(__dirname, 'frontend', 'queue-display.html'));
+});
+
 // works in both Express 4 and 5.
 app.use((req, res, next) => {
   if (req.method !== 'GET') return next();
