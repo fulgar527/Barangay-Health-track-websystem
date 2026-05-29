@@ -5248,13 +5248,6 @@ function normalizeUser(u) {
                       <h2 className="text-2xl font-bold text-gray-800">Queue Management</h2>
                       <div className="flex items-center gap-3">
                         <button
-                          onClick={callNextPatient}
-                          className="flex items-center space-x-2 bg-gradient-to-r from-green-500 to-green-600 text-white px-5 py-3 rounded-lg font-semibold hover:from-green-600 hover:to-green-700 transition-all transform hover:scale-105 shadow-md"
-                        >
-                          <span>📺</span>
-                          <span>Call Next</span>
-                        </button>
-                        <button
                           onClick={() => setShowRegisterPatient(true)}
                           className="flex items-center space-x-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:from-blue-600 hover:to-blue-700 transition-all transform hover:scale-105 shadow-md"
                         >
@@ -5407,13 +5400,6 @@ function normalizeUser(u) {
                                         >
                                           <CheckCircle className="w-3.5 h-3.5" />
                                           Served
-                                        </button>
-                                        <button
-                                          onClick={() => callToTV(item)}
-                                          className={`flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-bold transition-colors w-full ${item.status === 'In Progress' ? 'bg-purple-600 text-white' : 'bg-purple-100 hover:bg-purple-500 hover:text-white text-purple-700'}`}
-                                        >
-                                          <span>📺</span>
-                                          {item.status === 'In Progress' ? 'On TV' : 'Call'}
                                         </button>
                                         <button
                                           onClick={() => openRejectModal(item)}
