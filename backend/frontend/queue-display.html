@@ -487,9 +487,24 @@
 
     <!-- NEXT UP -->
     <div class="next-panel">
-      <div class="next-label">Next in Line</div>
-      <div class="queue-list" id="queue-list">
-        <div class="empty-queue">
+      <!-- Priority / Urgent Lane -->
+      <div class="next-label" style="color:#E74C3C;border-color:rgba(231,76,60,0.3);">
+        🔴 PRIORITY &amp; URGENT
+      </div>
+      <div class="queue-list" id="queue-priority" style="flex:0 0 auto;max-height:42%;margin-bottom:10px;overflow:hidden;">
+        <div class="empty-queue" id="empty-priority" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;opacity:0.25;">
+          <p style="font-family:'Barlow Condensed',sans-serif;font-size:0.8rem;letter-spacing:3px;text-transform:uppercase;">No priority cases</p>
+        </div>
+      </div>
+
+      <div style="border-top:1px solid rgba(255,255,255,0.07);margin:4px 0 10px;"></div>
+
+      <!-- Regular Lane -->
+      <div class="next-label" style="border-color:rgba(255,255,255,0.07);">
+        🟢 REGULAR LANE
+      </div>
+      <div class="queue-list" id="queue-regular" style="flex:1;">
+        <div class="empty-queue" id="empty-regular">
           <p>No patients in queue</p>
         </div>
       </div>
@@ -643,47 +658,69 @@
   }
 
   function renderNextList(waiting) {
-    const list = document.getElementById('queue-list');
+    const priorityList = document.getElementById('queue-priority');
+    const regularList  = document.getElementById('queue-regular');
 
-    if (waiting.length === 0) {
-      list.innerHTML = `
-        <div class="empty-queue">
-          <p>No patients in queue</p>
+    const priorityQ = waiting.filter(q => q.priority === 'Priority Case' || q.priority === 'Urgent');
+    const regularQ  = waiting.filter(q => q.priority !== 'Priority Case' && q.priority !== 'Urgent');
+
+    // Render priority lane
+    if (priorityQ.length === 0) {
+      priorityList.innerHTML = `
+        <div style="display:flex;align-items:center;justify-content:center;padding:12px;opacity:0.25;">
+          <p style="font-family:'Barlow Condensed',sans-serif;font-size:0.8rem;letter-spacing:3px;text-transform:uppercase;">No priority cases</p>
         </div>`;
-      return;
+    } else {
+      priorityList.innerHTML = priorityQ.slice(0, 4).map((q, i) => {
+        const numStr = String(q.queueNumber).padStart(3, '0');
+        const parts = q.name.split(' ');
+        const display = parts.length >= 2 ? `${parts[0]} ${parts[parts.length-1][0]}.` : q.name;
+        const isNext = i === 0;
+        const badge = q.priority === 'Priority Case'
+          ? `<span style="color:#F39C12;font-size:0.65rem;font-weight:700;letter-spacing:1px;background:rgba(243,156,18,0.15);padding:2px 6px;border-radius:3px;">⚡ PRIORITY</span>`
+          : `<span style="color:#E74C3C;font-size:0.65rem;font-weight:700;letter-spacing:1px;background:rgba(231,76,60,0.15);padding:2px 6px;border-radius:3px;">🔴 URGENT</span>`;
+        return `
+          <div class="queue-item ${isNext ? 'next' : ''}" style="border-color:rgba(231,76,60,0.4);background:rgba(231,76,60,0.08);animation-delay:${i*0.06}s">
+            <div class="num" style="color:#E74C3C;">${numStr}</div>
+            <div class="info">
+              <div class="name">${display} ${badge}</div>
+              <div class="svc">${q.service || 'Walk-in'}${q.appointmentTime ? ` · ${formatTime(q.appointmentTime)}` : ''}</div>
+            </div>
+            ${isNext ? `<div class="badge-next" style="background:#E74C3C;">Next</div>` : `<div class="badge-pos">#${i+1}</div>`}
+          </div>`;
+      }).join('');
     }
 
-    const maxShow = 7;
-    const items = waiting.slice(0, maxShow);
-
-    list.innerHTML = items.map((q, i) => {
-      const numStr = String(q.queueNumber).padStart(3, '0');
-      const isNext = i === 0;
-      // Mask last name for privacy — show first name + last initial
-      const parts = q.name.split(' ');
-      const display = parts.length >= 2
-        ? `${parts[0]} ${parts[parts.length-1][0]}.`
-        : q.name;
-
-      return `
-        <div class="queue-item ${isNext ? 'next' : ''}" style="animation-delay:${i * 0.06}s">
-          <div class="num">${numStr}</div>
-          <div class="info">
-            <div class="name">${display}${q.priority === 'Priority Case' ? ' <span style="color:#F39C12;font-size:0.7rem;font-weight:700;letter-spacing:1px;">⚡ PRIORITY</span>' : q.priority === 'Urgent' ? ' <span style="color:#E74C3C;font-size:0.7rem;font-weight:700;letter-spacing:1px;">🔴 URGENT</span>' : ''}</div>
-            <div class="svc">${q.service || 'Walk-in'}${q.appointmentTime ? ` · ${formatTime(q.appointmentTime)}` : ''}</div>
-          </div>
-          ${isNext
-            ? `<div class="badge-next">Next</div>`
-            : `<div class="badge-pos">#${i + 1}</div>`
-          }
+    // Render regular lane
+    if (regularQ.length === 0) {
+      regularList.innerHTML = `
+        <div class="empty-queue">
+          <p>No regular patients in queue</p>
         </div>`;
-    }).join('');
+    } else {
+      const isFirstOverall = priorityQ.length === 0;
+      regularList.innerHTML = regularQ.slice(0, 5).map((q, i) => {
+        const numStr = String(q.queueNumber).padStart(3, '0');
+        const parts = q.name.split(' ');
+        const display = parts.length >= 2 ? `${parts[0]} ${parts[parts.length-1][0]}.` : q.name;
+        const isNext = i === 0 && isFirstOverall;
+        return `
+          <div class="queue-item ${isNext ? 'next' : ''}" style="animation-delay:${i*0.06}s">
+            <div class="num">${numStr}</div>
+            <div class="info">
+              <div class="name">${display}</div>
+              <div class="svc">${q.service || 'Walk-in'}${q.appointmentTime ? ` · ${formatTime(q.appointmentTime)}` : ''}</div>
+            </div>
+            ${isNext ? `<div class="badge-next">Next</div>` : `<div class="badge-pos">#${i+1}</div>`}
+          </div>`;
+      }).join('');
 
-    if (waiting.length > maxShow) {
-      list.innerHTML += `
-        <div style="text-align:center;padding:8px;font-family:'Barlow Condensed',sans-serif;font-size:0.8rem;color:rgba(255,255,255,0.3);letter-spacing:2px;text-transform:uppercase;">
-          +${waiting.length - maxShow} more in queue
-        </div>`;
+      if (regularQ.length > 5) {
+        regularList.innerHTML += `
+          <div style="text-align:center;padding:6px;font-family:'Barlow Condensed',sans-serif;font-size:0.75rem;color:rgba(255,255,255,0.25);letter-spacing:2px;text-transform:uppercase;">
+            +${regularQ.length - 5} more in queue
+          </div>`;
+      }
     }
   }
 
