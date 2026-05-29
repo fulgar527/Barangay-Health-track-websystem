@@ -5958,6 +5958,327 @@ function normalizeUser(u) {
                         })}
                       </div>
                     </div>
+
+                    {/* ── HEALTH TRENDS & RECOMMENDATIONS ─────────────────────── */}
+                    {(() => {
+                      const data = getAnalyticsData();
+                      if (data.length === 0) return null;
+
+                      // ── 1. Most Common Cases (by service category) ───────────
+                      const caseCounts = {};
+                      data.forEach(v => {
+                        const key = v.serviceCategory || v.service || 'Unknown';
+                        caseCounts[key] = (caseCounts[key] || 0) + 1;
+                      });
+                      const topCases = Object.entries(caseCounts)
+                        .sort((a, b) => b[1] - a[1])
+                        .slice(0, 5);
+                      const topCase = topCases[0];
+
+                      // ── 2. Severity (by priority) ────────────────────────────
+                      const severe   = data.filter(v => v.priority === 'Priority Case').length;
+                      const moderate = data.filter(v => v.priority === 'Urgent').length;
+                      const mild     = data.filter(v => v.priority === 'Regular').length;
+                      const total    = data.length;
+                      const severePct = Math.round((severe / total) * 100);
+                      const moderatePct = Math.round((moderate / total) * 100);
+
+                      // ── 3. Age group distribution ────────────────────────────
+                      const ageGroups = { 'Child (0–17)': 0, 'Adult (18–59)': 0, 'Senior (60+)': 0 };
+                      data.forEach(v => {
+                        const age = v.age || registeredPatients.find(p => p.patientId === v.patientId)?.age;
+                        if (!age) return;
+                        if (age < 18) ageGroups['Child (0–17)']++;
+                        else if (age < 60) ageGroups['Adult (18–59)']++;
+                        else ageGroups['Senior (60+)']++;
+                      });
+                      const topAgeGroup = Object.entries(ageGroups).sort((a,b) => b[1]-a[1])[0];
+
+                      // ── 4. Busiest day ───────────────────────────────────────
+                      const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+                      const dayCounts = {};
+                      data.forEach(v => {
+                        const d = days[new Date(v.visitDate).getDay()];
+                        dayCounts[d] = (dayCounts[d] || 0) + 1;
+                      });
+                      const busiestDay = Object.entries(dayCounts).sort((a,b) => b[1]-a[1])[0];
+
+                      // ── 5. Month-over-month change ───────────────────────────
+                      const now = new Date();
+                      const thisMonth = visitLog.filter(v => {
+                        const d = new Date(v.visitDate);
+                        return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+                      }).length;
+                      const lastMonth = visitLog.filter(v => {
+                        const d = new Date(v.visitDate);
+                        const lm = now.getMonth() === 0 ? 11 : now.getMonth() - 1;
+                        const ly = now.getMonth() === 0 ? now.getFullYear()-1 : now.getFullYear();
+                        return d.getMonth() === lm && d.getFullYear() === ly;
+                      }).length;
+                      const momChange = lastMonth > 0 ? Math.round(((thisMonth - lastMonth) / lastMonth) * 100) : null;
+
+                      // ── 6. Generate recommendations ──────────────────────────
+                      const recommendations = [];
+
+                      // Severity-based
+                      if (severePct >= 40) {
+                        recommendations.push({
+                          icon: '🚨', color: 'red',
+                          title: 'High Severity Alert',
+                          text: `${severePct}% of cases are classified as Priority/Severe. Increase medical staff availability, prepare emergency medicines and supplies, and coordinate referrals to nearby hospitals.`
+                        });
+                      } else if (severePct >= 20) {
+                        recommendations.push({
+                          icon: '⚠️', color: 'orange',
+                          title: 'Moderate Severity Cases Rising',
+                          text: `${severePct}% severe cases recorded. Review staffing capacity and ensure emergency response readiness.`
+                        });
+                      }
+
+                      // Top case-based
+                      if (topCase) {
+                        const cat = topCase[0].toLowerCase();
+                        if (cat.includes('maternal') || cat.includes('prenatal')) {
+                          recommendations.push({
+                            icon: '🤱', color: 'pink',
+                            title: 'Maternal Care Cases High',
+                            text: `${topCase[0]} is the most frequent case (${topCase[1]} visits). Schedule additional prenatal clinic days and increase maternal health education sessions.`
+                          });
+                        } else if (cat.includes('child') || cat.includes('immuniz') || cat.includes('vaccination')) {
+                          recommendations.push({
+                            icon: '👶', color: 'blue',
+                            title: 'Child Health Cases Increasing',
+                            text: `${topCase[0]} is the leading case this period. Prepare vaccination schedules, nutrition programs, and growth monitoring activities.`
+                          });
+                        } else if (cat.includes('tb') || cat.includes('tuberculosis') || cat.includes('communicable')) {
+                          recommendations.push({
+                            icon: '🫁', color: 'red',
+                            title: 'Communicable Disease Alert',
+                            text: `${topCase[0]} is the most reported case. Intensify contact tracing, coordinate with DOTS centers, and conduct community awareness campaigns.`
+                          });
+                        } else if (cat.includes('basic') || cat.includes('medical') || cat.includes('hypertension') || cat.includes('respiratory')) {
+                          recommendations.push({
+                            icon: '💊', color: 'purple',
+                            title: 'High Volume of Basic Medical Cases',
+                            text: `${topCase[0]} accounts for the most visits (${topCase[1]}). Consider conducting a community health screening campaign and increasing medicine inventory.`
+                          });
+                        } else if (cat.includes('senior')) {
+                          recommendations.push({
+                            icon: '👴', color: 'blue',
+                            title: 'Senior Citizen Cases Dominant',
+                            text: `${topCase[0]} leads this period. Ensure adequate supply of maintenance medicines and consider scheduling dedicated senior citizen clinic days.`
+                          });
+                        } else {
+                          recommendations.push({
+                            icon: '📋', color: 'gray',
+                            title: `${topCase[0]} Most Frequent`,
+                            text: `${topCase[0]} has the highest case count (${topCase[1]} visits). Review resource allocation and consider targeted health education for this service area.`
+                          });
+                        }
+                      }
+
+                      // Age group
+                      if (topAgeGroup && topAgeGroup[1] > 0) {
+                        if (topAgeGroup[0].includes('Senior')) {
+                          recommendations.push({
+                            icon: '🏥', color: 'teal',
+                            title: 'Senior-Dominated Patient Population',
+                            text: `${topAgeGroup[1]} senior citizens (60+) visited this period. Prioritize maintenance medicine stock, regular BP monitoring, and coordination with PhilHealth for senior benefits.`
+                          });
+                        }
+                      }
+
+                      // Month over month
+                      if (momChange !== null && momChange >= 25) {
+                        recommendations.push({
+                          icon: '📈', color: 'orange',
+                          title: 'Patient Volume Surge',
+                          text: `Visit volume increased by ${momChange}% compared to last month. Consider increasing clinic hours or adding additional health workers.`
+                        });
+                      }
+
+                      if (busiestDay) {
+                        recommendations.push({
+                          icon: '📅', color: 'indigo',
+                          title: `${busiestDay[0]} is the Busiest Day`,
+                          text: `${busiestDay[1]} visits recorded on ${busiestDay[0]}s. Ensure full staffing and adequate supplies on this day to handle peak patient volume.`
+                        });
+                      }
+
+                      const colorMap = {
+                        red: 'bg-red-50 border-red-200 text-red-800',
+                        orange: 'bg-orange-50 border-orange-200 text-orange-800',
+                        pink: 'bg-pink-50 border-pink-200 text-pink-800',
+                        blue: 'bg-blue-50 border-blue-200 text-blue-800',
+                        purple: 'bg-purple-50 border-purple-200 text-purple-800',
+                        teal: 'bg-teal-50 border-teal-200 text-teal-800',
+                        indigo: 'bg-indigo-50 border-indigo-200 text-indigo-800',
+                        gray: 'bg-gray-50 border-gray-200 text-gray-800',
+                      };
+
+                      return (
+                        <div className="space-y-6">
+                          {/* Section Header */}
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-lg">📊</div>
+                            <div>
+                              <h3 className="text-xl font-bold text-gray-800">Health Trends & Recommendations</h3>
+                              <p className="text-sm text-gray-500">Data-driven insights based on {total} recorded visit{total !== 1 ? 's' : ''} · {analyticsTimeRange} view</p>
+                            </div>
+                          </div>
+
+                          <div className="grid md:grid-cols-2 gap-6">
+                            {/* Most Common Cases */}
+                            <div className="bg-white rounded-xl shadow-md p-6">
+                              <h4 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
+                                <span className="text-lg">🏷️</span> Most Common Cases
+                              </h4>
+                              <div className="space-y-3">
+                                {topCases.map(([cat, count], i) => {
+                                  const pct = Math.round((count / total) * 100);
+                                  const colors = ['bg-red-500','bg-orange-500','bg-yellow-500','bg-blue-500','bg-green-500'];
+                                  return (
+                                    <div key={cat}>
+                                      <div className="flex justify-between text-sm mb-1">
+                                        <span className="font-medium text-gray-700 truncate max-w-[70%]">{cat}</span>
+                                        <span className="font-bold text-gray-800">{count} <span className="text-gray-400 font-normal">({pct}%)</span></span>
+                                      </div>
+                                      <div className="w-full bg-gray-100 rounded-full h-2">
+                                        <div className={`h-2 rounded-full ${colors[i]}`} style={{width:`${pct}%`}}></div>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                              {topCase && (
+                                <div className="mt-4 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-xs text-blue-700">
+                                  💡 <strong>{topCase[0]}</strong> is the most frequently reported case this period. Review resource allocation for this service area.
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Severity Analysis */}
+                            <div className="bg-white rounded-xl shadow-md p-6">
+                              <h4 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
+                                <span className="text-lg">⚡</span> Severity Analysis
+                              </h4>
+                              <div className="space-y-3">
+                                {[
+                                  { label: 'Severe (Priority Case)', count: severe, pct: severePct, color: 'bg-red-500', text: 'text-red-700', bg: 'bg-red-50' },
+                                  { label: 'Moderate (Urgent)', count: moderate, pct: moderatePct, color: 'bg-orange-500', text: 'text-orange-700', bg: 'bg-orange-50' },
+                                  { label: 'Mild (Regular)', count: mild, pct: Math.round((mild/total)*100), color: 'bg-green-500', text: 'text-green-700', bg: 'bg-green-50' },
+                                ].map(s => (
+                                  <div key={s.label}>
+                                    <div className="flex justify-between text-sm mb-1">
+                                      <span className="font-medium text-gray-700">{s.label}</span>
+                                      <span className="font-bold text-gray-800">{s.count} <span className="text-gray-400 font-normal">({s.pct}%)</span></span>
+                                    </div>
+                                    <div className="w-full bg-gray-100 rounded-full h-2">
+                                      <div className={`h-2 rounded-full ${s.color}`} style={{width:`${s.pct}%`}}></div>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                              {severePct >= 40 ? (
+                                <div className="mt-4 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs text-red-700">
+                                  🚨 <strong>{severePct}% of cases are severe.</strong> Immediate review of staffing capacity and emergency readiness is recommended.
+                                </div>
+                              ) : severePct >= 20 ? (
+                                <div className="mt-4 bg-orange-50 border border-orange-200 rounded-lg px-3 py-2 text-xs text-orange-700">
+                                  ⚠️ <strong>{severePct}% severe cases</strong> recorded. Monitor closely and ensure emergency preparedness.
+                                </div>
+                              ) : (
+                                <div className="mt-4 bg-green-50 border border-green-200 rounded-lg px-3 py-2 text-xs text-green-700">
+                                  ✅ Severity levels are within normal range. Continue standard health monitoring protocols.
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Age & Volume Insights */}
+                            <div className="bg-white rounded-xl shadow-md p-6">
+                              <h4 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
+                                <span className="text-lg">👥</span> Patient Demographics
+                              </h4>
+                              <div className="space-y-3">
+                                {Object.entries(ageGroups).map(([group, count]) => {
+                                  const pct = total > 0 ? Math.round((count/total)*100) : 0;
+                                  return (
+                                    <div key={group}>
+                                      <div className="flex justify-between text-sm mb-1">
+                                        <span className="font-medium text-gray-700">{group}</span>
+                                        <span className="font-bold text-gray-800">{count} <span className="text-gray-400 font-normal">({pct}%)</span></span>
+                                      </div>
+                                      <div className="w-full bg-gray-100 rounded-full h-2">
+                                        <div className="h-2 rounded-full bg-blue-400" style={{width:`${pct}%`}}></div>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                              <div className="mt-4 grid grid-cols-2 gap-3">
+                                <div className="bg-gray-50 rounded-lg p-3 text-center">
+                                  <p className="text-xs text-gray-500">Busiest Day</p>
+                                  <p className="text-lg font-bold text-gray-800">{busiestDay ? busiestDay[0].slice(0,3) : '—'}</p>
+                                  <p className="text-xs text-gray-500">{busiestDay ? `${busiestDay[1]} visits` : ''}</p>
+                                </div>
+                                <div className={`rounded-lg p-3 text-center ${momChange === null ? 'bg-gray-50' : momChange > 0 ? 'bg-orange-50' : 'bg-green-50'}`}>
+                                  <p className="text-xs text-gray-500">vs Last Month</p>
+                                  <p className={`text-lg font-bold ${momChange === null ? 'text-gray-400' : momChange > 0 ? 'text-orange-600' : 'text-green-600'}`}>
+                                    {momChange === null ? 'N/A' : `${momChange > 0 ? '+' : ''}${momChange}%`}
+                                  </p>
+                                  <p className="text-xs text-gray-500">{momChange === null ? 'No prior data' : momChange > 0 ? 'Increase' : 'Decrease'}</p>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* System Recommendations */}
+                            <div className="bg-white rounded-xl shadow-md p-6">
+                              <h4 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
+                                <span className="text-lg">💡</span> System Recommendations
+                                <span className="ml-auto text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-semibold">{recommendations.length} action{recommendations.length !== 1 ? 's' : ''}</span>
+                              </h4>
+                              <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
+                                {recommendations.length === 0 ? (
+                                  <div className="text-center py-6 text-gray-400">
+                                    <p className="text-sm">No critical recommendations at this time.</p>
+                                    <p className="text-xs mt-1">Health indicators are within normal ranges.</p>
+                                  </div>
+                                ) : recommendations.map((rec, i) => (
+                                  <div key={i} className={`border rounded-lg px-4 py-3 ${colorMap[rec.color]}`}>
+                                    <p className="font-bold text-sm mb-1">{rec.icon} {rec.title}</p>
+                                    <p className="text-xs leading-relaxed">{rec.text}</p>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* AI-like insight strip */}
+                          <div className="bg-gradient-to-r from-blue-600 to-purple-600 rounded-xl p-5 text-white">
+                            <div className="flex items-start gap-3">
+                              <div className="text-2xl mt-0.5">🤖</div>
+                              <div>
+                                <p className="font-bold text-sm mb-2 opacity-90 uppercase tracking-wide">Automated Health Intelligence Summary</p>
+                                <div className="flex flex-wrap gap-2">
+                                  {[
+                                    topCase ? `📌 Most common: ${topCase[0]} (${topCase[1]} cases)` : null,
+                                    severePct > 0 ? `⚡ ${severePct}% of visits are severe priority` : null,
+                                    topAgeGroup && topAgeGroup[1] > 0 ? `👥 ${topAgeGroup[0]} is the dominant age group` : null,
+                                    busiestDay ? `📅 Peak day: ${busiestDay[0]} (${busiestDay[1]} visits)` : null,
+                                    momChange !== null ? `📈 ${momChange > 0 ? `+${momChange}%` : `${momChange}%`} patient volume vs last month` : null,
+                                  ].filter(Boolean).map((insight, i) => (
+                                    <span key={i} className="bg-white bg-opacity-20 rounded-full px-3 py-1 text-xs font-medium">
+                                      {insight}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
+
                   </div>
                 )}
 
