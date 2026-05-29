@@ -235,14 +235,15 @@ router.post('/', async (req, res) => {
           1
         );
         
+        const SLOT_CAPACITY = 38; // matches frontend default
         const count = parseInt(conflict.rows[0].count);
-        if (count >= 1) {
+        if (count >= SLOT_CAPACITY) {
           console.warn('⚠️  Appointment slot full:', appointmentDate, appointmentTime);
           return res.status(409).json({ 
             error: 'This appointment slot is already fully booked. Please choose a different time.' 
           });
         }
-        console.log('✅ Appointment slot available:', appointmentDate, appointmentTime);
+        console.log('✅ Appointment slot available:', appointmentDate, appointmentTime, `(${count}/${SLOT_CAPACITY})`);
       } catch (cErr) {
         console.error('❌ Conflict check failed:', cErr.message);
         return res.status(500).json({ 
