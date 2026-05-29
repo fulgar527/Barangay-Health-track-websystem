@@ -7252,25 +7252,96 @@ function normalizeUser(u) {
                           <p className="text-sm text-red-700">{serveError}</p>
                         </div>
                       )}
+                      {/* Diagnosis */}
                       <div>
                         <label className="block text-sm font-semibold text-gray-700 mb-1">Diagnosis <span className="text-red-500">*</span></label>
-                        <textarea
-                          value={serveForm.diagnosis}
-                          onChange={e => setServeForm({...serveForm, diagnosis: e.target.value})}
-                          className="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm resize-none focus:ring-2 focus:border-transparent"
-                          style={{'--tw-ring-color':'var(--ht-primary)'}}
-                          rows={2} placeholder="Enter diagnosis (required)"
-                        />
+                        {(() => {
+                          const suggestions = {
+                            'Maternal Care': ['Normal prenatal check-up','Postnatal recovery — normal','Safe motherhood counseling given','Referred for OB-GYN consultation'],
+                            'Child Health Services': ['Healthy newborn — no abnormalities','Immunization completed','Normal growth and development','Underweight — referred for nutrition program'],
+                            'Family Planning': ['Counseling provided — patient informed','Contraceptives dispensed','Natural family planning method discussed','Referred for further FP services'],
+                            'Basic Medical Services': ['Fever — viral etiology, self-limiting','Upper respiratory tract infection (URTI)','Hypertension — monitored, medication adjusted','Minor laceration — treated and dressed','Diarrhea — mild, oral rehydration advised','Referred to hospital for advanced care'],
+                            'Nutrition Programs': ['Nutritional counseling completed','Vitamin A supplementation given','Iron supplementation given','Undernutrition — referred for follow-up'],
+                            'Communicable Disease Control': ['TB screening — negative','TB screening — referred for confirmatory test','Dengue monitoring — no symptoms','COVID-19 monitoring — asymptomatic','Rabies prevention info provided'],
+                            'Health Education & Counseling': ['Hygiene education provided','Adolescent health counseling completed','Awareness session for diabetes/hypertension conducted'],
+                            'Environmental Health & Sanitation Services': ['Water sanitation awareness provided','Waste disposal education completed','Community health surveillance conducted'],
+                            'Senior Citizen Health Services': ['BP normal — continue maintenance medication','Hypertension — medication adjusted','Basic consultation completed — stable condition','Maintenance medicine dispensed'],
+                            'Administrative & Health Records Services': ['Health records updated','Health referral document issued','Health certificate processed'],
+                          };
+                          const cat = serveModalTarget?.serviceCategory || '';
+                          const opts = suggestions[cat] || [];
+                          return opts.length > 0 ? (
+                            <div className="space-y-1">
+                              <select
+                                onChange={e => { if(e.target.value) setServeForm({...serveForm, diagnosis: e.target.value}); }}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:border-transparent bg-blue-50"
+                                defaultValue=""
+                              >
+                                <option value="">💡 Quick select diagnosis...</option>
+                                {opts.map(o => <option key={o} value={o}>{o}</option>)}
+                              </select>
+                              <textarea
+                                value={serveForm.diagnosis}
+                                onChange={e => setServeForm({...serveForm, diagnosis: e.target.value})}
+                                className="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm resize-none focus:ring-2 focus:border-transparent"
+                                rows={2} placeholder="Or type custom diagnosis..."
+                              />
+                            </div>
+                          ) : (
+                            <textarea
+                              value={serveForm.diagnosis}
+                              onChange={e => setServeForm({...serveForm, diagnosis: e.target.value})}
+                              className="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm resize-none focus:ring-2 focus:border-transparent"
+                              rows={2} placeholder="Enter diagnosis (required)"
+                            />
+                          );
+                        })()}
                       </div>
+                      {/* Treatment */}
                       <div>
                         <label className="block text-sm font-semibold text-gray-700 mb-1">Treatment / Prescription</label>
-                        <input
-                          type="text"
-                          value={serveForm.treatment}
-                          onChange={e => setServeForm({...serveForm, treatment: e.target.value})}
-                          className="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:border-transparent"
-                          placeholder="Treatment given (optional)"
-                        />
+                        {(() => {
+                          const suggestions = {
+                            'Maternal Care': ['Iron + folic acid supplementation','Postnatal vitamins prescribed','Referred to RHU/hospital','Tetanus toxoid given'],
+                            'Child Health Services': ['Vaccines administered per EPI schedule','Vitamin A capsule given','ORS for rehydration','Referred to pediatrician'],
+                            'Family Planning': ['OCP (oral contraceptive pills) dispensed','Condoms distributed','Injectable contraceptive administered','IUD insertion referral'],
+                            'Basic Medical Services': ['Paracetamol 500mg — PRN for fever','Amoxicillin 500mg TID x 7 days','ORS for rehydration','Wound cleaned and dressed','Antihypertensive medication adjusted','Referred to hospital'],
+                            'Nutrition Programs': ['Vitamin A 100,000 IU given','Ferrous sulfate supplementation','Nutritional meal plan advised','Referred to nutritionist'],
+                            'Communicable Disease Control': ['Referred to DOTS center for TB treatment','Dengue home care instructions given','COVID-19 home isolation advised','Anti-rabies information given'],
+                            'Health Education & Counseling': ['Educational materials distributed','Counseling session completed','Follow-up session scheduled'],
+                            'Senior Citizen Health Services': ['Maintenance medication dispensed','BP medication adjusted','Follow-up in 1 week advised','Referred to physician'],
+                            'Administrative & Health Records Services': ['Records updated in system','Referral slip issued','Health certificate released'],
+                          };
+                          const cat = serveModalTarget?.serviceCategory || '';
+                          const opts = suggestions[cat] || [];
+                          return opts.length > 0 ? (
+                            <div className="space-y-1">
+                              <select
+                                onChange={e => { if(e.target.value) setServeForm({...serveForm, treatment: e.target.value}); }}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:border-transparent bg-green-50"
+                                defaultValue=""
+                              >
+                                <option value="">💊 Quick select treatment...</option>
+                                {opts.map(o => <option key={o} value={o}>{o}</option>)}
+                              </select>
+                              <input
+                                type="text"
+                                value={serveForm.treatment}
+                                onChange={e => setServeForm({...serveForm, treatment: e.target.value})}
+                                className="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:border-transparent"
+                                placeholder="Or type custom treatment..."
+                              />
+                            </div>
+                          ) : (
+                            <input
+                              type="text"
+                              value={serveForm.treatment}
+                              onChange={e => setServeForm({...serveForm, treatment: e.target.value})}
+                              className="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm focus:ring-2 focus:border-transparent"
+                              placeholder="Treatment given (optional)"
+                            />
+                          );
+                        })()}
                       </div>
                       <div>
                         <label className="block text-sm font-semibold text-gray-700 mb-1">Clinical Notes <span className="text-red-500">*</span></label>
