@@ -305,6 +305,50 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`🔐 Auth: Supabase`);
 });
 
+// ── Auto-promote: when appointment time slot arrives, show on TV ──────────────
+// Runs every minute. If a patient's appointment_date = today AND
+// appointment_time hour = current hour, and nobody is currently In Progress,
+// automatically set them to In Progress so they appear on the TV display.
+setInterval(async () => {
+  try {
+    const now = new Date();
+    const localDate = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+    const currentHour = String(now.getHours()).padStart(2,'0') + ':00';
+
+    // Check if anyone is already In Progress
+    const inProgressCheck = await db.query(
+      `SELECT queue_id FROM queue WHERE status = 'In Progress' AND DATE(created_at) = $1 LIMIT 1`,
+      [localDate]
+    );
+    if (inProgressCheck.rows.length > 0) return; // someone already on TV
+
+    // Find the next appointment whose time slot matches now
+    const result = await db.query(
+      `UPDATE queue
+       SET status = 'In Progress', time_started = NOW()
+       WHERE queue_id = (
+         SELECT queue_id FROM queue
+         WHERE DATE(appointment_date) = $1
+           AND appointment_time = $2
+           AND status IN ('Accepted', 'Waiting')
+         ORDER BY queue_number ASC
+         LIMIT 1
+       )
+       RETURNING queue_id, queue_number`,
+      [localDate, currentHour]
+    );
+
+    if (result.rows.length > 0) {
+      console.log(`📺 Auto-promoted queue #${result.rows[0].queue_number} to TV display`);
+    }
+  } catch (err) {
+    // Non-fatal — just log
+    console.error('Auto-promote check error:', err.message);
+  }
+}, 60 * 1000); // every 60 seconds
+
+
+
 // Graceful shutdown — lets PM2 reload/restart cleanly instead of being killed.
 function shutdown(signal) {
   console.log(`\n${signal} received — shutting down gracefully...`);
