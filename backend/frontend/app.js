@@ -3267,13 +3267,24 @@ function normalizeUser(u) {
                   {/* Queue Status View */}
                   {residentView === 'queue' && (() => {
                     // Privacy: only show this resident's own queue entry
-                    const myEntry = queue.find(q =>
-                      q.bookedByUsername === currentUser?.username ||
+                    const myEntries = queue.filter(q =>
+                      (q.bookedByUsername === currentUser?.username ||
                       (q.selfBooked && q.patientId && registeredPatients.find(p =>
                         p.patientId === q.patientId &&
                         (p.firstName + ' ' + p.lastName).toLowerCase() === currentUser?.fullName?.toLowerCase()
-                      ))
+                      ))) &&
+                      !['Completed','Cancelled','Rejected'].includes(q.status)
                     );
+                    // Prioritize: In Progress > today's date > most recently booked
+                    const myEntry = myEntries.sort((a, b) => {
+                      if (a.status === 'In Progress') return -1;
+                      if (b.status === 'In Progress') return 1;
+                      const today = getLocalDateStr();
+                      const aToday = a.appointmentDate === today ? 0 : 1;
+                      const bToday = b.appointmentDate === today ? 0 : 1;
+                      if (aToday !== bToday) return aToday - bToday;
+                      return new Date(b.timeQueued) - new Date(a.timeQueued);
+                    })[0] || null;
                     const queuePosition = myEntry
                       ? queue.filter(q => q.status !== 'Cancelled' && q.status !== 'Rejected').findIndex(q => q.id === myEntry.id) + 1
                       : null;
