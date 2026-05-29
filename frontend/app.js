@@ -19,7 +19,7 @@ const TRANSLATIONS = {
     dateOfBirth: 'Date of Birth', dobHint: 'Must be 18–85 years old to register',
     accountConfirmation: 'Account Confirmation Via',
     email: 'Email', mobile: 'Mobile',
-    emailPlaceholder: 'email@example.com', mobilePlaceholder: '+63 9XX XXX XXXX',
+    emailPlaceholder: 'email@example.com', mobilePlaceholder: '09XXXXXXXXX or 8-digit landline',
     username: 'Username', usernamePlaceholder: 'Choose a username (min 3 characters)',
     password: 'Password', passwordPlaceholder: 'Create a password',
     confirmPassword: 'Confirm Password', confirmPasswordPlaceholder: 'Re-enter your password',
@@ -54,7 +54,7 @@ const TRANSLATIONS = {
     dateOfBirth: 'Petsa ng Kapanganakan', dobHint: 'Dapat 18–85 taong gulang para makapag-rehistro',
     accountConfirmation: 'Kumpirmahin ang Account Sa',
     email: 'Email', mobile: 'Cellphone',
-    emailPlaceholder: 'email@halimbawa.com', mobilePlaceholder: '+63 9XX XXX XXXX',
+    emailPlaceholder: 'email@halimbawa.com', mobilePlaceholder: '09XXXXXXXXX o 8-digit landline',
     username: 'Username', usernamePlaceholder: 'Pumili ng username (min 3 character)',
     password: 'Password', passwordPlaceholder: 'Gumawa ng password',
     confirmPassword: 'Kumpirmahin ang Password', confirmPasswordPlaceholder: 'Ilagay ulit ang iyong password',
@@ -2709,7 +2709,7 @@ function normalizeUser(u) {
                                   value={newAccount.mobile}
                                   onChange={(e) => setNewAccount({...newAccount, mobile: sanitizePhone(e.target.value)})}
                                   className={`w-full px-4 py-2.5 border rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${phoneClass(newAccount.mobile)}`}
-                                  placeholder="09XXXXXXXXX"
+                                  placeholder="09XXXXXXXXX or 8-digit landline"
                                   maxLength={16}
                                 />
                                 <PhoneMsg val={newAccount.mobile} />
@@ -2880,19 +2880,7 @@ function normalizeUser(u) {
                             </div>
                           </div>
 
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Account Role</label>
-                            <div className="flex items-center gap-3 rounded-xl p-3 border-2" style={{background:'var(--ht-primary-light)',borderColor:'var(--ht-primary)'}}>
-                              <div className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0" style={{background:'var(--ht-primary)'}}>
-                                <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
-                              </div>
-                              <div className="flex-1">
-                                <p className="font-bold text-sm" style={{color:'var(--ht-primary)'}}>Resident</p>
-                                <p className="text-xs" style={{color:'var(--ht-accent)'}}>Self-service portal access</p>
-                              </div>
-                              <span className="text-xs px-2 py-1 rounded-full font-medium" style={{background:'var(--ht-primary-light)',color:'var(--ht-primary)'}}>Fixed</span>
-                            </div>
-                            <div className="flex items-start gap-2 mt-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                          <div className="flex items-start gap-2 mt-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
                               <svg className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" /></svg>
                               <p className="text-xs text-amber-700">Admin and Staff accounts are exclusive to clinic personnel and can only be created by a system administrator.</p>
                             </div>
