@@ -766,12 +766,11 @@ function normalizeUser(u) {
               setLoginUsername(''); setLoginPassword('');
               setLoginError(''); setShowPassword(false);
               setLastActivity(Date.now());
-              // Audit: log successful login (backend also logs, this is belt+suspenders)
-              api('POST', '/audit', {
-                action: 'LOGIN',
-                username: user.username,
-                role: user.role,
-                details: `${user.username} logged in`
+              // Audit: log successful login — pass token explicitly since state update is async
+              fetch(API_BASE_URL + '/audit', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${data.token}` },
+                body: JSON.stringify({ action: 'LOGIN', username: user.username, role: user.role, details: `${user.username} logged in` })
               }).catch(() => {});
             } catch (err) {
               const newAttempts = loginAttempts + 1;
@@ -1241,7 +1240,16 @@ function normalizeUser(u) {
           // Handle Logout — clear JWT + all state
           const handleLogout = () => {
             setShowIdleWarning(false);
-            writeAudit('LOGOUT', `${currentUser?.username || ''} logged out`);
+            // Send LOGOUT audit BEFORE clearing token — avoids 401 race condition
+            const logoutUser = currentUser;
+            const logoutToken = getToken();
+            if (logoutToken && logoutUser) {
+              fetch(API_BASE_URL + '/audit', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${logoutToken}` },
+                body: JSON.stringify({ action: 'LOGOUT', username: logoutUser.username, role: logoutUser.role, details: `${logoutUser.username} logged out` })
+              }).catch(() => {});
+            }
             setToken(null);
             try { sessionStorage.removeItem('ht_user'); } catch {}
             setUserRole(''); setCurrentUser(null);
@@ -3854,24 +3862,45 @@ function normalizeUser(u) {
                           </div>
 
                           {/* ── IF PATIENT ON FILE: show name card (only for myself) ── */}
-                          {effectivePatientRecord ? (
-                            <div className="flex items-center justify-between bg-purple-50 border border-purple-200 rounded-xl px-4 py-3">
-                              <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-full bg-purple-600 text-white flex items-center justify-center font-bold text-lg">
-                                  {(effectivePatientRecord.firstName || currentUser?.fullName || '?')[0]?.toUpperCase()}
+                          {effectivePatientRecord ? (() => {
+                            const rec = effectivePatientRecord;
+                            const missingFields = [];
+                            if (!rec.dateOfBirth) missingFields.push(lang === 'fil' ? 'Petsa ng Kapanganakan' : 'Date of Birth');
+                            if (!rec.address || rec.address === 'To be updated') missingFields.push(lang === 'fil' ? 'Tirahan' : 'Address');
+                            if (!rec.contactNumber || rec.contactNumber === 'N/A') missingFields.push(lang === 'fil' ? 'Contact Number' : 'Contact Number');
+                            const isComplete = missingFields.length === 0;
+                            return (
+                              <div>
+                                <div className="flex items-center justify-between bg-purple-50 border border-purple-200 rounded-xl px-4 py-3">
+                                  <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-full bg-purple-600 text-white flex items-center justify-center font-bold text-lg">
+                                      {(rec.firstName || currentUser?.fullName || '?')[0]?.toUpperCase()}
+                                    </div>
+                                    <div>
+                                      <p className="text-xs font-semibold text-purple-500 uppercase tracking-wide mb-0.5">Booking as</p>
+                                      <p className="font-bold text-gray-800">
+                                        {rec._fromAccount
+                                          ? (currentUser?.fullName || currentUser?.username)
+                                          : `${rec.firstName} ${rec.lastName}`}
+                                      </p>
+                                    </div>
+                                  </div>
+                                  {isComplete
+                                    ? <span className="text-xs text-green-600 font-semibold bg-green-50 border border-green-200 rounded-full px-3 py-1">✓ {lang === 'fil' ? 'Kumpleto ang impormasyon' : 'Info on file'}</span>
+                                    : <span className="text-xs text-amber-600 font-semibold bg-amber-50 border border-amber-200 rounded-full px-3 py-1">⚠️ {lang === 'fil' ? 'Hindi kumpleto' : 'Incomplete'}</span>
+                                  }
                                 </div>
-                                <div>
-                                  <p className="text-xs font-semibold text-purple-500 uppercase tracking-wide mb-0.5">Booking as</p>
-                                  <p className="font-bold text-gray-800">
-                                    {effectivePatientRecord._fromAccount
-                                      ? (currentUser?.fullName || currentUser?.username)
-                                      : `${effectivePatientRecord.firstName} ${effectivePatientRecord.lastName}`}
-                                  </p>
-                                </div>
+                                {!isComplete && (
+                                  <div className="mt-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700">
+                                    {lang === 'fil'
+                                      ? `Mangyaring i-update ang iyong profile: ${missingFields.join(', ')}. Makipag-ugnayan sa klinika o i-update sa inyong profile.`
+                                      : `Please update your profile — missing: ${missingFields.join(', ')}. Contact the clinic or update your profile before booking.`
+                                    }
+                                  </div>
+                                )}
                               </div>
-                              <span className="text-xs text-green-600 font-semibold bg-green-50 border border-green-200 rounded-full px-3 py-1">✓ Info on file</span>
-                            </div>
-                          ) : (
+                            );
+                          })() : (
                             /* ── NO RECORD or booking for someone else: show full form ── */
                             <div>
                               <h3 className="text-base font-bold text-gray-800 mb-3 pb-2 border-b border-gray-200">Personal Information</h3>
