@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Queue Display — Barangay Upper Bicutan Health Clinic</title>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow+Condensed:wght@400;600;700&family=Barlow:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --red:    #C0392B;
+      --red2:   #E74C3C;
+      --dark:   #1a0a0a;
+      --darker: #0f0505;
+      --gold:   #F39C12;
+      --white:  #FAFAFA;
+      --dim:    rgba(255,255,255,0.55);
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--darker);
+      color: var(--white);
+      font-family: 'Barlow', sans-serif;
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Scanline overlay for authentic TV feel ── */
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background: repeating-linear-gradient(
+        to bottom,
+        transparent 0px,
+        transparent 2px,
+        rgba(0,0,0,0.07) 2px,
+        rgba(0,0,0,0.07) 4px
+      );
+      pointer-events: none;
+      z-index: 100;
+    }
+
+    /* ── Header ── */
+    .header {
+      background: linear-gradient(135deg, var(--red) 0%, #8B0000 100%);
+      padding: 14px 40px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 3px solid var(--gold);
+      flex-shrink: 0;
+    }
+
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+    }
+
+    .logo {
+      width: 60px; height: 60px;
+      border-radius: 50%;
+      border: 3px solid var(--gold);
+      object-fit: contain;
+      background: rgba(255,255,255,0.1);
+    }
+
+    .clinic-info h1 {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 2rem;
+      letter-spacing: 2px;
+      line-height: 1;
+    }
+
+    .clinic-info p {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 0.85rem;
+      color: rgba(255,255,255,0.8);
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      margin-top: 2px;
+    }
+
+    .header-right {
+      text-align: right;
+    }
+
+    #clock {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 2.8rem;
+      letter-spacing: 3px;
+      color: var(--gold);
+      line-height: 1;
+    }
+
+    #date-display {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 0.9rem;
+      color: rgba(255,255,255,0.75);
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      text-align: right;
+    }
+
+    /* ── Main content ── */
+    .main {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0;
+      overflow: hidden;
+    }
+
+    /* ── NOW SERVING panel ── */
+    .now-serving {
+      background: linear-gradient(160deg, #1a0505 0%, #2d0808 100%);
+      border-right: 2px solid rgba(255,255,255,0.08);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 30px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .now-serving::before {
+      content: '';
+      position: absolute;
+      top: -80px; left: -80px;
+      width: 350px; height: 350px;
+      background: radial-gradient(circle, rgba(192,57,43,0.15) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    .serving-label {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 1.1rem;
+      font-weight: 700;
+      letter-spacing: 8px;
+      text-transform: uppercase;
+      color: var(--dim);
+      margin-bottom: 8px;
+    }
+
+    .number-box {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .number-ring {
+      position: absolute;
+      width: 280px; height: 280px;
+      border-radius: 50%;
+      border: 3px solid rgba(192,57,43,0.3);
+      animation: pulse-ring 2s ease-in-out infinite;
+    }
+
+    .number-ring-2 {
+      width: 320px; height: 320px;
+      border: 1px solid rgba(192,57,43,0.15);
+      animation: pulse-ring 2s ease-in-out infinite 0.5s;
+    }
+
+    @keyframes pulse-ring {
+      0%, 100% { opacity: 0.4; transform: scale(1); }
+      50% { opacity: 1; transform: scale(1.04); }
+    }
+
+    #serving-number {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: clamp(6rem, 14vw, 11rem);
+      color: var(--white);
+      line-height: 1;
+      text-shadow: 0 0 60px rgba(231,76,60,0.5), 0 4px 20px rgba(0,0,0,0.8);
+      transition: all 0.4s ease;
+      position: relative;
+      z-index: 1;
+    }
+
+    #serving-number.flash {
+      animation: flash-in 0.6s ease;
+    }
+
+    @keyframes flash-in {
+      0% { transform: scale(1.3); color: var(--gold); text-shadow: 0 0 80px rgba(243,156,18,0.9); }
+      100% { transform: scale(1); color: var(--white); }
+    }
+
+    .serving-name {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 1.4rem;
+      font-weight: 600;
+      color: rgba(255,255,255,0.85);
+      text-align: center;
+      margin-top: 12px;
+      min-height: 32px;
+      letter-spacing: 1px;
+    }
+
+    .serving-service {
+      font-family: 'Barlow', sans-serif;
+      font-size: 0.9rem;
+      color: var(--gold);
+      text-align: center;
+      margin-top: 4px;
+      min-height: 22px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+
+    /* ── PLEASE PROCEED banner ── */
+    .proceed-banner {
+      margin-top: 18px;
+      background: var(--gold);
+      color: #1a0a0a;
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 1.3rem;
+      letter-spacing: 4px;
+      padding: 8px 30px;
+      border-radius: 4px;
+      opacity: 0;
+      transition: opacity 0.4s;
+    }
+
+    .proceed-banner.show { opacity: 1; }
+
+    /* ── NEXT UP panel ── */
+    .next-panel {
+      background: #0f0505;
+      display: flex;
+      flex-direction: column;
+      padding: 24px 30px;
+      overflow: hidden;
+    }
+
+    .next-label {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 0.9rem;
+      font-weight: 700;
+      letter-spacing: 6px;
+      text-transform: uppercase;
+      color: var(--dim);
+      margin-bottom: 14px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+    }
+
+    .queue-list {
+      flex: 1;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .queue-item {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 12px 18px;
+      border-radius: 8px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.06);
+      transition: all 0.3s ease;
+      animation: slide-in 0.4s ease both;
+    }
+
+    @keyframes slide-in {
+      from { opacity: 0; transform: translateX(20px); }
+      to   { opacity: 1; transform: translateX(0); }
+    }
+
+    .queue-item.next {
+      background: rgba(192,57,43,0.12);
+      border-color: rgba(192,57,43,0.35);
+    }
+
+    .queue-item .num {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 2.4rem;
+      color: var(--white);
+      min-width: 70px;
+      text-align: center;
+      line-height: 1;
+    }
+
+    .queue-item.next .num { color: var(--gold); }
+
+    .queue-item .info { flex: 1; overflow: hidden; }
+
+    .queue-item .info .name {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--white);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .queue-item .info .svc {
+      font-size: 0.78rem;
+      color: var(--dim);
+      margin-top: 1px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .badge-next {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 2px;
+      background: var(--red);
+      color: white;
+      padding: 3px 10px;
+      border-radius: 3px;
+      text-transform: uppercase;
+      flex-shrink: 0;
+    }
+
+    .badge-pos {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 1rem;
+      color: var(--dim);
+      flex-shrink: 0;
+      min-width: 24px;
+      text-align: center;
+    }
+
+    /* ── Stats bar at bottom ── */
+    .stats-bar {
+      background: rgba(255,255,255,0.04);
+      border-top: 1px solid rgba(255,255,255,0.08);
+      padding: 10px 40px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+
+    .stat {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .stat-value {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 1.6rem;
+      color: var(--gold);
+      line-height: 1;
+    }
+
+    .stat-label {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 0.75rem;
+      color: var(--dim);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      line-height: 1.2;
+    }
+
+    .stat-divider {
+      width: 1px; height: 30px;
+      background: rgba(255,255,255,0.1);
+    }
+
+    .status-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: #2ecc71;
+      box-shadow: 0 0 8px #2ecc71;
+      animation: blink 2s ease-in-out infinite;
+      flex-shrink: 0;
+    }
+
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    .status-live {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 0.8rem;
+      font-weight: 700;
+      letter-spacing: 2px;
+      color: #2ecc71;
+      text-transform: uppercase;
+    }
+
+    /* ── Empty / offline states ── */
+    .empty-serving {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: clamp(3rem, 6vw, 5rem);
+      color: rgba(255,255,255,0.15);
+      letter-spacing: 4px;
+      text-align: center;
+    }
+
+    .empty-queue {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      opacity: 0.3;
+    }
+
+    .empty-queue p {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 1rem;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+    }
+
+    /* ── Ticker at very bottom ── */
+    .ticker {
+      background: var(--red);
+      padding: 6px 0;
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+
+    .ticker-inner {
+      display: flex;
+      white-space: nowrap;
+      animation: ticker-scroll 30s linear infinite;
+    }
+
+    .ticker-text {
+      font-family: 'Barlow Condensed', sans-serif;
+      font-size: 0.85rem;
+      font-weight: 600;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      padding: 0 60px;
+      color: rgba(255,255,255,0.95);
+    }
+
+    @keyframes ticker-scroll {
+      0%   { transform: translateX(0); }
+      100% { transform: translateX(-50%); }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- HEADER -->
+  <div class="header">
+    <div class="header-left">
+      <img src="Upper_Bicutan_Logo.jpg" alt="Logo" class="logo" onerror="this.style.display='none'" />
+      <div class="clinic-info">
+        <h1>HealthTrack</h1>
+        <p>Barangay Upper Bicutan Health Clinic · City of Taguig</p>
+      </div>
+    </div>
+    <div class="header-right">
+      <div id="clock">00:00:00</div>
+      <div id="date-display">Loading...</div>
+    </div>
+  </div>
+
+  <!-- MAIN -->
+  <div class="main">
+
+    <!-- NOW SERVING -->
+    <div class="now-serving">
+      <div class="serving-label">Now Serving</div>
+      <div class="number-box">
+        <div class="number-ring"></div>
+        <div class="number-ring number-ring-2"></div>
+        <div id="serving-number">—</div>
+      </div>
+      <div class="serving-name" id="serving-name"></div>
+      <div class="serving-service" id="serving-service"></div>
+      <div class="proceed-banner" id="proceed-banner">Please Proceed to the Clinic Window</div>
+    </div>
+
+    <!-- NEXT UP -->
+    <div class="next-panel">
+      <div class="next-label">Next in Line</div>
+      <div class="queue-list" id="queue-list">
+        <div class="empty-queue">
+          <p>No patients in queue</p>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- STATS BAR -->
+  <div class="stats-bar">
+    <div style="display:flex;align-items:center;gap:8px;">
+      <div class="status-dot"></div>
+      <span class="status-live">Live</span>
+    </div>
+    <div class="stat">
+      <div class="stat-value" id="stat-waiting">0</div>
+      <div class="stat-label">Waiting</div>
+    </div>
+    <div class="stat-divider"></div>
+    <div class="stat">
+      <div class="stat-value" id="stat-served">0</div>
+      <div class="stat-label">Served Today</div>
+    </div>
+    <div class="stat-divider"></div>
+    <div class="stat">
+      <div class="stat-value" id="stat-total">0</div>
+      <div class="stat-label">Total Today</div>
+    </div>
+    <div style="font-family:'Barlow Condensed',sans-serif;font-size:0.75rem;color:rgba(255,255,255,0.3);letter-spacing:1px;">
+      AUTO-REFRESH EVERY 5s
+    </div>
+  </div>
+
+  <!-- TICKER -->
+  <div class="ticker">
+    <div class="ticker-inner">
+      <span class="ticker-text">Welcome to Barangay Upper Bicutan Health Clinic &nbsp;·&nbsp; Please wait for your number to be called &nbsp;·&nbsp; Clinic Hours: Monday – Friday, 8:00 AM – 5:00 PM &nbsp;·&nbsp; Lunch Break: 12:00 PM – 1:00 PM &nbsp;·&nbsp; Please have your PhilHealth card ready &nbsp;·&nbsp; Keep your surroundings clean &nbsp;·&nbsp; Thank you for your patience</span>
+      <span class="ticker-text">Welcome to Barangay Upper Bicutan Health Clinic &nbsp;·&nbsp; Please wait for your number to be called &nbsp;·&nbsp; Clinic Hours: Monday – Friday, 8:00 AM – 5:00 PM &nbsp;·&nbsp; Lunch Break: 12:00 PM – 1:00 PM &nbsp;·&nbsp; Please have your PhilHealth card ready &nbsp;·&nbsp; Keep your surroundings clean &nbsp;·&nbsp; Thank you for your patience</span>
+    </div>
+  </div>
+
+<script>
+  // ── Config ──────────────────────────────────────────────────────────────────
+  const API_BASE = window.location.origin + '/api';
+  const REFRESH_MS = 5000;
+
+  // ── Clock ───────────────────────────────────────────────────────────────────
+  function updateClock() {
+    const now = new Date();
+    const hh = String(now.getHours()).padStart(2, '0');
+    const mm = String(now.getMinutes()).padStart(2, '0');
+    const ss = String(now.getSeconds()).padStart(2, '0');
+    document.getElementById('clock').textContent = `${hh}:${mm}:${ss}`;
+
+    const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    document.getElementById('date-display').textContent =
+      `${days[now.getDay()]}, ${months[now.getMonth()]} ${now.getDate()}, ${now.getFullYear()}`;
+  }
+  setInterval(updateClock, 1000);
+  updateClock();
+
+  // ── State ────────────────────────────────────────────────────────────────────
+  let prevServingNumber = null;
+
+  // ── Fetch & Render ───────────────────────────────────────────────────────────
+  async function fetchQueue() {
+    try {
+      const res = await fetch(`${API_BASE}/queue/today/all`);
+      if (!res.ok) throw new Error('Failed');
+      const rows = await res.json();
+
+      // Normalize
+      const queue = rows.map(q => ({
+        queueNumber: q.queue_number || q.queueNumber || 0,
+        name: ((q.first_name || q.firstName || '') + ' ' + (q.last_name || q.lastName || '')).trim() || q.name || 'Patient',
+        service: q.service_category || q.serviceCategory || '',
+        status: q.status || 'Waiting',
+      }));
+
+      // Find currently serving (In Progress)
+      const serving = queue.find(q => q.status === 'In Progress');
+
+      // Next in line: Accepted + Waiting, sorted by queue number
+      const waiting = queue
+        .filter(q => q.status === 'Accepted' || q.status === 'Waiting')
+        .sort((a, b) => a.queueNumber - b.queueNumber);
+
+      // Stats
+      const servedCount = queue.filter(q => q.status === 'Completed').length;
+      document.getElementById('stat-waiting').textContent = waiting.length;
+      document.getElementById('stat-served').textContent = servedCount;
+      document.getElementById('stat-total').textContent = queue.length;
+
+      // Render serving
+      renderServing(serving);
+
+      // Render next list
+      renderNextList(waiting);
+
+    } catch (e) {
+      console.error('Queue fetch error:', e);
+    }
+  }
+
+  function renderServing(entry) {
+    const numEl    = document.getElementById('serving-number');
+    const nameEl   = document.getElementById('serving-name');
+    const svcEl    = document.getElementById('serving-service');
+    const banner   = document.getElementById('proceed-banner');
+
+    if (!entry) {
+      numEl.textContent = '—';
+      nameEl.textContent = '';
+      svcEl.textContent = '';
+      banner.classList.remove('show');
+      prevServingNumber = null;
+      return;
+    }
+
+    const numStr = String(entry.queueNumber).padStart(3, '0');
+
+    // Flash animation only when number changes
+    if (numStr !== prevServingNumber) {
+      numEl.classList.remove('flash');
+      void numEl.offsetWidth; // reflow
+      numEl.classList.add('flash');
+      prevServingNumber = numStr;
+    }
+
+    numEl.textContent = numStr;
+    nameEl.textContent = entry.name;
+    svcEl.textContent = entry.service || '';
+    banner.classList.add('show');
+  }
+
+  function renderNextList(waiting) {
+    const list = document.getElementById('queue-list');
+
+    if (waiting.length === 0) {
+      list.innerHTML = `
+        <div class="empty-queue">
+          <p>No patients in queue</p>
+        </div>`;
+      return;
+    }
+
+    const maxShow = 7;
+    const items = waiting.slice(0, maxShow);
+
+    list.innerHTML = items.map((q, i) => {
+      const numStr = String(q.queueNumber).padStart(3, '0');
+      const isNext = i === 0;
+      // Mask last name for privacy — show first name + last initial
+      const parts = q.name.split(' ');
+      const display = parts.length >= 2
+        ? `${parts[0]} ${parts[parts.length-1][0]}.`
+        : q.name;
+
+      return `
+        <div class="queue-item ${isNext ? 'next' : ''}" style="animation-delay:${i * 0.06}s">
+          <div class="num">${numStr}</div>
+          <div class="info">
+            <div class="name">${display}</div>
+            <div class="svc">${q.service || 'Walk-in'}</div>
+          </div>
+          ${isNext
+            ? `<div class="badge-next">Next</div>`
+            : `<div class="badge-pos">#${i + 1}</div>`
+          }
+        </div>`;
+    }).join('');
+
+    if (waiting.length > maxShow) {
+      list.innerHTML += `
+        <div style="text-align:center;padding:8px;font-family:'Barlow Condensed',sans-serif;font-size:0.8rem;color:rgba(255,255,255,0.3);letter-spacing:2px;text-transform:uppercase;">
+          +${waiting.length - maxShow} more in queue
+        </div>`;
+    }
+  }
+
+  // ── Start ────────────────────────────────────────────────────────────────────
+  fetchQueue();
+  setInterval(fetchQueue, REFRESH_MS);
+</script>
+</body>
+</html>
