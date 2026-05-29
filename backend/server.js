@@ -229,11 +229,13 @@ app.get('/api/queue-display/live', async (req, res) => {
   try {
     const result = await db.query(
       `SELECT q.queue_number, q.service_category, q.status,
+              q.appointment_time,
               COALESCE(p.first_name, split_part(q.patient_id,'-',1)) AS first_name,
               COALESCE(p.last_name, '') AS last_name
        FROM queue q
        LEFT JOIN patients p ON q.patient_id = p.patient_id
-       WHERE DATE(q.created_at) = CURRENT_DATE
+       WHERE (DATE(q.created_at) = CURRENT_DATE OR DATE(q.appointment_date) = CURRENT_DATE)
+         AND q.status NOT IN ('Completed', 'Cancelled', 'Rejected')
        ORDER BY q.queue_number`
     );
     res.json(result.rows);
