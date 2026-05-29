@@ -229,7 +229,7 @@ app.get('/api/queue-display/live', async (req, res) => {
   try {
     const result = await db.query(
       `SELECT q.queue_number, q.service_category, q.status,
-              q.appointment_time,
+              q.appointment_time, q.priority,
               COALESCE(p.first_name, split_part(q.patient_id,'-',1)) AS first_name,
               COALESCE(p.last_name, '') AS last_name
        FROM queue q
@@ -239,7 +239,9 @@ app.get('/api/queue-display/live', async (req, res) => {
            DATE(q.appointment_date) = CURRENT_DATE
            OR (q.appointment_date IS NULL AND DATE(q.created_at) = CURRENT_DATE)
          )
-       ORDER BY q.queue_number`
+       ORDER BY
+         CASE q.priority WHEN 'Priority Case' THEN 0 WHEN 'Urgent' THEN 1 ELSE 2 END,
+         q.queue_number`
     );
     res.json(result.rows);
   } catch (err) {
@@ -337,7 +339,9 @@ setInterval(async () => {
          WHERE DATE(appointment_date) = $1
            AND LEFT(appointment_time::text, 5) = $2
            AND status IN ('Accepted', 'Waiting')
-         ORDER BY queue_number ASC
+         ORDER BY
+           CASE priority WHEN 'Priority Case' THEN 0 WHEN 'Urgent' THEN 1 ELSE 2 END,
+           queue_number ASC
          LIMIT 1
        )
        RETURNING queue_id, queue_number`,
