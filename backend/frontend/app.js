@@ -34,7 +34,7 @@ const TRANSLATIONS = {
     serviceCategory: 'Service Category', selectServiceCategory: 'Select service category',
     serviceType: 'Service Type', selectServiceFirst: 'Please select a service category first',
     priorityLevel: 'Priority Level', selectServiceTypeFirst: 'Please select a service type first',
-    notes: '{t('notes')}', notesPlaceholder: 'Any additional information for the clinic...',
+    notes: 'Additional Notes (optional)', notesPlaceholder: 'Any additional information for the clinic...',
     submitBooking: 'Submit Appointment Request',
     // Queue status
     yourQueueNumber: 'Your Queue Number',
