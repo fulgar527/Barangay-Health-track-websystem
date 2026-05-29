@@ -10,6 +10,79 @@ const API_BASE_URL = window.location.hostname === 'localhost'
 const getLocalDateStr = (d = new Date()) =>
   `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 
+// ==================== LANGUAGE / TRANSLATIONS ====================
+const TRANSLATIONS = {
+  en: {
+    // Registration form
+    createAccountTitle: 'Create Account',
+    lastName: 'Last Name', firstName: 'First Name', middleInitial: 'M.I.',
+    dateOfBirth: 'Date of Birth', dobHint: 'Must be 18–85 years old to register',
+    accountConfirmation: 'Account Confirmation Via',
+    email: 'Email', mobile: 'Mobile',
+    emailPlaceholder: 'email@example.com', mobilePlaceholder: '+63 9XX XXX XXXX',
+    username: 'Username', usernamePlaceholder: 'Choose a username (min 3 characters)',
+    password: 'Password', passwordPlaceholder: 'Create a password',
+    confirmPassword: 'Confirm Password', confirmPasswordPlaceholder: 'Re-enter your password',
+    registerBtn: 'Create Account', alreadyHaveAccount: 'Already have an account?', signIn: 'Sign In',
+    // Resident tabs
+    queueStatus: 'Queue Status', myAppointments: 'My Appointments',
+    bookAppointment: 'Book Appointment', myVisitHistory: 'My Visit History',
+    // Booking form
+    appointmentSchedule: 'Appointment Schedule',
+    appointmentDate: 'Appointment Date', appointmentTime: 'Appointment Time',
+    selectTimeSlot: '-- Select a Time Slot --',
+    serviceCategory: 'Service Category', selectServiceCategory: 'Select service category',
+    serviceType: 'Service Type', selectServiceFirst: 'Please select a service category first',
+    priorityLevel: 'Priority Level', selectServiceTypeFirst: 'Please select a service type first',
+    notes: '{t('notes')}', notesPlaceholder: 'Any additional information for the clinic...',
+    submitBooking: 'Submit Appointment Request',
+    // Queue status
+    yourQueueNumber: 'Your Queue Number',
+    queuePosition: 'Position in Queue',
+    estimatedWait: 'Estimated Wait',
+    clinicStatus: 'Clinic Status',
+    // Login page
+    loginTitle: 'Sign In', loginUsername: 'Username', loginPassword: 'Password',
+    loginBtn: 'Sign In', forgotPassword: 'Forgot Password?',
+    noAccount: "Don't have an account?",
+    langToggle: 'Filipino',
+  },
+  fil: {
+    // Registration form
+    createAccountTitle: 'Gumawa ng Account',
+    lastName: 'Apelyido', firstName: 'Pangalan', middleInitial: 'G.N.',
+    dateOfBirth: 'Petsa ng Kapanganakan', dobHint: 'Dapat 18–85 taong gulang para makapag-rehistro',
+    accountConfirmation: 'Kumpirmahin ang Account Sa',
+    email: 'Email', mobile: 'Cellphone',
+    emailPlaceholder: 'email@halimbawa.com', mobilePlaceholder: '+63 9XX XXX XXXX',
+    username: 'Username', usernamePlaceholder: 'Pumili ng username (min 3 character)',
+    password: 'Password', passwordPlaceholder: 'Gumawa ng password',
+    confirmPassword: 'Kumpirmahin ang Password', confirmPasswordPlaceholder: 'Ilagay ulit ang iyong password',
+    registerBtn: 'Gumawa ng Account', alreadyHaveAccount: 'Mayroon nang account?', signIn: 'Mag-sign in',
+    // Resident tabs
+    queueStatus: 'Status ng Pila', myAppointments: 'Aking mga Appointment',
+    bookAppointment: 'Mag-book ng Appointment', myVisitHistory: 'History ng Pagbisita',
+    // Booking form
+    appointmentSchedule: 'Iskedyul ng Appointment',
+    appointmentDate: 'Petsa ng Appointment', appointmentTime: 'Oras ng Appointment',
+    selectTimeSlot: '-- Pumili ng Oras --',
+    serviceCategory: 'Uri ng Serbisyo', selectServiceCategory: 'Pumili ng uri ng serbisyo',
+    serviceType: 'Klase ng Serbisyo', selectServiceFirst: 'Pumili muna ng uri ng serbisyo',
+    priorityLevel: 'Antas ng Prioridad', selectServiceTypeFirst: 'Pumili muna ng klase ng serbisyo',
+    notes: 'Karagdagang Impormasyon (opsyonal)', notesPlaceholder: 'Anumang karagdagang impormasyon para sa klinika...',
+    submitBooking: 'Ipasa ang Kahilingan sa Appointment',
+    // Queue status
+    yourQueueNumber: 'Iyong Numero sa Pila',
+    queuePosition: 'Posisyon sa Pila',
+    estimatedWait: 'Tinatayang Oras ng Paghihintay',
+    clinicStatus: 'Status ng Klinika',
+    // Login page
+    loginTitle: 'Mag-sign In', loginUsername: 'Username', loginPassword: 'Password',
+    loginBtn: 'Mag-sign In', forgotPassword: 'Nakalimutan ang Password?',
+    noAccount: 'Wala pang account?',
+    langToggle: 'English',
+  }
+};
 
 let _authToken = (() => { try { return sessionStorage.getItem('ht_token') || null; } catch { return null; } })();
 const getToken = () => _authToken;
@@ -546,6 +619,10 @@ function normalizeUser(u) {
           // Core States
           const [userRole, setUserRole] = useState(''); // '', 'admin', 'staff', 'resident'
           const [activeTab, setActiveTab] = useState('dashboard');
+          // Language toggle — persisted in localStorage
+          const [lang, setLang] = useState(() => { try { return localStorage.getItem('ht_lang') || 'en'; } catch { return 'en'; } });
+          const toggleLang = () => { const next = lang === 'en' ? 'fil' : 'en'; setLang(next); try { localStorage.setItem('ht_lang', next); } catch {} };
+          const t = (key) => (TRANSLATIONS[lang] || TRANSLATIONS.en)[key] || key;
           const [currentUser, setCurrentUser] = useState(null);
           
           // Authentication States
@@ -2377,6 +2454,12 @@ function normalizeUser(u) {
                 <div className="max-w-md w-full">
                   <div className="bg-white rounded-2xl shadow-2xl p-8">
                     <div className="text-center mb-6">
+                      {/* Language toggle */}
+                      <div className="flex justify-end mb-1">
+                        <button onClick={toggleLang} className="text-xs px-3 py-1 rounded-full border border-gray-300 text-gray-500 hover:bg-gray-50 font-medium transition-colors">
+                          🌐 {t('langToggle')}
+                        </button>
+                      </div>
                       <div className="flex justify-center mb-3">
                         <img src="Upper_Bicutan_Logo.jpg" alt="Barangay Upper Bicutan" className="w-20 h-20 object-contain drop-shadow-md" style={{borderRadius:'50%'}} />
                       </div>
@@ -2503,7 +2586,7 @@ function normalizeUser(u) {
                             type="submit"
                             className="w-full text-white py-3 rounded-xl font-semibold transition-all transform hover:scale-105 shadow-lg" style={{background:'linear-gradient(to right,var(--ht-primary),var(--ht-accent))'}}
                           >
-                            Sign In
+                            {t('loginBtn')}
                           </button>
                         </div>
 
@@ -2513,19 +2596,19 @@ function normalizeUser(u) {
                             onClick={() => { setShowForgotPassword(true); setForgotEmail(''); setForgotError(''); setForgotStatus(''); }}
                             className="text-sm text-gray-500 hover:text-red-700 hover:underline transition-colors"
                           >
-                            Forgot Password?
+                            {t('forgotPassword')}
                           </button>
                         </div>
 
                         <div className="mt-4 text-center">
                           <p className="text-sm text-gray-600">
-                            Don't have an account?{' '}
+                            {t('noAccount')}{' '}
                             <button
                               type="button"
                               onClick={() => { setShowCreateAccount(true); setLoginError(''); setRegisterError(''); setRegisterSuccess(''); }}
                               className="text-blue-600 hover:text-blue-700 font-semibold hover:underline"
                             >
-                              Create Account
+                              {t('createAccountTitle')}
                             </button>
                           </p>
                         </div>
@@ -2538,7 +2621,7 @@ function normalizeUser(u) {
                         <div className="space-y-3">
                           {/* Name Fields */}
                           <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Last Name <span className="text-red-500">*</span></label>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">{t('lastName')} <span className="text-red-500">*</span></label>
                             <input
                               type="text"
                               value={newAccount.lastName}
@@ -2550,7 +2633,7 @@ function normalizeUser(u) {
 
                           <div className="grid grid-cols-3 gap-2">
                             <div className="col-span-2">
-                              <label className="block text-sm font-medium text-gray-700 mb-1">First Name <span className="text-red-500">*</span></label>
+                              <label className="block text-sm font-medium text-gray-700 mb-1">{t('firstName')} <span className="text-red-500">*</span></label>
                               <input
                                 type="text"
                                 value={newAccount.firstName}
@@ -2560,7 +2643,7 @@ function normalizeUser(u) {
                               />
                             </div>
                             <div>
-                              <label className="block text-sm font-medium text-gray-700 mb-1">M.I.</label>
+                              <label className="block text-sm font-medium text-gray-700 mb-1">{t('middleInitial')}</label>
                               <input
                                 type="text"
                                 value={newAccount.middleInitial}
@@ -2574,7 +2657,7 @@ function normalizeUser(u) {
 
                           {/* Date of Birth */}
                           <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Date of Birth <span className="text-red-500">*</span></label>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">{t('dateOfBirth')} <span className="text-red-500">*</span></label>
                             <input
                               type="date"
                               value={newAccount.birthday}
@@ -2589,26 +2672,26 @@ function normalizeUser(u) {
                               let age = today.getFullYear() - dob.getFullYear();
                               const m = today.getMonth() - dob.getMonth();
                               if (m < 0 || (m === 0 && today.getDate() < dob.getDate())) age--;
-                              if (age < 18) return React.createElement('p', {className: 'text-xs text-red-500 mt-1'}, '✗ Must be at least 18 years old to register');
-                              if (age > 85) return React.createElement('p', {className: 'text-xs text-red-500 mt-1'}, '✗ Registration is only available for ages 18–85');
-                              return React.createElement('p', {className: 'text-xs text-green-500 mt-1'}, `✓ Age ${age} — eligible to register`);
+                              if (age < 18) return React.createElement('p', {className: 'text-xs text-red-500 mt-1'}, lang === 'fil' ? '✗ Dapat hindi bababa sa 18 taong gulang' : '✗ Must be at least 18 years old to register');
+                              if (age > 85) return React.createElement('p', {className: 'text-xs text-red-500 mt-1'}, lang === 'fil' ? '✗ Para lamang sa edad 18–85' : '✗ Registration is only available for ages 18–85');
+                              return React.createElement('p', {className: 'text-xs text-green-500 mt-1'}, lang === 'fil' ? `✓ ${age} taong gulang — maaaring magrehistro` : `✓ Age ${age} — eligible to register`);
                             })()}
-                            <p className="text-xs text-gray-400 mt-1">Must be 18–85 years old to register</p>
+                            <p className="text-xs text-gray-400 mt-1">{t('dobHint')}</p>
                           </div>
 
                           {/* Contact Method for Confirmation */}
                           <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Account Confirmation Via <span className="text-red-500">*</span></label>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">{t('accountConfirmation')} <span className="text-red-500">*</span></label>
                             <div className="grid grid-cols-2 gap-2 mb-2">
                               <button type="button"
                                 onClick={() => setNewAccount({...newAccount, contactMethod: 'email'})}
                                 className={`py-2 px-3 rounded-xl text-sm font-medium border-2 transition-all ${newAccount.contactMethod === 'email' ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>
-                                📧 Email
+                                📧 {t('email')}
                               </button>
                               <button type="button"
                                 onClick={() => setNewAccount({...newAccount, contactMethod: 'mobile'})}
                                 className={`py-2 px-3 rounded-xl text-sm font-medium border-2 transition-all ${newAccount.contactMethod === 'mobile' ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'}`}>
-                                📱 Mobile
+                                📱 {t('mobile')}
                               </button>
                             </div>
                             {newAccount.contactMethod === 'email' ? (
@@ -2617,7 +2700,7 @@ function normalizeUser(u) {
                                 value={newAccount.email}
                                 onChange={(e) => setNewAccount({...newAccount, email: e.target.value})}
                                 className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                                placeholder="email@example.com"
+                                placeholder={t('emailPlaceholder')}
                               />
                             ) : (
                               <>
@@ -2635,18 +2718,18 @@ function normalizeUser(u) {
                           </div>
 
                           <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Username <span className="text-red-500">*</span></label>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">{t('username')} <span className="text-red-500">*</span></label>
                             <input
                               type="text"
                               value={newAccount.username}
                               onChange={(e) => setNewAccount({...newAccount, username: e.target.value})}
                               className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                              placeholder="Choose a username (min 3 characters)"
+                              placeholder={t('usernamePlaceholder')}
                             />
                           </div>
 
                           <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Password <span className="text-red-500">*</span></label>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">{t('password')} <span className="text-red-500">*</span></label>
                             <div className="relative">
                               <input
                                 type={showRegPassword ? "text" : "password"}
@@ -2683,11 +2766,12 @@ function normalizeUser(u) {
                           </div>
 
                           <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Confirm Password <span className="text-red-500">*</span></label>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">{t('confirmPassword')} <span className="text-red-500">*</span></label>
                             <input
                               type="password"
                               value={newAccount.confirmPassword}
                               onChange={(e) => setNewAccount({...newAccount, confirmPassword: e.target.value})}
+                              placeholder={t('confirmPasswordPlaceholder')}
                               className="w-full px-4 py-2.5 border border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                               placeholder="Re-enter password"
                             />
@@ -2832,13 +2916,13 @@ function normalizeUser(u) {
                             type="submit"
                             className="w-full text-white py-3 rounded-xl font-semibold transition-all transform hover:scale-105 shadow-lg" style={{background:'linear-gradient(to right,var(--ht-accent),var(--ht-primary))'}}
                           >
-                            Create Account
+                            {t('registerBtn')}
                           </button>
                         </div>
 
                         <div className="mt-4 text-center">
                           <p className="text-sm text-gray-600">
-                            Already have an account?{' '}
+                            {t('alreadyHaveAccount')}{' '}
                             <button
                               type="button"
                               onClick={() => { setShowCreateAccount(false); setRegisterError(''); setRegisterSuccess(''); }}
@@ -3081,10 +3165,10 @@ function normalizeUser(u) {
                       <nav className="nav-scroll flex-1 min-w-0">
                         <div className="flex space-x-1">
                           {[
-                          { id: 'queue', label: 'Queue Status', icon: Clock },
-                          { id: 'appointments', label: 'My Appointments', icon: List },
-                          { id: 'booking', label: 'Book Appointment', icon: Calendar },
-                          { id: 'history', label: 'My Visit History', icon: FileText }
+                          { id: 'queue', label: t('queueStatus'), icon: Clock },
+                          { id: 'appointments', label: t('myAppointments'), icon: List },
+                          { id: 'booking', label: t('bookAppointment'), icon: Calendar },
+                          { id: 'history', label: t('myVisitHistory'), icon: FileText }
                         ].map(tab => (
                           <button
                             key={tab.id}
@@ -3102,8 +3186,12 @@ function normalizeUser(u) {
                         ))}
                         </div>
                       </nav>
-                      {/* Notification Bell */}
-                      <div className="relative pr-2 flex-shrink-0">
+                      {/* Language Toggle + Notification Bell */}
+                      <div className="flex items-center gap-1 pr-2 flex-shrink-0">
+                        <button onClick={toggleLang} className="text-xs px-2 py-1 rounded-full border border-gray-300 text-gray-500 hover:bg-gray-50 font-medium transition-colors whitespace-nowrap">
+                          🌐 {t('langToggle')}
+                        </button>
+                      <div className="relative">
                         <button
                           onClick={() => { setShowNotifPanel(!showNotifPanel); markNotifsRead(); }}
                           className="relative p-2 text-gray-500 hover:text-purple-600 transition-colors"
@@ -3144,6 +3232,7 @@ function normalizeUser(u) {
                             </div>
                           </div>
                         )}
+                      </div>
                       </div>
                     </div>
                   </div>
@@ -3527,7 +3616,7 @@ function normalizeUser(u) {
                               <div className="grid grid-cols-2 gap-4">
                                 <div>
                                   <label className="block text-sm font-semibold text-gray-700 mb-1">
-                                    Appointment Date <span className="text-red-500">*</span>
+                                    `${t('appointmentDate')} `}<span className="text-red-500">*</span>
                                   </label>
                                   <input
                                     type="date"
@@ -3547,7 +3636,7 @@ function normalizeUser(u) {
                                 </div>
                                 <div>
                                   <label className="block text-sm font-semibold text-gray-700 mb-1">
-                                    Appointment Time <span className="text-red-500">*</span>
+                                    {t('appointmentTime')} <span className="text-red-500">*</span>
                                   </label>
                                   {(() => {
                                     const booked = getBookedSlots(editingAppointment.newAppointmentDate, editingAppointment.id);
@@ -3557,7 +3646,7 @@ function normalizeUser(u) {
                                         onChange={(e) => setEditingAppointment({...editingAppointment, newAppointmentTime: e.target.value})}
                                         className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                                       >
-                                        <option value="">-- Select a Time Slot --</option>
+                                        <option value="">{t('selectTimeSlot')}</option>
                                         {CLINIC_SLOTS.map(s => {
                                           const isBooked = booked.has(s.value);
                                           const isLunch  = s.lunch;
@@ -3598,7 +3687,7 @@ function normalizeUser(u) {
                                       })}
                                       className="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
                                     >
-                                      <option value="">Select service category</option>
+                                      <option value="">{t('selectServiceCategory')}</option>
                                       {Object.keys(SERVICE_CATEGORIES).map(cat => (
                                         <option key={cat} value={cat}>{cat}</option>
                                       ))}
@@ -3630,7 +3719,7 @@ function normalizeUser(u) {
                                   </div>
 
                                   <div>
-                                    <label className="block text-sm font-semibold text-gray-700 mb-1">Priority Level</label>
+                                    <label className="block text-sm font-semibold text-gray-700 mb-1">{t('priorityLevel')}</label>
                                     <select
                                       value={editingAppointment.newPriorityLevel}
                                       onChange={(e) => setEditingAppointment({...editingAppointment, newPriorityLevel: e.target.value})}
@@ -3721,7 +3810,7 @@ function normalizeUser(u) {
                       <div className="bg-white rounded-xl shadow-lg overflow-hidden">
                         {/* Header */}
                         <div className="bg-gradient-to-r from-purple-600 to-pink-600 px-6 py-5">
-                          <h2 className="text-2xl font-bold text-white mb-1">Book Appointment</h2>
+                          <h2 className="text-2xl font-bold text-white mb-1">{t('bookAppointment')}</h2>
                           <p className="text-white/90 text-sm">
                             {bookingFor === 'someone'
                               ? '👨‍👩‍👧 Booking on behalf of someone else'
@@ -3967,10 +4056,10 @@ function normalizeUser(u) {
 
                           {/* ── APPOINTMENT SCHEDULE (always shown) ── */}
                           <div>
-                            <h3 className="text-base font-bold text-gray-800 mb-3 pb-2 border-b border-gray-200">Appointment Schedule</h3>
+                            <h3 className="text-base font-bold text-gray-800 mb-3 pb-2 border-b border-gray-200">{t('appointmentSchedule')}</h3>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                               <div>
-                                <label className="block text-sm font-semibold text-gray-700 mb-1">Appointment Date <span className="text-red-500">*</span></label>
+                                <label className="block text-sm font-semibold text-gray-700 mb-1">`${t('appointmentDate')} `}<span className="text-red-500">*</span></label>
                                 <input type="date" value={residentBooking.appointmentDate}
                                   onChange={(e) => {
                                     const val = e.target.value;
@@ -3992,12 +4081,12 @@ function normalizeUser(u) {
                                 )}
                               </div>
                               <div>
-                                <label className="block text-sm font-semibold text-gray-700 mb-1">Appointment Time <span className="text-red-500">*</span></label>
+                                <label className="block text-sm font-semibold text-gray-700 mb-1">{t('appointmentTime')} <span className="text-red-500">*</span></label>
                                 <select value={residentBooking.appointmentTime}
                                   onChange={(e) => setResidentBooking({...residentBooking, appointmentTime: e.target.value})}
                                   disabled={!residentBooking.appointmentDate}
                                   className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all disabled:bg-gray-100 disabled:cursor-not-allowed">
-                                  <option value="">-- Select a Time Slot --</option>
+                                  <option value="">{t('selectTimeSlot')}</option>
                                   {CLINIC_SLOTS.filter(s => s.value !== '12:00').map(slot => {
                                     const isBooked = residentBooking.appointmentDate && getBookedSlots(residentBooking.appointmentDate).has(slot.value);
                                     const count = residentBooking.appointmentDate ? getSlotCount(residentBooking.appointmentDate, slot.value) : 0;
@@ -4020,16 +4109,16 @@ function normalizeUser(u) {
                                 <p className="text-xs text-gray-400 mt-1">🏥 Clinic hours: 8:00 AM – 5:00 PM | Lunch 12–1 PM blocked</p>
                               </div>
                               <div className="md:col-span-2">
-                                <label className="block text-sm font-semibold text-gray-700 mb-1">Service Category <span className="text-red-500">*</span></label>
+                                <label className="block text-sm font-semibold text-gray-700 mb-1">{t('serviceCategory')} <span className="text-red-500">*</span></label>
                                 <select value={residentBooking.serviceCategory}
                                   onChange={(e) => setResidentBooking({...residentBooking, serviceCategory: e.target.value, serviceType: '', priorityLevel: ''})}
                                   className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all">
-                                  <option value="">Select service category</option>
+                                  <option value="">{t('selectServiceCategory')}</option>
                                   {Object.keys(SERVICE_CATEGORIES).filter(cat => SERVICE_CATEGORIES[cat].enabled !== false).map(cat => <option key={cat} value={cat}>{cat}</option>)}
                                 </select>
                               </div>
                               <div className="md:col-span-2">
-                                <label className="block text-sm font-semibold text-gray-700 mb-1">Service Type <span className="text-red-500">*</span></label>
+                                <label className="block text-sm font-semibold text-gray-700 mb-1">{t('serviceType')} <span className="text-red-500">*</span></label>
                                 <select value={residentBooking.serviceType}
                                   onChange={(e) => {
                                     const selectedService = SERVICE_CATEGORIES[residentBooking.serviceCategory]?.services.find(s => s.name === e.target.value);
@@ -4037,17 +4126,17 @@ function normalizeUser(u) {
                                   }}
                                   disabled={!residentBooking.serviceCategory}
                                   className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all disabled:bg-gray-100 disabled:cursor-not-allowed">
-                                  <option value="">{residentBooking.serviceCategory ? 'Select service type' : 'Please select a service category first'}</option>
+                                  <option value="">{residentBooking.serviceCategory ? t('selectServiceFirst') : t('selectServiceFirst')}</option>
                                   {residentBooking.serviceCategory && SERVICE_CATEGORIES[residentBooking.serviceCategory]?.services.filter(s => s.enabled !== false).map(s => <option key={s.name} value={s.name}>{s.name}</option>)}
                                 </select>
                               </div>
                               <div className="md:col-span-2">
-                                <label className="block text-sm font-semibold text-gray-700 mb-1">Priority Level <span className="text-red-500">*</span></label>
+                                <label className="block text-sm font-semibold text-gray-700 mb-1">{t('priorityLevel')} <span className="text-red-500">*</span></label>
                                 <select value={residentBooking.priorityLevel}
                                   onChange={(e) => setResidentBooking({...residentBooking, priorityLevel: e.target.value})}
                                   disabled={!residentBooking.serviceType}
                                   className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all disabled:bg-gray-100 disabled:cursor-not-allowed">
-                                  <option value="">{residentBooking.serviceType ? 'Select priority level' : 'Please select a service type first'}</option>
+                                  <option value="">{residentBooking.serviceType ? t('selectServiceTypeFirst') : t('selectServiceTypeFirst')}</option>
                                   <option value="Priority Case">Priority Case</option>
                                   <option value="Urgent">Urgent</option>
                                   <option value="Regular">Regular</option>
@@ -4089,7 +4178,7 @@ function normalizeUser(u) {
                               disabled={isPHHoliday(residentBooking.appointmentDate)}
                               className="flex-1 bg-gradient-to-r from-purple-600 to-pink-600 text-white py-3 rounded-lg font-semibold hover:from-purple-700 hover:to-pink-700 transition-all transform hover:scale-[1.02] shadow-lg disabled:opacity-40 disabled:cursor-not-allowed disabled:transform-none"
                             >
-                              Book Appointment
+                              {t('submitBooking')}
                             </button>
                           </div>
                         </div>
@@ -6571,7 +6660,7 @@ function normalizeUser(u) {
                           <div className="mt-4 bg-orange-50 border border-orange-200 rounded-xl p-4 space-y-3">
                             <p className="text-sm font-bold text-orange-800">Queue Details</p>
                             <div>
-                              <label className="block text-xs font-semibold text-gray-700 mb-1">Service Category <span className="text-red-500">*</span></label>
+                              <label className="block text-xs font-semibold text-gray-700 mb-1">{t('serviceCategory')} <span className="text-red-500">*</span></label>
                               <select value={newPatient.queueServiceCategory}
                                 onChange={e => setNewPatient({...newPatient, queueServiceCategory: e.target.value, queueServiceType:'', queuePriority:'Regular'})}
                                 className="w-full px-3 py-2 border border-orange-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-400">
@@ -6580,7 +6669,7 @@ function normalizeUser(u) {
                               </select>
                             </div>
                             <div>
-                              <label className="block text-xs font-semibold text-gray-700 mb-1">Service Type <span className="text-red-500">*</span></label>
+                              <label className="block text-xs font-semibold text-gray-700 mb-1">{t('serviceType')} <span className="text-red-500">*</span></label>
                               <select value={newPatient.queueServiceType}
                                 onChange={e => { const s = SERVICE_CATEGORIES[newPatient.queueServiceCategory]?.services.find(sv => sv.name === e.target.value); setNewPatient({...newPatient, queueServiceType: e.target.value, queuePriority: s?.priority || 'Regular'}); }}
                                 disabled={!newPatient.queueServiceCategory}
@@ -6591,7 +6680,7 @@ function normalizeUser(u) {
                             </div>
                             <div className="grid grid-cols-2 gap-3">
                               <div>
-                                <label className="block text-xs font-semibold text-gray-700 mb-1">Priority Level</label>
+                                <label className="block text-xs font-semibold text-gray-700 mb-1">{t('priorityLevel')}</label>
                                 <select value={newPatient.queuePriority} onChange={e => setNewPatient({...newPatient, queuePriority: e.target.value})}
                                   className="w-full px-3 py-2 border border-orange-300 rounded-lg text-sm focus:ring-2 focus:ring-orange-400">
                                   <option value="Regular">Regular</option>
@@ -6698,7 +6787,7 @@ function normalizeUser(u) {
                       </div>
 
                       <div>
-                        <label className="block text-sm font-semibold text-gray-700 mb-2">Service Category <span className="text-red-500">*</span></label>
+                        <label className="block text-sm font-semibold text-gray-700 mb-2">{t('serviceCategory')} <span className="text-red-500">*</span></label>
                         <select value={queuePatient.serviceCategory}
                           onChange={(e) => setQueuePatient({...queuePatient, serviceCategory: e.target.value, serviceType:'', priority:'Regular'})}
                           className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent">
@@ -6708,7 +6797,7 @@ function normalizeUser(u) {
                       </div>
 
                       <div>
-                        <label className="block text-sm font-semibold text-gray-700 mb-2">Service Type <span className="text-red-500">*</span></label>
+                        <label className="block text-sm font-semibold text-gray-700 mb-2">{t('serviceType')} <span className="text-red-500">*</span></label>
                         <select value={queuePatient.serviceType}
                           onChange={(e) => { const s = SERVICE_CATEGORIES[queuePatient.serviceCategory]?.services.find(sv => sv.name === e.target.value); setQueuePatient({...queuePatient, serviceType: e.target.value, priority: s?.priority || 'Regular'}); }}
                           disabled={!queuePatient.serviceCategory}
@@ -6719,7 +6808,7 @@ function normalizeUser(u) {
                       </div>
 
                       <div>
-                        <label className="block text-sm font-semibold text-gray-700 mb-2">Priority Level <span className="text-red-500">*</span></label>
+                        <label className="block text-sm font-semibold text-gray-700 mb-2">{t('priorityLevel')} <span className="text-red-500">*</span></label>
                         <select value={queuePatient.priority} onChange={(e) => setQueuePatient({...queuePatient, priority: e.target.value})}
                           disabled={!queuePatient.serviceType}
                           className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-orange-500 focus:border-transparent disabled:bg-gray-100 disabled:cursor-not-allowed">
