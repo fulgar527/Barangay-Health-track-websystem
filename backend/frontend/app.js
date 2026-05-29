@@ -3355,8 +3355,36 @@ function normalizeUser(u) {
                                   <p className="font-black leading-none" style={{fontSize:'5rem', color:'var(--ht-primary)'}}>
                                     {String(myEntry.queueNumber).padStart(3, '0')}
                                   </p>
+                                  {/* Date, Time and Patient ID */}
+                                  <div className="flex items-center gap-4 mt-3 px-4">
+                                    <div className="text-center">
+                                      <p className="text-xs text-gray-400 uppercase tracking-wide">{lang === 'fil' ? 'Petsa' : 'Date'}</p>
+                                      <p className="text-sm font-semibold text-gray-700">
+                                        {myEntry.appointmentDate
+                                          ? new Date(myEntry.appointmentDate + 'T00:00:00').toLocaleDateString('en-PH', {month:'short', day:'numeric', year:'numeric'})
+                                          : new Date(myEntry.timeQueued).toLocaleDateString('en-PH', {month:'short', day:'numeric', year:'numeric'})
+                                        }
+                                      </p>
+                                    </div>
+                                    <div className="w-px h-8 bg-gray-200"></div>
+                                    <div className="text-center">
+                                      <p className="text-xs text-gray-400 uppercase tracking-wide">{lang === 'fil' ? 'Oras' : 'Time'}</p>
+                                      <p className="text-sm font-semibold text-gray-700">
+                                        {myEntry.appointmentTime ? (() => {
+                                          const [h, m] = myEntry.appointmentTime.split(':').map(Number);
+                                          const ampm = h >= 12 ? 'PM' : 'AM';
+                                          return `${h % 12 || 12}:${String(m).padStart(2,'0')} ${ampm}`;
+                                        })() : '—'}
+                                      </p>
+                                    </div>
+                                    <div className="w-px h-8 bg-gray-200"></div>
+                                    <div className="text-center">
+                                      <p className="text-xs text-gray-400 uppercase tracking-wide">Patient ID</p>
+                                      <p className="text-sm font-semibold text-gray-700">{myEntry.patientId || '—'}</p>
+                                    </div>
+                                  </div>
                                   {myEntry.status === 'In Progress' && (
-                                    <span className="mt-2 bg-green-500 text-white text-xs font-bold px-4 py-1 rounded-full animate-pulse">
+                                    <span className="mt-3 bg-green-500 text-white text-xs font-bold px-4 py-1 rounded-full animate-pulse">
                                       🔔 {lang === 'fil' ? 'Ikaw na ang susunod! Pumunta na sa window.' : 'Your turn! Please proceed to the window.'}
                                     </span>
                                   )}
