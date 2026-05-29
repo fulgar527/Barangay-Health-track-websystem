@@ -566,7 +566,7 @@
   // ── Fetch & Render ───────────────────────────────────────────────────────────
   async function fetchQueue() {
     try {
-      const res = await fetch(`${API_BASE}/queue/today/all`);
+      const res = await fetch(`${API_BASE}/queue-display/live`);
       if (!res.ok) throw new Error('Failed');
       const rows = await res.json();
 
