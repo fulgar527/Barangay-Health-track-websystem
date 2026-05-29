@@ -234,8 +234,11 @@ app.get('/api/queue-display/live', async (req, res) => {
               COALESCE(p.last_name, '') AS last_name
        FROM queue q
        LEFT JOIN patients p ON q.patient_id = p.patient_id
-       WHERE (DATE(q.created_at) = CURRENT_DATE OR DATE(q.appointment_date) = CURRENT_DATE)
-         AND q.status NOT IN ('Completed', 'Cancelled', 'Rejected')
+       WHERE q.status NOT IN ('Completed', 'Cancelled', 'Rejected')
+         AND (
+           DATE(q.appointment_date) = CURRENT_DATE
+           OR (q.appointment_date IS NULL AND DATE(q.created_at) = CURRENT_DATE)
+         )
        ORDER BY q.queue_number`
     );
     res.json(result.rows);
