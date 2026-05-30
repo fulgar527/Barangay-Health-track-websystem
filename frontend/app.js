@@ -2918,6 +2918,7 @@ function normalizeUser(u) {
                                 })()}
                               </div>
                             </div>
+                            <div className="grid grid-cols-2 gap-3 mb-3">
                               <div>
                                 <label className="block text-xs font-medium text-gray-600 mb-1">Emergency Contact Person</label>
                                 <input type="text" value={newAccount.emergencyContactPerson} onChange={(e) => setNewAccount({...newAccount, emergencyContactPerson: e.target.value})}
