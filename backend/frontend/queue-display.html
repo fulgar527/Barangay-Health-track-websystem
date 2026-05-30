@@ -114,6 +114,21 @@
       overflow: hidden;
     }
 
+    @media (max-width: 700px) {
+      .main {
+        grid-template-columns: 1fr;
+        grid-template-rows: auto 1fr;
+      }
+      .now-serving {
+        border-right: none !important;
+        border-bottom: 2px solid rgba(255,255,255,0.08);
+        padding: 16px;
+      }
+      #serving-number { font-size: 5rem !important; }
+      .number-ring { width: 180px !important; height: 180px !important; }
+      .number-ring-2 { width: 210px !important; height: 210px !important; }
+    }
+
     /* ── NOW SERVING panel ── */
     .now-serving {
       background: linear-gradient(160deg, #1a0505 0%, #2d0808 100%);
@@ -475,6 +490,7 @@
     <!-- NOW SERVING -->
     <div class="now-serving">
       <div class="serving-label">Now Serving</div>
+      <div id="serving-lane" style="font-family:'Barlow Condensed',sans-serif;font-size:0.75rem;font-weight:700;letter-spacing:4px;text-transform:uppercase;margin-bottom:6px;min-height:20px;"></div>
       <div class="number-box">
         <div class="number-ring"></div>
         <div class="number-ring number-ring-2"></div>
@@ -631,24 +647,34 @@
     const nameEl   = document.getElementById('serving-name');
     const svcEl    = document.getElementById('serving-service');
     const banner   = document.getElementById('proceed-banner');
+    const laneEl   = document.getElementById('serving-lane');
 
     if (!entry) {
       numEl.textContent = '—';
       nameEl.textContent = '';
       svcEl.textContent = '';
       banner.classList.remove('show');
+      laneEl.textContent = '';
       prevServingNumber = null;
       return;
     }
 
     const numStr = String(entry.queueNumber).padStart(3, '0');
 
-    // Flash animation only when number changes
     if (numStr !== prevServingNumber) {
       numEl.classList.remove('flash');
-      void numEl.offsetWidth; // reflow
+      void numEl.offsetWidth;
       numEl.classList.add('flash');
       prevServingNumber = numStr;
+    }
+
+    // Lane indicator
+    if (entry.priority === 'Priority Case') {
+      laneEl.innerHTML = '<span style="color:#F39C12;">⚡ PRIORITY LANE</span>';
+    } else if (entry.priority === 'Urgent') {
+      laneEl.innerHTML = '<span style="color:#E74C3C;">🔴 URGENT LANE</span>';
+    } else {
+      laneEl.innerHTML = '<span style="color:rgba(255,255,255,0.35);">🟢 REGULAR LANE</span>';
     }
 
     numEl.textContent = numStr;
