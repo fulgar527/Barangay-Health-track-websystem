@@ -1168,9 +1168,14 @@ function normalizeUser(u) {
                 console.warn('Patient record auto-save failed (non-fatal):', patErr.message);
               }
               } // end getToken() check
+              setOtpStep(false);
+              setPendingAccount(null);
+              setOtpCode(''); setOtpInput('');
               setRegisterSuccess(`Account created successfully! You can now log in as "${pendingAccount.username}".`);
               setNewAccount({ username:'', password:'', confirmPassword:'', role:'resident', firstName:'', middleInitial:'', lastName:'', birthday:'', email:'', mobile:'', contactMethod:'email', sex:'', civilStatus:'', address:'', contactNumber:'', occupation:'', emergencyContactPerson:'', emergencyContactNumber:'', allergies:'', chronicConditions:'', currentMedications:'' });
-              setShowRegPassword(false); setShowCreateAccount(false);
+              setShowRegPassword(false);
+              // Small delay so user sees the success message before window closes
+              setTimeout(() => setShowCreateAccount(false), 2000);
             } catch(err) {
               setOtpError(err.message || 'Registration failed. Please try again.');
             }
@@ -2533,6 +2538,19 @@ function normalizeUser(u) {
 
                     {otpStep ? (
                       /* ===== OTP VERIFICATION SCREEN ===== */
+                      registerSuccess ? (
+                        /* ===== SUCCESS STATE ===== */
+                        <div className="text-center py-8 space-y-4">
+                          <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto">
+                            <svg className="w-10 h-10 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                            </svg>
+                          </div>
+                          <h2 className="text-xl font-bold text-gray-800">Account Created!</h2>
+                          <p className="text-sm text-gray-600">{registerSuccess}</p>
+                          <p className="text-xs text-gray-400">Closing automatically...</p>
+                        </div>
+                      ) :
                       <div className="space-y-5">
                         <div className="text-center">
                           <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-3">
