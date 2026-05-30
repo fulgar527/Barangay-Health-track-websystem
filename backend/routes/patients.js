@@ -80,9 +80,10 @@ router.post('/', async (req, res) => {
 
     // Apply safe defaults for NOT NULL columns so on-the-fly resident bookings
     // succeed even when profile is incomplete. Resident can update later.
-    const safeDob     = dateOfBirth || '2000-01-01';
-    const safeAge     = (age && age > 0) ? age
-                        : Math.max(0, Math.floor((Date.now() - new Date(safeDob)) / 31557600000));
+    const safeDob     = (dateOfBirth && dateOfBirth !== '') ? dateOfBirth : null;
+    const safeAge     = safeDob
+                        ? Math.max(0, Math.floor((Date.now() - new Date(safeDob)) / 31557600000))
+                        : (age && age > 0 ? age : null);
     const safeSex     = ['Male', 'Female'].includes(sex) ? sex : 'Male';
     const safeAddr    = (address && String(address).trim()) || 'To be updated';
     const safeContact = (contactNumber && String(contactNumber).trim()) || 'N/A';
