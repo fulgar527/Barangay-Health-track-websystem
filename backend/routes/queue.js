@@ -151,22 +151,25 @@ router.post('/', async (req, res) => {
     }
     console.log('✅ Patient verified:', patientId);
 
-    // ────── VALIDATION 3: Get queue number (WITH RETRY) ──────
-    let queueNumber;
-    try {
-      const queueNumResult = await queryWithRetry(
-        'SELECT get_next_queue_number() as queue_number',
-        [],
-        2
-      );
-      queueNumber = queueNumResult.rows[0].queue_number;
-      console.log('✅ Queue number generated:', queueNumber);
-    } catch (qErr) {
-      console.error('❌ Queue number generation failed:', qErr.message);
-      return res.status(500).json({ 
-        error: 'Failed to generate queue number.',
-        detail: 'Database error: ' + qErr.message
-      });
+    // ────── QUEUE NUMBER: only assign for walk-ins or admin/staff bookings ──────
+    // Self-booked residents get queue number assigned when admin ACCEPTS the booking
+    const isResidentSelfBooked = selfBooked === true || selfBooked === 'true';
+    let queueNumber = null;
+
+    if (!isResidentSelfBooked) {
+      // Walk-in or staff/admin booking → assign queue number immediately
+      try {
+        const queueNumResult = await queryWithRetry(
+          'SELECT get_next_queue_number() as queue_number', [], 2
+        );
+        queueNumber = queueNumResult.rows[0].queue_number;
+        console.log('✅ Queue number generated:', queueNumber);
+      } catch (qErr) {
+        console.error('❌ Queue number generation failed:', qErr.message);
+        return res.status(500).json({ error: 'Failed to generate queue number.', detail: qErr.message });
+      }
+    } else {
+      console.log('📋 Self-booked resident — queue number will be assigned on admin acceptance');
     }
 
     // ────── VALIDATION 4: Lookup service ID (WITH RETRY & FALLBACK) ──────
@@ -291,21 +294,23 @@ router.post('/', async (req, res) => {
     let result;
     try {
       console.log('📤 Inserting queue entry...');
+      const initialStatus = isResidentSelfBooked ? 'Waiting' : 'Waiting';
       result = await queryWithRetry(
         `INSERT INTO queue (
           queue_number, patient_id, service_id, service_category, service_name,
-          priority, chief_complaint, appointment_date, appointment_time, self_booked, booked_by_username
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+          priority, chief_complaint, appointment_date, appointment_time,
+          self_booked, booked_by_username, status
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
         RETURNING *`,
         [
           queueNumber, patientId, serviceId, serviceCategory, serviceName,
-          finalPriority, finalChiefComplaint, 
-          appointmentDate || null, appointmentTime || null, 
-          selfBooked || false, bookedByUsername || null
+          finalPriority, finalChiefComplaint,
+          appointmentDate || null, appointmentTime || null,
+          selfBooked || false, bookedByUsername || null, initialStatus
         ],
         1
       );
-      console.log('✅ Queue entry created (ID:', result.rows[0].queue_id + ')');
+      console.log('✅ Queue entry created (ID:', result.rows[0].queue_id, '| Queue#:', queueNumber || 'PENDING', ')');
     } catch (insertErr) {
       console.error('❌ INSERT failed:', {
         code: insertErr.code,
@@ -377,6 +382,22 @@ router.patch('/:queueId/status', async (req, res) => {
       const { rejectedReason } = req.body;
       updateFields += `, rejected_reason = $${params.length + 1}, rejected_at = CURRENT_TIMESTAMP`;
       params.push(rejectedReason || null);
+    } else if (status === 'Accepted') {
+      // ── Assign queue number now if not yet assigned (self-booked residents) ──
+      const existing = await db.query(
+        'SELECT queue_number FROM queue WHERE queue_id = $1', [queueId]
+      );
+      if (existing.rows.length > 0 && !existing.rows[0].queue_number) {
+        try {
+          const qnResult = await db.query('SELECT get_next_queue_number() as queue_number');
+          const assignedNumber = qnResult.rows[0].queue_number;
+          updateFields += `, queue_number = $${params.length + 1}`;
+          params.push(assignedNumber);
+          console.log(`✅ Queue number ${assignedNumber} assigned to queue_id ${queueId} on acceptance`);
+        } catch (qnErr) {
+          console.warn('⚠️ Failed to assign queue number on acceptance:', qnErr.message);
+        }
+      }
     }
 
     const result = await queryWithRetry(
@@ -386,6 +407,35 @@ router.patch('/:queueId/status', async (req, res) => {
 
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Queue entry not found' });
+    }
+
+    // ── Save in-app notification for resident ──────────────────────────────
+    try {
+      const q = result.rows[0];
+      let notifTitle = '', notifMessage = '', notifType = '';
+      const apptDate = q.appointment_date
+        ? new Date(q.appointment_date).toLocaleDateString('en-PH', {weekday:'short', month:'short', day:'numeric', year:'numeric'})
+        : 'N/A';
+
+      if (status === 'Accepted') {
+        notifTitle = '✅ Appointment Accepted';
+        notifMessage = `Your appointment on ${apptDate} for ${q.service_category || q.service_name} has been accepted. Your queue number is #${String(q.queue_number).padStart(3,'0')}. Please arrive on time.`;
+        notifType = 'accepted';
+      } else if (status === 'Rejected') {
+        notifTitle = '❌ Appointment Rejected';
+        notifMessage = `Your appointment on ${apptDate} has been rejected. Reason: ${req.body.rejectedReason || 'No reason provided'}. Please contact the clinic or book a new appointment.`;
+        notifType = 'rejected';
+      }
+
+      if (notifTitle && q.patient_id) {
+        await db.query(
+          `INSERT INTO notifications (patient_id, title, message, type, queue_id, created_at)
+           VALUES ($1, $2, $3, $4, $5, NOW())`,
+          [q.patient_id, notifTitle, notifMessage, notifType, queueId]
+        ).catch(e => console.warn('⚠️ Notification save failed (non-fatal):', e.message));
+      }
+    } catch (notifErr) {
+      console.warn('⚠️ Notification error (non-fatal):', notifErr.message);
     }
 
     await logAudit(db, req.user?.username, `QUEUE_${status.toUpperCase().replace(' ','_')}`, 'queue', queueId,
