@@ -1514,6 +1514,7 @@ function normalizeUser(u) {
             setLoadingData(true);
             const tasks = [loadPatients(), loadQueue(), loadVisitLog()];
             if (userRole === 'admin') tasks.push(loadUsers());
+            if (userRole === 'resident') tasks.push(loadNotifications());
             Promise.all(tasks).finally(() => setLoadingData(false));
           }, [userRole]);
 
@@ -1528,7 +1529,11 @@ function normalizeUser(u) {
               loadVisitLog();
               if (userRole === 'admin') loadUsers();
             }, 30000);
-            return () => { clearInterval(queueTimer); clearInterval(fullTimer); };
+            // Poll notifications every 10s for residents
+            const notifTimer = setInterval(() => {
+              if (userRole === 'resident') loadNotifications();
+            }, 10000);
+            return () => { clearInterval(queueTimer); clearInterval(fullTimer); clearInterval(notifTimer); };
           }, [userRole]);
 
           // Initial state for new patient registration
@@ -1823,8 +1828,27 @@ function normalizeUser(u) {
             setNotifications(updated);
           };
 
+          // Load real notifications from backend (for residents)
+          const loadNotifications = async () => {
+            if (!userRole || userRole === 'admin' || userRole === 'staff') return;
+            try {
+              const rows = await api('GET', '/notifications');
+              if (Array.isArray(rows)) {
+                setNotifications(rows.map(n => ({
+                  id: n.notification_id || n.id,
+                  title: n.title,
+                  message: n.message,
+                  type: n.type,
+                  timestamp: n.created_at,
+                  read: n.read || false,
+                })));
+              }
+            } catch(e) { /* non-fatal */ }
+          };
+
           const markNotifsRead = () => {
             setNotifications(notifications.map(n => ({ ...n, read: true })));
+            if (userRole === 'resident') api('PATCH', '/notifications/read').catch(() => {});
           };
 
           // ── Reject modal state ──
@@ -2977,19 +3001,19 @@ function normalizeUser(u) {
                               </div>
                             </div>
                             <div className="mb-3">
-                              <label className="block text-xs font-medium text-gray-600 mb-1">Allergies</label>
+                              <div className="flex justify-between items-center mb-1"><label className="block text-xs font-medium text-gray-600">Allergies</label><button type="button" onClick={() => setNewAccount({...newAccount, allergies: 'None'})} className="text-xs text-blue-500 hover:text-blue-700 font-medium">+ None</button></div>
                               <input type="text" value={newAccount.allergies} onChange={(e) => setNewAccount({...newAccount, allergies: e.target.value})}
                                 placeholder="e.g. Penicillin, Peanuts (leave blank if none)"
                                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-400 focus:border-transparent" />
                             </div>
                             <div className="mb-3">
-                              <label className="block text-xs font-medium text-gray-600 mb-1">Chronic Conditions</label>
+                              <div className="flex justify-between items-center mb-1"><label className="block text-xs font-medium text-gray-600">Chronic Conditions</label><button type="button" onClick={() => setNewAccount({...newAccount, chronicConditions: 'None'})} className="text-xs text-blue-500 hover:text-blue-700 font-medium">+ None</button></div>
                               <input type="text" value={newAccount.chronicConditions} onChange={(e) => setNewAccount({...newAccount, chronicConditions: e.target.value})}
                                 placeholder="e.g. Hypertension, Diabetes (leave blank if none)"
                                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-400 focus:border-transparent" />
                             </div>
                             <div>
-                              <label className="block text-xs font-medium text-gray-600 mb-1">Current Medications</label>
+                              <div className="flex justify-between items-center mb-1"><label className="block text-xs font-medium text-gray-600">Current Medications</label><button type="button" onClick={() => setNewAccount({...newAccount, currentMedications: 'None'})} className="text-xs text-blue-500 hover:text-blue-700 font-medium">+ None</button></div>
                               <textarea value={newAccount.currentMedications} onChange={(e) => setNewAccount({...newAccount, currentMedications: e.target.value})}
                                 placeholder="List current medications (leave blank if none)"
                                 rows={2}
@@ -3408,9 +3432,14 @@ function normalizeUser(u) {
                         {/* My Appointment Status */}
                         <div className="bg-white rounded-xl shadow-md p-6">
                           <h2 className="text-xl font-bold text-gray-800 mb-1">My Appointment Status</h2>
-                          <p className="text-sm text-gray-500 mb-4">Your current booking with the clinic</p>
+                          <p className="text-sm text-gray-500 mb-4">
+                            {myEntries.length > 1
+                              ? `You have ${myEntries.length} active bookings`
+                              : 'Your current booking with the clinic'
+                            }
+                          </p>
 
-                          {!myEntry ? (
+                          {myEntries.length === 0 ? (
                             <div className="text-center py-10">
                               <div className="w-16 h-16 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-3">
                                 <Calendar className="w-8 h-8 text-purple-400" />
@@ -3425,9 +3454,16 @@ function normalizeUser(u) {
                               </button>
                             </div>
                           ) : (
-                            <div className={`border-2 rounded-xl p-5 ${sc.bg}`}>
+                            <div className="space-y-6">
+                              {myEntries.map((myEntry) => {
+                                const queuePosition = queue
+                                  .filter(q => q.status !== 'Cancelled' && q.status !== 'Rejected')
+                                  .findIndex(q => q.id === myEntry.id) + 1;
+                                const sc = statusColors[myEntry.status] || statusColors['Waiting'];
+                                return (
+                            <div key={myEntry.id} className={`border-2 rounded-xl p-5 ${sc.bg}`}>
                               {/* BIG QUEUE NUMBER */}
-                              {myEntry.queueNumber && myEntry.status !== 'Rejected' && myEntry.status !== 'Completed' && (
+                              {myEntry.queueNumber && myEntry.status !== 'Rejected' && myEntry.status !== 'Completed' ? (
                                 <div className="flex flex-col items-center justify-center bg-white border-2 rounded-2xl py-5 mb-4" style={{borderColor:'var(--ht-primary)'}}>
                                   <p className="text-xs font-bold uppercase tracking-widest mb-1" style={{color:'var(--ht-primary)'}}>
                                     {lang === 'fil' ? 'Iyong Numero sa Pila' : 'Your Queue Number'}
@@ -3474,7 +3510,29 @@ function normalizeUser(u) {
                                     </p>
                                   )}
                                 </div>
-                              )}
+                              ) : myEntry.status === 'Waiting' && !myEntry.queueNumber ? (
+                                /* Pending approval — no queue number yet */
+                                <div className="flex flex-col items-center justify-center bg-amber-50 border-2 border-amber-300 rounded-2xl py-6 mb-4">
+                                  <div className="w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mb-3">
+                                    <svg className="w-8 h-8 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
+                                  </div>
+                                  <p className="text-sm font-bold text-amber-700 uppercase tracking-wide">
+                                    {lang === 'fil' ? 'Naghihintay ng Aprubahan' : 'Pending Approval'}
+                                  </p>
+                                  <p className="text-xs text-amber-600 mt-1 text-center px-4">
+                                    {lang === 'fil'
+                                      ? 'Ang iyong booking ay naghihintay ng pagsusuri ng klinika. Makakatanggap ka ng queue number kapag naaprobahan na.'
+                                      : 'Your booking is awaiting clinic review. Your queue number will be assigned once the clinic accepts your appointment.'
+                                    }
+                                  </p>
+                                  <div className="mt-3 text-xs text-amber-500">
+                                    📅 {myEntry.appointmentDate ? new Date(myEntry.appointmentDate + 'T00:00:00').toLocaleDateString('en-PH', {weekday:'short', month:'short', day:'numeric', year:'numeric'}) : '—'}
+                                    {myEntry.appointmentTime ? ` · ${(() => { const [h,m] = myEntry.appointmentTime.split(':').map(Number); return `${h%12||12}:${String(m).padStart(2,'0')} ${h>=12?'PM':'AM'}`; })()}` : ''}
+                                  </div>
+                                </div>
+                              ) : null}
 
                               {/* Status badge */}
                               <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
@@ -3523,6 +3581,9 @@ function normalizeUser(u) {
                               )}
 
                               <p className="text-xs text-gray-400">Booked on: {new Date(myEntry.timeQueued).toLocaleString('en-PH')}</p>
+                            </div>
+                                );
+                              })}
                             </div>
                           )}
                         </div>
@@ -4192,21 +4253,21 @@ function normalizeUser(u) {
                               <h3 className="text-base font-bold text-gray-800 mt-5 mb-3 pb-2 border-b border-gray-200">Medical Information</h3>
                               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div>
-                                  <label className="block text-sm font-semibold text-gray-700 mb-1">Allergies</label>
+                                  <div className="flex justify-between items-center mb-1"><label className="block text-sm font-semibold text-gray-700">Allergies</label><button type="button" onClick={() => setResidentBooking({...residentBooking, allergies: 'None'})} className="text-xs text-blue-500 hover:text-blue-700 font-medium">+ None</button></div>
                                   <input type="text" value={residentBooking.allergies}
                                     onChange={(e) => setResidentBooking({...residentBooking, allergies: e.target.value})}
                                     placeholder="e.g., Penicillin, Peanuts"
                                     className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all" />
                                 </div>
                                 <div className="md:col-span-2">
-                                  <label className="block text-sm font-semibold text-gray-700 mb-1">Chronic Conditions</label>
+                                  <div className="flex justify-between items-center mb-1"><label className="block text-sm font-semibold text-gray-700">Chronic Conditions</label><button type="button" onClick={() => setResidentBooking({...residentBooking, chronicConditions: 'None'})} className="text-xs text-blue-500 hover:text-blue-700 font-medium">+ None</button></div>
                                   <input type="text" value={residentBooking.chronicConditions}
                                     onChange={(e) => setResidentBooking({...residentBooking, chronicConditions: e.target.value})}
                                     placeholder="e.g., Hypertension, Diabetes"
                                     className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all" />
                                 </div>
                                 <div className="md:col-span-2">
-                                  <label className="block text-sm font-semibold text-gray-700 mb-1">Current Medications</label>
+                                  <div className="flex justify-between items-center mb-1"><label className="block text-sm font-semibold text-gray-700">Current Medications</label><button type="button" onClick={() => setResidentBooking({...residentBooking, currentMedications: 'None'})} className="text-xs text-blue-500 hover:text-blue-700 font-medium">+ None</button></div>
                                   <textarea value={residentBooking.currentMedications}
                                     onChange={(e) => setResidentBooking({...residentBooking, currentMedications: e.target.value})}
                                     placeholder="List current medications"
@@ -4247,7 +4308,7 @@ function normalizeUser(u) {
                             <h3 className="text-base font-bold text-gray-800 mb-3 pb-2 border-b border-gray-200">{t('appointmentSchedule')}</h3>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                               <div>
-                                <label className="block text-sm font-semibold text-gray-700 mb-1">`${t('appointmentDate')} `}<span className="text-red-500">*</span></label>
+                                <label className="block text-sm font-semibold text-gray-700 mb-1">{t('appointmentDate')} <span className="text-red-500">*</span></label>
                                 <input type="date" value={residentBooking.appointmentDate}
                                   onChange={(e) => {
                                     const val = e.target.value;
@@ -4256,6 +4317,12 @@ function normalizeUser(u) {
                                       if (day === 0 || day === 6) {
                                         setResidentBooking({...residentBooking, appointmentDate: '', appointmentTime: ''});
                                         alert('⚠️ Weekdays only (Mon–Fri). Please select a weekday.');
+                                        return;
+                                      }
+                                      // iOS ignores min attribute — validate past dates manually
+                                      if (val < getLocalDateStr()) {
+                                        setResidentBooking({...residentBooking, appointmentDate: '', appointmentTime: ''});
+                                        alert('⚠️ Please select today or a future date.');
                                         return;
                                       }
                                     }
@@ -6069,8 +6136,27 @@ function normalizeUser(u) {
 
                     {/* ── HEALTH TRENDS & RECOMMENDATIONS ─────────────────────── */}
                     {(() => {
-                      const data = getAnalyticsData();
-                      if (data.length === 0) return null;
+                      // Use visitLog data; fall back to queue data if no visits recorded yet
+                      let data = getAnalyticsData();
+                      const usingQueueFallback = data.length === 0 && queue.length > 0;
+                      if (usingQueueFallback) {
+                        // Map queue entries to analytics-compatible format
+                        data = queue
+                          .filter(q => !['Cancelled','Rejected'].includes(q.status))
+                          .map(q => ({
+                            serviceCategory: q.serviceCategory || q.service || 'Unknown',
+                            service: q.serviceCategory || q.service || 'Unknown',
+                            priority: q.priority || 'Regular',
+                            age: q.age || 0,
+                            patientId: q.patientId,
+                            visitDate: q.timeQueued || q.appointmentDate || new Date().toISOString(),
+                          }));
+                      }
+                      if (data.length === 0) return (
+                        <div className="bg-gray-50 border border-gray-200 rounded-xl p-8 text-center">
+                          <p className="text-gray-400 text-sm">📊 No data available yet. Data will appear once patients are served or queued.</p>
+                        </div>
+                      );
 
                       // ── 1. Most Common Cases (by service category) ───────────
                       const caseCounts = {};
@@ -6231,7 +6317,12 @@ function normalizeUser(u) {
                             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-lg">📊</div>
                             <div>
                               <h3 className="text-xl font-bold text-gray-800">Health Trends & Recommendations</h3>
-                              <p className="text-sm text-gray-500">Data-driven insights based on {total} recorded visit{total !== 1 ? 's' : ''} · {analyticsTimeRange} view</p>
+                              <p className="text-sm text-gray-500">
+                                {usingQueueFallback
+                                  ? `Based on ${data.length} queued patient${data.length !== 1 ? 's' : ''} · Queue data (no completed visits yet)`
+                                  : `Data-driven insights based on ${data.length} recorded visit${data.length !== 1 ? 's' : ''} · ${analyticsTimeRange} view`
+                                }
+                              </p>
                             </div>
                           </div>
 
@@ -7136,9 +7227,10 @@ function normalizeUser(u) {
                         </div>
 
                         <div>
-                          <label className="block text-sm font-semibold text-gray-700 mb-2">
-                            Allergies
-                          </label>
+                          <div className="flex justify-between items-center mb-2">
+                            <label className="block text-sm font-semibold text-gray-700">Allergies</label>
+                            <button type="button" onClick={() => setNewPatient({...newPatient, allergies: 'None'})} className="text-xs text-blue-500 hover:text-blue-700 font-medium">+ None</button>
+                          </div>
                           <input
                             type="text"
                             value={newPatient.allergies}
@@ -7148,9 +7240,10 @@ function normalizeUser(u) {
                           />
                         </div>
                         <div className="md:col-span-2">
-                          <label className="block text-sm font-semibold text-gray-700 mb-2">
-                            Chronic Conditions
-                          </label>
+                          <div className="flex justify-between items-center mb-2">
+                            <label className="block text-sm font-semibold text-gray-700">Chronic Conditions</label>
+                            <button type="button" onClick={() => setNewPatient({...newPatient, chronicConditions: 'None'})} className="text-xs text-blue-500 hover:text-blue-700 font-medium">+ None</button>
+                          </div>
                           <input
                             type="text"
                             value={newPatient.chronicConditions}
@@ -7160,9 +7253,10 @@ function normalizeUser(u) {
                           />
                         </div>
                         <div className="md:col-span-2">
-                          <label className="block text-sm font-semibold text-gray-700 mb-2">
-                            Current Medications
-                          </label>
+                          <div className="flex justify-between items-center mb-2">
+                            <label className="block text-sm font-semibold text-gray-700">Current Medications</label>
+                            <button type="button" onClick={() => setNewPatient({...newPatient, currentMedications: 'None'})} className="text-xs text-blue-500 hover:text-blue-700 font-medium">+ None</button>
+                          </div>
                           <textarea
                             value={newPatient.currentMedications}
                             onChange={(e) => setNewPatient({...newPatient, currentMedications: e.target.value})}
@@ -7957,7 +8051,7 @@ function normalizeUser(u) {
                         </div>
 
                         <div>
-                          <label className="block text-sm font-semibold text-gray-700 mb-2">Allergies</label>
+                          <div className="flex justify-between items-center mb-2"><label className="block text-sm font-semibold text-gray-700">Allergies</label><button type="button" onClick={() => setEditingPatient({...editingPatient, allergies: 'None'})} className="text-xs text-blue-500 hover:text-blue-700 font-medium">+ None</button></div>
                           <input
                             type="text"
                             value={editingPatient.allergies}
@@ -7966,7 +8060,7 @@ function normalizeUser(u) {
                           />
                         </div>
                         <div className="md:col-span-2">
-                          <label className="block text-sm font-semibold text-gray-700 mb-2">Chronic Conditions</label>
+                          <div className="flex justify-between items-center mb-2"><label className="block text-sm font-semibold text-gray-700">Chronic Conditions</label><button type="button" onClick={() => setEditingPatient({...editingPatient, chronicConditions: 'None'})} className="text-xs text-blue-500 hover:text-blue-700 font-medium">+ None</button></div>
                           <input
                             type="text"
                             value={editingPatient.chronicConditions}
@@ -7975,7 +8069,7 @@ function normalizeUser(u) {
                           />
                         </div>
                         <div className="md:col-span-2">
-                          <label className="block text-sm font-semibold text-gray-700 mb-2">Current Medications</label>
+                          <div className="flex justify-between items-center mb-2"><label className="block text-sm font-semibold text-gray-700">Current Medications</label><button type="button" onClick={() => setEditingPatient({...editingPatient, currentMedications: 'None'})} className="text-xs text-blue-500 hover:text-blue-700 font-medium">+ None</button></div>
                           <textarea
                             value={editingPatient.currentMedications}
                             onChange={(e) => setEditingPatient({...editingPatient, currentMedications: e.target.value})}
