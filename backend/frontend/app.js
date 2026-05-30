@@ -1517,12 +1517,12 @@ function normalizeUser(u) {
             Promise.all(tasks).finally(() => setLoadingData(false));
           }, [userRole]);
 
-          // ── Real-time polling: queue every 5 s, full refresh every 30 s ──
+          // ── Real-time polling: queue every 3 s, full refresh every 30 s ──
           useEffect(() => {
             if (!userRole) return;
             const queueTimer = setInterval(() => {
               loadQueue();
-            }, 5000);
+            }, 3000);
             const fullTimer = setInterval(() => {
               loadPatients();
               loadVisitLog();
@@ -2284,17 +2284,17 @@ function normalizeUser(u) {
               }
 
               const priority = (() => {
-                // PWD → Priority Case (highest)
-                // Use patient record or bookingData directly (works for both myself and someone else)
                 const pat = patient || registeredPatients.find(p =>
                   p.firstName?.toLowerCase() === bookingData.firstName?.toLowerCase() &&
                   p.lastName?.toLowerCase()  === bookingData.lastName?.toLowerCase()
                 );
+                // PWD → Priority Case (highest)
                 if (pat?.pwdId || bookingData.pwdId) return 'Priority Case';
                 // Senior Citizen (60+) → Urgent
+                // Always compute from DOB — never trust stored age (may be wrong)
                 const dob = pat?.dateOfBirth || bookingData.dateOfBirth;
-                const age = pat?.age || (dob ? Math.floor((Date.now() - new Date(dob)) / 31557600000) : 0);
-                if (age >= 60) return 'Urgent';
+                const realAge = dob ? Math.floor((Date.now() - new Date(dob)) / 31557600000) : -1;
+                if (realAge >= 60) return 'Urgent';
                 // Default: from service type
                 return bookingData.priorityLevel ||
                   SERVICE_CATEGORIES[bookingData.serviceCategory]?.services
@@ -5348,7 +5348,18 @@ function normalizeUser(u) {
                 {activeTab === 'queue' && (
                   <div className="space-y-6">
                     <div className="flex justify-between items-center">
-                      <h2 className="text-2xl font-bold text-gray-800">Queue Management</h2>
+                      <div className="flex items-center gap-3">
+                        <h2 className="text-2xl font-bold text-gray-800">Queue Management</h2>
+                        <button
+                          onClick={() => { loadQueue(); loadPatients(); }}
+                          className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 rounded-full transition-colors font-medium"
+                          title="Refresh queue"
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                          Refresh
+                        </button>
+                        <span className="text-xs text-gray-400">Auto-refreshes every 5s</span>
+                      </div>
                       <div className="flex items-center gap-3">
                         <button
                           onClick={() => setShowRegisterPatient(true)}
