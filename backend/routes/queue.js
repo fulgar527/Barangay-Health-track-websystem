@@ -261,6 +261,32 @@ router.post('/', async (req, res) => {
       console.log('✅ Chief complaint provided');
     }
 
+    // ────── AUTO-PRIORITY: Senior Citizen / PWD override ──────
+    let finalPriority = priority || 'Regular';
+    try {
+      const patData = await db.query(
+        'SELECT age, date_of_birth, pwd_id FROM patients WHERE patient_id = $1', [patientId]
+      );
+      if (patData.rows.length > 0) {
+        const p = patData.rows[0];
+        if (p.pwd_id) {
+          finalPriority = 'Priority Case';
+          console.log('♿ PWD detected → Priority Case');
+        } else {
+          // Always calculate age from DOB for accuracy — don't trust stored age column
+          const realAge = p.date_of_birth
+            ? Math.floor((Date.now() - new Date(p.date_of_birth)) / 31557600000)
+            : (p.age || 0);
+          if (realAge >= 60) {
+            finalPriority = finalPriority === 'Priority Case' ? 'Priority Case' : 'Urgent';
+            console.log('👴 Senior Citizen detected (age', realAge, ') → Urgent');
+          }
+        }
+      }
+    } catch (prioErr) {
+      console.warn('⚠️ Auto-priority check failed (non-fatal):', prioErr.message);
+    }
+
     // ────── INSERT QUEUE ENTRY (WITH RETRY) ──────
     let result;
     try {
@@ -273,7 +299,7 @@ router.post('/', async (req, res) => {
         RETURNING *`,
         [
           queueNumber, patientId, serviceId, serviceCategory, serviceName,
-          priority || 'Regular', finalChiefComplaint, 
+          finalPriority, finalChiefComplaint, 
           appointmentDate || null, appointmentTime || null, 
           selfBooked || false, bookedByUsername || null
         ],
