@@ -602,14 +602,27 @@
       const rows = await res.json();
 
       // Normalize
-      const queue = rows.map(q => ({
-        queueNumber: q.queue_number || q.queueNumber || 0,
-        name: ((q.first_name || q.firstName || '') + ' ' + (q.last_name || q.lastName || '')).trim() || q.name || 'Patient',
-        service: q.service_category || q.serviceCategory || '',
-        status: q.status || 'Waiting',
-        appointmentTime: q.appointment_time || q.appointmentTime || '',
-        priority: q.priority || 'Regular',
-      }));
+      const queue = rows.map(q => {
+        const dob = q.date_of_birth;
+        const realAge = dob ? Math.floor((Date.now() - new Date(dob)) / 31557600000) : -1;
+        const isSenior = realAge >= 60;
+        const isPWD = !!(q.pwd_id);
+        // Effective priority: PWD → Priority Case, Senior → Urgent, else use DB value
+        let effectivePriority = q.priority || 'Regular';
+        if (isPWD) effectivePriority = 'Priority Case';
+        else if (isSenior && effectivePriority === 'Regular') effectivePriority = 'Urgent';
+
+        return {
+          queueNumber: q.queue_number || q.queueNumber || 0,
+          name: ((q.first_name || q.firstName || '') + ' ' + (q.last_name || q.lastName || '')).trim() || q.name || 'Patient',
+          service: q.service_category || q.serviceCategory || '',
+          status: q.status || 'Waiting',
+          appointmentTime: q.appointment_time || q.appointmentTime || '',
+          priority: effectivePriority,
+          isSenior,
+          isPWD,
+        };
+      });
 
       // Find currently serving (In Progress)
       const serving = queue.find(q => q.status === 'In Progress');
@@ -669,8 +682,12 @@
     }
 
     // Lane indicator
-    if (entry.priority === 'Priority Case') {
+    if (entry.isPWD) {
+      laneEl.innerHTML = '<span style="color:#F39C12;">♿ PWD PRIORITY LANE</span>';
+    } else if (entry.priority === 'Priority Case') {
       laneEl.innerHTML = '<span style="color:#F39C12;">⚡ PRIORITY LANE</span>';
+    } else if (entry.isSenior) {
+      laneEl.innerHTML = '<span style="color:#E74C3C;">👴 SENIOR CITIZEN LANE</span>';
     } else if (entry.priority === 'Urgent') {
       laneEl.innerHTML = '<span style="color:#E74C3C;">🔴 URGENT LANE</span>';
     } else {
@@ -703,8 +720,8 @@
         const display = parts.length >= 2 ? `${parts[0]} ${parts[parts.length-1][0]}.` : q.name;
         const isNext = i === 0;
         const badge = q.priority === 'Priority Case'
-          ? `<span style="color:#F39C12;font-size:0.65rem;font-weight:700;letter-spacing:1px;background:rgba(243,156,18,0.15);padding:2px 6px;border-radius:3px;">⚡ PRIORITY</span>`
-          : `<span style="color:#E74C3C;font-size:0.65rem;font-weight:700;letter-spacing:1px;background:rgba(231,76,60,0.15);padding:2px 6px;border-radius:3px;">🔴 URGENT</span>`;
+          ? `<span style="color:#F39C12;font-size:0.65rem;font-weight:700;letter-spacing:1px;background:rgba(243,156,18,0.15);padding:2px 6px;border-radius:3px;">${q.isPWD ? '♿ PWD' : '⚡ PRIORITY'}</span>`
+          : `<span style="color:#E74C3C;font-size:0.65rem;font-weight:700;letter-spacing:1px;background:rgba(231,76,60,0.15);padding:2px 6px;border-radius:3px;">${q.isSenior ? '👴 SENIOR' : '🔴 URGENT'}</span>`;
         return `
           <div class="queue-item ${isNext ? 'next' : ''}" style="border-color:rgba(231,76,60,0.4);background:rgba(231,76,60,0.08);animation-delay:${i*0.06}s">
             <div class="num" style="color:#E74C3C;">${numStr}</div>
