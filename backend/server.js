@@ -250,6 +250,43 @@ app.get('/api/queue-display/live', async (req, res) => {
   }
 });
 
+// ── Notifications endpoints ───────────────────────────────────────────────────
+// GET /api/notifications — fetch unread notifications for current user's patient
+app.get('/api/notifications', requireAuth, async (req, res) => {
+  try {
+    const result = await db.query(
+      `SELECT n.*, q.queue_number, q.appointment_date, q.appointment_time
+       FROM notifications n
+       LEFT JOIN queue q ON n.queue_id = q.queue_id::text
+       WHERE n.patient_id IN (
+         SELECT patient_id FROM users WHERE user_id = $1 OR username = $2
+       )
+       ORDER BY n.created_at DESC
+       LIMIT 20`,
+      [req.user.id, req.user.username]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    res.json([]); // Non-fatal — return empty if table doesn't exist yet
+  }
+});
+
+// PATCH /api/notifications/read — mark all as read
+app.patch('/api/notifications/read', requireAuth, async (req, res) => {
+  try {
+    await db.query(
+      `UPDATE notifications SET read = true
+       WHERE patient_id IN (
+         SELECT patient_id FROM users WHERE user_id = $1 OR username = $2
+       )`,
+      [req.user.id, req.user.username]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    res.json({ ok: false });
+  }
+});
+
 app.use('/api/patients', requireAuth, require('./routes/patients'));
 app.use('/api/queue', requireAuth, require('./routes/queue'));
 app.use('/api/services', requireAuth, require('./routes/services'));
