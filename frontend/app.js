@@ -5201,6 +5201,47 @@ function normalizeUser(u) {
                         )}
                       </div>
 
+                      {/* Notification Bell for Admin/Staff */}
+                      <div className="relative">
+                        <button
+                          onClick={() => { setShowNotifPanel(!showNotifPanel); markNotifsRead(); }}
+                          className="relative p-2 text-white/70 hover:text-white hover:bg-white/10 rounded-xl transition-colors"
+                        >
+                          <Bell className="w-6 h-6" />
+                          {notifications.filter(n => !n.read).length > 0 && (
+                            <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center animate-pulse">
+                              {notifications.filter(n => !n.read).length > 9 ? '9+' : notifications.filter(n => !n.read).length}
+                            </span>
+                          )}
+                        </button>
+                        {showNotifPanel && (
+                          <div className="absolute right-0 top-full mt-2 w-80 bg-white rounded-xl shadow-2xl border border-gray-100 z-50 overflow-hidden">
+                            <div className="px-4 py-3 bg-gray-50 border-b flex justify-between items-center">
+                              <p className="text-sm font-bold text-gray-800">🔔 Notifications</p>
+                              <button onClick={() => setShowNotifPanel(false)} className="text-gray-400 hover:text-gray-600 text-lg">✕</button>
+                            </div>
+                            <div className="max-h-80 overflow-y-auto">
+                              {notifications.length === 0 ? (
+                                <div className="text-center py-8 text-gray-400">
+                                  <p className="text-sm">No notifications yet</p>
+                                </div>
+                              ) : notifications.slice(0, 10).map((n, i) => (
+                                <div key={n.id || i} className={`px-4 py-3 border-b border-gray-50 hover:bg-gray-50 transition-colors ${!n.read ? 'bg-blue-50' : ''}`}>
+                                  <p className="text-sm font-semibold text-gray-800">{n.title}</p>
+                                  <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">{n.message}</p>
+                                  <p className="text-xs text-gray-400 mt-1">{new Date(n.timestamp).toLocaleString('en-PH')}</p>
+                                </div>
+                              ))}
+                            </div>
+                            {notifications.length > 0 && (
+                              <div className="px-4 py-2 bg-gray-50 border-t">
+                                <button onClick={() => setNotifications([])} className="text-xs text-red-500 hover:text-red-700">Clear all</button>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
                       <div className="relative">
                         <button onClick={(e) => { e.stopPropagation(); setShowSettingsMenu(v => !v); }}
                           className="flex items-center gap-2 hover:bg-white/10 rounded-xl px-3 py-2 transition-colors cursor-pointer">
