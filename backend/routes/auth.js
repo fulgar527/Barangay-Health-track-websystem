@@ -128,8 +128,11 @@ router.post('/register', async (req, res) => {
     let createdPatientId = null;
     try {
       // Sanitize inputs
-      const birthday = req.body.birthday || req.body.dateOfBirth || '2000-01-01';
-      const age = Math.max(0, Math.floor((Date.now() - new Date(birthday)) / 31557600000));
+      const birthday = (req.body.birthday && req.body.birthday.trim()) ||
+                       (req.body.dateOfBirth && req.body.dateOfBirth.trim()) || null;
+      const age = birthday
+        ? Math.max(0, Math.floor((Date.now() - new Date(birthday)) / 31557600000))
+        : null;
       const safeSex = ['Male', 'Female'].includes(req.body.sex) ? req.body.sex : 'Male';
       const safeAddress = (req.body.address && req.body.address.trim()) || 'To be updated';
       const safeContact = (req.body.contactNumber && req.body.contactNumber.trim())
@@ -140,9 +143,11 @@ router.post('/register', async (req, res) => {
         `SELECT patient_id FROM patients
          WHERE LOWER(first_name) = LOWER($1)
            AND LOWER(last_name)  = LOWER($2)
-           AND date_of_birth = $3
+           ${birthday ? 'AND date_of_birth = $3' : 'AND date_of_birth IS NULL'}
          LIMIT 1`,
-        [firstName.trim(), lastName.trim(), birthday]
+        birthday
+          ? [firstName.trim(), lastName.trim(), birthday]
+          : [firstName.trim(), lastName.trim()]
       );
 
       if (dupe.rows.length > 0) {
@@ -171,7 +176,7 @@ router.post('/register', async (req, res) => {
             safeContact
           ]
         );
-        console.log('Auto-created patient:', createdPatientId, 'for user:', user.username);
+        console.log('Auto-created patient:', createdPatientId, 'DOB:', birthday, 'Age:', age);
       }
     } catch (e) {
       // Log loudly — but don't fail registration. User can still log in;
