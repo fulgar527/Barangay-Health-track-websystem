@@ -121,6 +121,7 @@ function normalizePatient(p) {
     contactNumber: p.contact_number||p.contactNumber||p.contact||'',
     civilStatus:   p.civil_status  ||p.civilStatus  ||'',  occupation: p.occupation||'',
     philHealthNumber:       p.philhealth_number      ||p.philHealthNumber      ||'',
+    pwdId:                  p.pwd_id                 ||p.pwdId                 ||'',
     emergencyContactPerson: p.emergency_contact_person||p.emergencyContactPerson||'',
     emergencyContactNumber: p.emergency_contact_number||p.emergencyContactNumber||'',
     allergies:         p.allergies         ||'',
@@ -2255,9 +2256,20 @@ function normalizeUser(u) {
                 alert('Booking failed: Could not create or find patient record. Please contact the clinic.'); return;
               }
 
-              const priority = bookingData.priorityLevel ||
-                SERVICE_CATEGORIES[bookingData.serviceCategory]?.services
-                  .find(s => s.name === bookingData.serviceType)?.priority || 'Regular';
+              const priority = (() => {
+                // PWD → Priority Case (highest)
+                const pat = registeredPatients.find(p => p.patientId === effectivePatientRecord?.patientId);
+                if (pat?.pwdId) return 'Priority Case';
+                // Senior Citizen (60+) → Urgent
+                const age = pat?.age || (effectivePatientRecord?.dateOfBirth
+                  ? Math.floor((Date.now() - new Date(effectivePatientRecord.dateOfBirth)) / 31557600000)
+                  : 0);
+                if (age >= 60) return 'Urgent';
+                // Default: from service type
+                return bookingData.priorityLevel ||
+                  SERVICE_CATEGORIES[bookingData.serviceCategory]?.services
+                    .find(s => s.name === bookingData.serviceType)?.priority || 'Regular';
+              })();
 
               const proxyNote = bookingFor === 'someone'
                 ? `[Booked by: ${currentUser?.fullName || currentUser?.username}] `
@@ -2881,7 +2893,31 @@ function normalizeUser(u) {
                                   className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-400 focus:border-transparent" />
                               </div>
                             </div>
+                            {/* Senior Citizen / PWD */}
                             <div className="grid grid-cols-2 gap-3 mb-3">
+                              <div>
+                                <label className="block text-xs font-medium text-gray-600 mb-1">
+                                  PWD ID Number <span className="text-gray-400">(optional)</span>
+                                </label>
+                                <input type="text" value={newAccount.pwdId || ''} onChange={(e) => setNewAccount({...newAccount, pwdId: e.target.value})}
+                                  placeholder="e.g. PWD-2024-XXXXX"
+                                  className="w-full px-3 py-2 border border-blue-200 bg-blue-50 rounded-lg text-sm focus:ring-2 focus:ring-blue-400 focus:border-transparent" />
+                                <p className="text-xs text-blue-600 mt-1">♿ PWD patients are auto-set to Priority Case</p>
+                              </div>
+                              <div className="flex flex-col justify-center">
+                                {(() => {
+                                  const dob = newAccount.dateOfBirth || newAccount.birthday;
+                                  if (!dob) return null;
+                                  const age = Math.floor((Date.now() - new Date(dob)) / 31557600000);
+                                  if (age >= 60) return (
+                                    <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-700">
+                                      👴 <strong>Senior Citizen (Age {age})</strong><br/>Auto-set to Urgent priority
+                                    </div>
+                                  );
+                                  return null;
+                                })()}
+                              </div>
+                            </div>
                               <div>
                                 <label className="block text-xs font-medium text-gray-600 mb-1">Emergency Contact Person</label>
                                 <input type="text" value={newAccount.emergencyContactPerson} onChange={(e) => setNewAccount({...newAccount, emergencyContactPerson: e.target.value})}
@@ -5341,6 +5377,15 @@ function normalizeUser(u) {
                                       {item.selfBooked && (
                                         <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-purple-100 text-purple-700 border border-purple-300">Self-Booked</span>
                                       )}
+                                      {item.age >= 60 && (
+                                        <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-700 border border-amber-300">👴 Senior</span>
+                                      )}
+                                      {(() => {
+                                        const pat = registeredPatients.find(p => p.patientId === item.patientId);
+                                        return pat?.pwdId ? (
+                                          <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-700 border border-blue-300">♿ PWD</span>
+                                        ) : null;
+                                      })()}
                                     </div>
 
                                     {/* Details grid */}
@@ -7798,9 +7843,18 @@ function normalizeUser(u) {
                             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                           />
                         </div>
-
-                        <div className="md:col-span-2 mt-4">
-                          <h3 className="text-lg font-semibold text-gray-800 mb-4 pb-2 border-b">Emergency Contact</h3>
+                        <div>
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">
+                            PWD ID Number <span className="text-gray-400 font-normal">(optional)</span>
+                          </label>
+                          <input
+                            type="text"
+                            value={editingPatient.pwdId || ''}
+                            onChange={(e) => setEditingPatient({...editingPatient, pwdId: e.target.value})}
+                            placeholder="e.g. PWD-2024-XXXXX"
+                            className="w-full px-4 py-2 border border-blue-200 bg-blue-50 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          />
+                          <p className="text-xs text-blue-600 mt-1">♿ Auto-sets Priority Case in queue</p>
                         </div>
                         <div>
                           <label className="block text-sm font-semibold text-gray-700 mb-2">Emergency Contact Person</label>
