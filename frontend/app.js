@@ -1126,6 +1126,12 @@ function normalizeUser(u) {
                 civilStatus: pendingAccount.civilStatus || null,
                 occupation: pendingAccount.occupation || null,
                 pwdId:     pendingAccount.pwdId || null,
+                emergencyContactPerson: pendingAccount.emergencyContactPerson || null,
+                emergencyContactNumber: pendingAccount.emergencyContactNumber || null,
+                allergies: pendingAccount.allergies || null,
+                chronicConditions: pendingAccount.chronicConditions || null,
+                currentMedications: pendingAccount.currentMedications || null,
+                philhealthNumber: pendingAccount.philHealthNumber || null,
               });
               // Auto-create OR update patient record with personal info
               // Only attempt if token is available (user must log in first if not)
