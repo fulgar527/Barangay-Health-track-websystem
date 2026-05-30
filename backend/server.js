@@ -231,7 +231,8 @@ app.get('/api/queue-display/live', async (req, res) => {
       `SELECT q.queue_number, q.service_category, q.status,
               q.appointment_time, q.priority,
               COALESCE(p.first_name, split_part(q.patient_id,'-',1)) AS first_name,
-              COALESCE(p.last_name, '') AS last_name
+              COALESCE(p.last_name, '') AS last_name,
+              p.date_of_birth, p.pwd_id
        FROM queue q
        LEFT JOIN patients p ON q.patient_id = p.patient_id
        WHERE q.status NOT IN ('Completed', 'Cancelled', 'Rejected')
