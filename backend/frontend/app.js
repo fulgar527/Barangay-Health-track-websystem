@@ -1617,9 +1617,16 @@ function normalizeUser(u) {
               // If "Add to Queue Now" is checked, also queue the patient
               if (newPatient.addToQueueNow && newPatient.queueServiceCategory && newPatient.queueServiceType && newPatient.queueReason) {
                 try {
-                  const priority = newPatient.queuePriority ||
-                    SERVICE_CATEGORIES[newPatient.queueServiceCategory]?.services
-                      .find(s => s.name === newPatient.queueServiceType)?.priority || 'Regular';
+                  // Auto-priority: PWD → Priority Case, Senior (60+) → Urgent
+                  const patAge = patient.age || (patient.dateOfBirth
+                    ? Math.floor((Date.now() - new Date(patient.dateOfBirth)) / 31557600000) : 0);
+                  const priority = patient.pwdId || newPatient.pwdId
+                    ? 'Priority Case'
+                    : patAge >= 60
+                    ? 'Urgent'
+                    : newPatient.queuePriority ||
+                      SERVICE_CATEGORIES[newPatient.queueServiceCategory]?.services
+                        .find(s => s.name === newPatient.queueServiceType)?.priority || 'Regular';
                   const qRow = await api('POST', '/queue', {
                     patientId: patient.patientId,
                     serviceCategory: newPatient.queueServiceCategory,
