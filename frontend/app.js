@@ -1121,6 +1121,8 @@ function normalizeUser(u) {
                 mobile:    pendingAccount.mobile || '',
               });
               // Auto-create OR update patient record with personal info
+              // Only attempt if token is available (user must log in first if not)
+              if (getToken()) {
               const today2 = new Date();
               const dob2 = new Date(pendingAccount.birthday);
               let autoAge = today2.getFullYear() - dob2.getFullYear();
@@ -1165,7 +1167,7 @@ function normalizeUser(u) {
               } catch(patErr) {
                 console.warn('Patient record auto-save failed (non-fatal):', patErr.message);
               }
-              setOtpStep(false); setPendingAccount(null); setOtpCode(''); setOtpInput('');
+              } // end getToken() check
               setRegisterSuccess(`Account created successfully! You can now log in as "${pendingAccount.username}".`);
               setNewAccount({ username:'', password:'', confirmPassword:'', role:'resident', firstName:'', middleInitial:'', lastName:'', birthday:'', email:'', mobile:'', contactMethod:'email', sex:'', civilStatus:'', address:'', contactNumber:'', occupation:'', emergencyContactPerson:'', emergencyContactNumber:'', allergies:'', chronicConditions:'', currentMedications:'' });
               setShowRegPassword(false); setShowCreateAccount(false);
@@ -2260,12 +2262,15 @@ function normalizeUser(u) {
 
               const priority = (() => {
                 // PWD → Priority Case (highest)
-                const pat = registeredPatients.find(p => p.patientId === effectivePatientRecord?.patientId);
-                if (pat?.pwdId) return 'Priority Case';
+                // Use patient record or bookingData directly (works for both myself and someone else)
+                const pat = patient || registeredPatients.find(p =>
+                  p.firstName?.toLowerCase() === bookingData.firstName?.toLowerCase() &&
+                  p.lastName?.toLowerCase()  === bookingData.lastName?.toLowerCase()
+                );
+                if (pat?.pwdId || bookingData.pwdId) return 'Priority Case';
                 // Senior Citizen (60+) → Urgent
-                const age = pat?.age || (effectivePatientRecord?.dateOfBirth
-                  ? Math.floor((Date.now() - new Date(effectivePatientRecord.dateOfBirth)) / 31557600000)
-                  : 0);
+                const dob = pat?.dateOfBirth || bookingData.dateOfBirth;
+                const age = pat?.age || (dob ? Math.floor((Date.now() - new Date(dob)) / 31557600000) : 0);
                 if (age >= 60) return 'Urgent';
                 // Default: from service type
                 return bookingData.priorityLevel ||
