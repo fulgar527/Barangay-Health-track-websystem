@@ -65,7 +65,7 @@ router.post('/', async (req, res) => {
       lastName, firstName, middleName, dateOfBirth, age, sex,
       address, contactNumber, civilStatus, occupation, philhealthNumber,
       emergencyContactPerson, emergencyContactNumber, allergies,
-      chronicConditions, currentMedications
+      chronicConditions, currentMedications, pwdId
     } = req.body;
 
     // ────────────────────────────────────────────────────────────────────────
@@ -95,13 +95,13 @@ router.post('/', async (req, res) => {
         patient_id, last_name, first_name, middle_name, date_of_birth, age, sex,
         address, contact_number, civil_status, occupation, philhealth_number,
         emergency_contact_person, emergency_contact_number, allergies,
-        chronic_conditions, current_medications
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+        chronic_conditions, current_medications, pwd_id
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
       RETURNING *`,
       [patientId, lastName.trim(), firstName.trim(), middleName, safeDob, safeAge, safeSex,
        safeAddr, safeContact, civilStatus, occupation, philhealthNumber,
        emergencyContactPerson, emergencyContactNumber, allergies,
-       chronicConditions, currentMedications]
+       chronicConditions, currentMedications, pwdId || null]
     );
 
     res.status(201).json(result.rows[0]);
@@ -119,7 +119,7 @@ router.put('/:patientId', async (req, res) => {
       lastName, firstName, middleName, dateOfBirth, age, sex,
       address, contactNumber, civilStatus, occupation, philhealthNumber,
       emergencyContactPerson, emergencyContactNumber, allergies,
-      chronicConditions, currentMedications
+      chronicConditions, currentMedications, pwdId
     } = req.body;
 
     if (!firstName || !lastName) {
@@ -140,14 +140,15 @@ router.put('/:patientId', async (req, res) => {
         age = $6, sex = $7, address = $8, contact_number = $9, civil_status = $10,
         occupation = $11, philhealth_number = $12, emergency_contact_person = $13,
         emergency_contact_number = $14, allergies = $15, chronic_conditions = $16,
-        current_medications = $17, updated_at = CURRENT_TIMESTAMP
+        current_medications = $17, pwd_id = $18, updated_at = CURRENT_TIMESTAMP
       WHERE patient_id = $1
       RETURNING *`,
       [patientId, lastName.trim(), firstName.trim(), middleName || null,
        safeDob, safeAge, safeSex, safeAddr, safeContact,
        civilStatus || null, occupation || null, philhealthNumber || null,
        emergencyContactPerson || null, emergencyContactNumber || null,
-       allergies || null, chronicConditions || null, currentMedications || null]
+       allergies || null, chronicConditions || null, currentMedications || null,
+       pwdId || null]
     );
 
     if (result.rows.length === 0) {
