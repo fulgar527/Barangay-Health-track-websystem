@@ -1119,6 +1119,13 @@ function normalizeUser(u) {
                 lastName:  pendingAccount._lastName,
                 email:     pendingAccount.email || '',
                 mobile:    pendingAccount.mobile || '',
+                birthday:  pendingAccount.birthday || null,
+                sex:       pendingAccount.sex || null,
+                address:   pendingAccount.address || null,
+                contactNumber: pendingAccount.contactNumber || pendingAccount.mobile || null,
+                civilStatus: pendingAccount.civilStatus || null,
+                occupation: pendingAccount.occupation || null,
+                pwdId:     pendingAccount.pwdId || null,
               });
               // Auto-create OR update patient record with personal info
               // Only attempt if token is available (user must log in first if not)
