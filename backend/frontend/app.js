@@ -1121,6 +1121,8 @@ function normalizeUser(u) {
                 mobile:    pendingAccount.mobile || '',
               });
               // Auto-create OR update patient record with personal info
+              // Only attempt if token is available (user must log in first if not)
+              if (getToken()) {
               const today2 = new Date();
               const dob2 = new Date(pendingAccount.birthday);
               let autoAge = today2.getFullYear() - dob2.getFullYear();
@@ -1165,7 +1167,7 @@ function normalizeUser(u) {
               } catch(patErr) {
                 console.warn('Patient record auto-save failed (non-fatal):', patErr.message);
               }
-              setOtpStep(false); setPendingAccount(null); setOtpCode(''); setOtpInput('');
+              } // end getToken() check
               setRegisterSuccess(`Account created successfully! You can now log in as "${pendingAccount.username}".`);
               setNewAccount({ username:'', password:'', confirmPassword:'', role:'resident', firstName:'', middleInitial:'', lastName:'', birthday:'', email:'', mobile:'', contactMethod:'email', sex:'', civilStatus:'', address:'', contactNumber:'', occupation:'', emergencyContactPerson:'', emergencyContactNumber:'', allergies:'', chronicConditions:'', currentMedications:'' });
               setShowRegPassword(false); setShowCreateAccount(false);
