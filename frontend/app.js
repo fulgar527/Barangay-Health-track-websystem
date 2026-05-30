@@ -4001,8 +4001,6 @@ function normalizeUser(u) {
                             const rec = effectivePatientRecord;
                             const missingFields = [];
                             if (!rec.dateOfBirth) missingFields.push(lang === 'fil' ? 'Petsa ng Kapanganakan' : 'Date of Birth');
-                            if (!rec.address || rec.address === 'To be updated') missingFields.push(lang === 'fil' ? 'Tirahan' : 'Address');
-                            if (!rec.contactNumber || rec.contactNumber === 'N/A') missingFields.push(lang === 'fil' ? 'Contact Number' : 'Contact Number');
                             const isComplete = missingFields.length === 0;
                             return (
                               <div>
