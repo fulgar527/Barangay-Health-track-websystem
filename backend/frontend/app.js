@@ -1484,6 +1484,9 @@ function normalizeUser(u) {
           const [editMode, setEditMode] = useState(''); // 'edit', 'reschedule'
           const [showCancelConfirm, setShowCancelConfirm] = useState(null);
           const [appointmentSearch, setAppointmentSearch] = useState('');
+          const [queueSearch, setQueueSearch] = useState('');
+          const [queueStatusFilter, setQueueStatusFilter] = useState('all'); // all | Waiting | Accepted | In Progress | Completed
+          const [prevQueueLength, setPrevQueueLength] = useState(0);
 
           // ── Data loading helpers ──────────────────────────────────────────
           const loadPatients = async () => {
@@ -1527,20 +1530,29 @@ function normalizeUser(u) {
           // ── Real-time polling: queue every 3 s, full refresh every 30 s ──
           useEffect(() => {
             if (!userRole) return;
-            const queueTimer = setInterval(() => {
-              loadQueue();
+            const queueTimer = setInterval(async () => {
+              const prevLen = queue.length;
+              await loadQueue();
+              // Notify admin/staff of new bookings
+              if ((userRole === 'admin' || userRole === 'staff') && queue.length > prevLen) {
+                const newCount = queue.length - prevLen;
+                pushNotification(null,
+                  '🔔 New Booking Request',
+                  `${newCount} new appointment booking${newCount > 1 ? 's' : ''} received. Please review and accept.`,
+                  'info'
+                );
+              }
             }, 3000);
             const fullTimer = setInterval(() => {
               loadPatients();
               loadVisitLog();
               if (userRole === 'admin') loadUsers();
             }, 30000);
-            // Poll notifications every 10s for residents
             const notifTimer = setInterval(() => {
               if (userRole === 'resident') loadNotifications();
             }, 10000);
             return () => { clearInterval(queueTimer); clearInterval(fullTimer); clearInterval(notifTimer); };
-          }, [userRole]);
+          }, [userRole, queue.length]);
 
           // Initial state for new patient registration
           const [newPatient, setNewPatient] = useState({
@@ -5420,7 +5432,7 @@ function normalizeUser(u) {
                 {/* QUEUE MANAGEMENT TAB */}
                 {activeTab === 'queue' && (
                   <div className="space-y-6">
-                    <div className="flex justify-between items-center">
+                    <div className="flex flex-wrap justify-between items-center gap-3">
                       <div className="flex items-center gap-3">
                         <h2 className="text-2xl font-bold text-gray-800">Queue Management</h2>
                         <button
@@ -5431,9 +5443,23 @@ function normalizeUser(u) {
                           <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
                           Refresh
                         </button>
-                        <span className="text-xs text-gray-400">Auto-refreshes every 5s</span>
+                        <span className="text-xs text-gray-400">Auto-refreshes every 3s</span>
                       </div>
                       <div className="flex items-center gap-3">
+                        {/* Search */}
+                        <div className="relative">
+                          <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                          <input
+                            type="text"
+                            value={queueSearch}
+                            onChange={e => setQueueSearch(e.target.value)}
+                            placeholder="Search name, ID, service..."
+                            className="pl-9 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent w-56"
+                          />
+                          {queueSearch && (
+                            <button onClick={() => setQueueSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">✕</button>
+                          )}
+                        </div>
                         <button
                           onClick={() => setShowRegisterPatient(true)}
                           className="flex items-center space-x-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:from-blue-600 hover:to-blue-700 transition-all transform hover:scale-105 shadow-md"
@@ -5442,6 +5468,29 @@ function normalizeUser(u) {
                           <span>Walk-in Queue</span>
                         </button>
                       </div>
+                    </div>
+
+                    {/* Status Filter Tabs */}
+                    <div className="flex flex-wrap gap-2">
+                      {[
+                        { key: 'all', label: 'All', count: queue.length },
+                        { key: 'Waiting', label: 'Waiting', count: queue.filter(q => q.status === 'Waiting').length },
+                        { key: 'Accepted', label: 'Accepted', count: queue.filter(q => q.status === 'Accepted').length },
+                        { key: 'In Progress', label: 'In Progress', count: queue.filter(q => q.status === 'In Progress').length },
+                        { key: 'Completed', label: 'Served', count: queue.filter(q => q.status === 'Completed').length },
+                        { key: 'Rejected', label: 'Rejected', count: queue.filter(q => q.status === 'Rejected').length },
+                      ].map(f => (
+                        <button key={f.key}
+                          onClick={() => setQueueStatusFilter(f.key)}
+                          className={`px-4 py-1.5 rounded-full text-sm font-semibold transition-all border ${
+                            queueStatusFilter === f.key
+                              ? 'bg-red-600 text-white border-red-600 shadow-sm'
+                              : 'bg-white text-gray-600 border-gray-300 hover:border-red-400 hover:text-red-600'
+                          }`}
+                        >
+                          {f.label} {f.count > 0 && <span className={`ml-1 text-xs ${queueStatusFilter === f.key ? 'text-red-200' : 'text-gray-400'}`}>({f.count})</span>}
+                        </button>
+                      ))}
                     </div>
 
                     {/* Queue Stats */}
@@ -5481,7 +5530,25 @@ function normalizeUser(u) {
                         </div>
                       ) : (
                         <div className="space-y-3">
-                          {queue.map((item, index) => {
+                          {(() => {
+                            const filtered = queue.filter(item => {
+                              const matchStatus = queueStatusFilter === 'all' || item.status === queueStatusFilter;
+                              const q = queueSearch.toLowerCase();
+                              const matchSearch = !q || 
+                                item.name?.toLowerCase().includes(q) ||
+                                item.patientId?.toLowerCase().includes(q) ||
+                                item.service?.toLowerCase().includes(q) ||
+                                item.serviceCategory?.toLowerCase().includes(q) ||
+                                String(item.queueNumber).includes(q);
+                              return matchStatus && matchSearch;
+                            });
+                            if (filtered.length === 0) return (
+                              <div className="text-center py-10 text-gray-400">
+                                <p className="text-sm">No queue entries match your search or filter.</p>
+                                <button onClick={() => { setQueueSearch(''); setQueueStatusFilter('all'); }} className="mt-2 text-xs text-blue-500 hover:underline">Clear filters</button>
+                              </div>
+                            );
+                            return filtered.map((item, index) => {
                             const apptSlot = item.appointmentTime ? CLINIC_SLOTS.find(s => s.value === item.appointmentTime) : null;
                             const apptDateFmt = item.appointmentDate
                               ? new Date(item.appointmentDate + 'T00:00:00').toLocaleDateString('en-PH', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' })
@@ -5617,7 +5684,8 @@ function normalizeUser(u) {
                                 </div>
                               </div>
                             );
-                          })}
+                          });
+                          })()}
                         </div>
                       )}
 
