@@ -1168,14 +1168,18 @@ function normalizeUser(u) {
                 console.warn('Patient record auto-save failed (non-fatal):', patErr.message);
               }
               } // end getToken() check
-              setOtpStep(false);
-              setPendingAccount(null);
-              setOtpCode(''); setOtpInput('');
-              setRegisterSuccess(`Account created successfully! You can now log in as "${pendingAccount.username}".`);
+              // Show success screen first, then auto-close after 2.5 seconds
+              const successUsername = pendingAccount.username;
+              setRegisterSuccess(`Account created successfully! You can now log in as "${successUsername}".`);
               setNewAccount({ username:'', password:'', confirmPassword:'', role:'resident', firstName:'', middleInitial:'', lastName:'', birthday:'', email:'', mobile:'', contactMethod:'email', sex:'', civilStatus:'', address:'', contactNumber:'', occupation:'', emergencyContactPerson:'', emergencyContactNumber:'', allergies:'', chronicConditions:'', currentMedications:'' });
               setShowRegPassword(false);
-              // Small delay so user sees the success message before window closes
-              setTimeout(() => setShowCreateAccount(false), 2000);
+              setTimeout(() => {
+                setOtpStep(false);
+                setPendingAccount(null);
+                setOtpCode(''); setOtpInput('');
+                setShowCreateAccount(false);
+                setRegisterSuccess('');
+              }, 2500);
             } catch(err) {
               setOtpError(err.message || 'Registration failed. Please try again.');
             }
