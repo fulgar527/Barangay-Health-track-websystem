@@ -1602,6 +1602,7 @@ function normalizeUser(u) {
                 civilStatus: newPatient.civilStatus || null,
                 occupation: newPatient.occupation || null,
                 philhealthNumber: newPatient.philHealthNumber || null,
+                pwdId: newPatient.pwdId || null,
                 emergencyContactPerson: newPatient.emergencyContactPerson || null,
                 emergencyContactNumber: newPatient.emergencyContactNumber || null,
                 allergies: newPatient.allergies || null,
@@ -1636,7 +1637,7 @@ function normalizeUser(u) {
                 alert('Patient registered successfully!\nPatient ID: ' + patient.patientId);
               }
 
-              setNewPatient({ lastName:'', firstName:'', middleName:'', dateOfBirth:'', sex:'', address:'', contact:'', civilStatus:'', occupation:'', philHealthNumber:'', emergencyContactPerson:'', emergencyContactNumber:'', allergies:'', chronicConditions:'', currentMedications:'', addToQueueNow:false, queueServiceCategory:'', queueServiceType:'', queuePriority:'Regular', queueReason:'' });
+              setNewPatient({ lastName:'', firstName:'', middleName:'', dateOfBirth:'', sex:'', address:'', contact:'', civilStatus:'', occupation:'', pwdId:'', philHealthNumber:'', emergencyContactPerson:'', emergencyContactNumber:'', allergies:'', chronicConditions:'', currentMedications:'', addToQueueNow:false, queueServiceCategory:'', queueServiceType:'', queuePriority:'Regular', queueReason:'' });
               setShowRegisterPatient(false);
               setActiveTab('patients');
             } catch(err) {
@@ -2248,6 +2249,7 @@ function normalizeUser(u) {
                   allergies: bookingData.allergies || null,
                   chronicConditions: bookingData.chronicConditions || null,
                   currentMedications: bookingData.currentMedications || null,
+                  pwdId: bookingData.pwdId || null,
                 });
                 patient = normalizePatient(row);
                 setRegisteredPatients(prev => [patient, ...prev]);
@@ -2289,7 +2291,7 @@ function normalizeUser(u) {
               setQueue(prev => [...prev, queueEntry].sort((a,b) => priorityLevels[a.priority].weight - priorityLevels[b.priority].weight));
 
               setBookingFor('myself');
-              setResidentBooking({ lastName:'', firstName:'', middleName:'', dateOfBirth:'', sex:'', civilStatus:'', address:'', contactNumber:'', occupation:'', emergencyContactPerson:'', emergencyContactNumber:'', philHealthNumber:'', allergies:'', chronicConditions:'', currentMedications:'', appointmentDate:'', appointmentTime:'', serviceCategory:'', serviceType:'', priorityLevel:'', notes:'' });
+              setResidentBooking({ lastName:'', firstName:'', middleName:'', dateOfBirth:'', sex:'', civilStatus:'', address:'', contactNumber:'', occupation:'', pwdId:'', emergencyContactPerson:'', emergencyContactNumber:'', philHealthNumber:'', allergies:'', chronicConditions:'', currentMedications:'', appointmentDate:'', appointmentTime:'', serviceCategory:'', serviceType:'', priorityLevel:'', notes:'' });
               const forWhom = bookingFor === 'someone' ? `${bookingData.firstName} ${bookingData.lastName}` : (currentUser?.fullName || currentUser?.username);
               alert(`Booking confirmed for ${forWhom}!\n\nDate: ${bookingData.appointmentDate} at ${bookingData.appointmentTime}\nPatient ID: ${patient.patientId}\nQueue #: ${queueEntry.queueNumber}`);
               setResidentView('appointments');
@@ -4112,6 +4114,16 @@ function normalizeUser(u) {
                                     placeholder="e.g. Teacher, Farmer"
                                     className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all" />
                                 </div>
+                                <div>
+                                  <label className="block text-sm font-semibold text-gray-700 mb-1">
+                                    PWD ID Number <span className="text-gray-400 font-normal">(optional)</span>
+                                  </label>
+                                  <input type="text" value={residentBooking.pwdId || ''}
+                                    onChange={(e) => setResidentBooking({...residentBooking, pwdId: e.target.value})}
+                                    placeholder="e.g. PWD-2024-XXXXX"
+                                    className="w-full px-4 py-2.5 border border-blue-200 bg-blue-50 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all" />
+                                  <p className="text-xs text-blue-600 mt-1">♿ Auto-sets Priority Case in queue</p>
+                                </div>
                               </div>
 
                               <h3 className="text-base font-bold text-gray-800 mt-5 mb-3 pb-2 border-b border-gray-200">Emergency Contact</h3>
@@ -5187,9 +5199,9 @@ function normalizeUser(u) {
                       <div className="bg-white rounded-xl shadow-md p-6 border-l-4 border-red-500">
                         <div className="flex items-center justify-between">
                           <div>
-                            <p className="text-gray-600 text-sm font-medium uppercase">Priority Cases</p>
+                            <p className="text-gray-600 text-sm font-medium uppercase">Priority & Urgent</p>
                             <p className="text-3xl font-bold text-gray-800 mt-2">
-                              {queue.filter(p => p.priority === 'Priority Case').length}
+                              {queue.filter(p => p.priority === 'Priority Case' || p.priority === 'Urgent').length}
                             </p>
                             <p className="text-sm text-gray-600">Priority & urgent cases only</p>
                           </div>
@@ -7026,8 +7038,19 @@ function normalizeUser(u) {
                             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                           />
                         </div>
-
-                        {/* Emergency Contact */}
+                        <div>
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">
+                            PWD ID Number <span className="text-gray-400 font-normal">(optional)</span>
+                          </label>
+                          <input
+                            type="text"
+                            value={newPatient.pwdId || ''}
+                            onChange={(e) => setNewPatient({...newPatient, pwdId: e.target.value})}
+                            placeholder="e.g. PWD-2024-XXXXX"
+                            className="w-full px-4 py-2 border border-blue-200 bg-blue-50 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          />
+                          <p className="text-xs text-blue-600 mt-1">♿ Auto-sets Priority Case in queue</p>
+                        </div>
                         <div className="md:col-span-2 mt-4">
                           <h3 className="text-lg font-semibold text-gray-800 mb-4 pb-2 border-b">Emergency Contact</h3>
                         </div>
