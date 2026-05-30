@@ -161,19 +161,28 @@ router.post('/register', async (req, res) => {
         await db.query(
           `INSERT INTO patients (
              patient_id, first_name, last_name, middle_name,
-             date_of_birth, age, sex, address, contact_number, created_at
+             date_of_birth, age, sex, address, contact_number,
+             civil_status, occupation, philhealth_number, pwd_id,
+             emergency_contact_person, emergency_contact_number,
+             allergies, chronic_conditions, current_medications,
+             created_at
            )
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())`,
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, NOW())`,
           [
             createdPatientId,
             firstName.trim(),
             lastName.trim(),
             middleInitial ? middleInitial.trim().replace('.', '') : null,
-            birthday,
-            age,
-            safeSex,
-            safeAddress,
-            safeContact
+            birthday, age, safeSex, safeAddress, safeContact,
+            req.body.civilStatus || null,
+            req.body.occupation || null,
+            req.body.philhealthNumber || null,
+            req.body.pwdId || null,
+            req.body.emergencyContactPerson || null,
+            req.body.emergencyContactNumber || null,
+            req.body.allergies || null,
+            req.body.chronicConditions || null,
+            req.body.currentMedications || null,
           ]
         );
         console.log('Auto-created patient:', createdPatientId, 'DOB:', birthday, 'Age:', age);
