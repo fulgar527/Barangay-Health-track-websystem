@@ -546,14 +546,16 @@ router.put('/profile', async (req, res) => {
     values.push(dbUserId);
     await db.query(`UPDATE users SET ${updates.join(', ')} WHERE user_id = $${idx}`, values);
 
-    // If email changed, also update Supabase Auth so login still works
+    // If email changed, also update Supabase Auth via direct DB query
     if (email) {
       try {
-        const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
-        await supabase.auth.admin.updateUserById(authUser.id, { email, email_confirm: true });
+        await db.query(
+          `UPDATE auth.users SET email = $1, email_confirmed_at = NOW() WHERE id = $2`,
+          [email, authUser.id]
+        );
         console.log('✅ Supabase auth email updated for user:', authUser.id);
       } catch (sbErr) {
-        console.warn('⚠️ Supabase email update failed (non-fatal):', sbErr.message);
+        console.warn('⚠️ Supabase auth email update failed (non-fatal):', sbErr.message);
       }
     }
 
