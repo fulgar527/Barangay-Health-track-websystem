@@ -252,36 +252,45 @@ app.get('/api/queue-display/live', async (req, res) => {
 });
 
 // ── Notifications endpoints ───────────────────────────────────────────────────
-// GET /api/notifications — fetch unread notifications for current user's patient
+// GET /api/notifications — fetch notifications for current user's patient
 app.get('/api/notifications', requireAuth, async (req, res) => {
   try {
+    // Find patient_id linked to this user via username
+    const userResult = await db.query(
+      `SELECT patient_id FROM users WHERE LOWER(username) = LOWER($1) LIMIT 1`,
+      [req.user.username]
+    );
+    if (!userResult.rows.length || !userResult.rows[0].patient_id) {
+      return res.json([]);
+    }
+    const patientId = userResult.rows[0].patient_id;
     const result = await db.query(
-      `SELECT n.*, q.queue_number, q.appointment_date, q.appointment_time
-       FROM notifications n
-       LEFT JOIN queue q ON n.queue_id = q.queue_id::text
-       WHERE n.patient_id IN (
-         SELECT patient_id FROM users WHERE user_id = $1 OR username = $2
-       )
-       ORDER BY n.created_at DESC
+      `SELECT * FROM notifications
+       WHERE patient_id = $1
+       ORDER BY created_at DESC
        LIMIT 20`,
-      [req.user.id, req.user.username]
+      [patientId]
     );
     res.json(result.rows);
   } catch (err) {
-    res.json([]); // Non-fatal — return empty if table doesn't exist yet
+    console.error('GET /notifications error:', err.message);
+    res.json([]);
   }
 });
 
 // PATCH /api/notifications/read — mark all as read
 app.patch('/api/notifications/read', requireAuth, async (req, res) => {
   try {
-    await db.query(
-      `UPDATE notifications SET read = true
-       WHERE patient_id IN (
-         SELECT patient_id FROM users WHERE user_id = $1 OR username = $2
-       )`,
-      [req.user.id, req.user.username]
+    const userResult = await db.query(
+      `SELECT patient_id FROM users WHERE LOWER(username) = LOWER($1) LIMIT 1`,
+      [req.user.username]
     );
+    if (userResult.rows.length && userResult.rows[0].patient_id) {
+      await db.query(
+        `UPDATE notifications SET read = true WHERE patient_id = $1`,
+        [userResult.rows[0].patient_id]
+      );
+    }
     res.json({ ok: true });
   } catch (err) {
     res.json({ ok: false });
