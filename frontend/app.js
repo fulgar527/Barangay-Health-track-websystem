@@ -1487,23 +1487,32 @@ function normalizeUser(u) {
           const [queueSearch, setQueueSearch] = useState('');
           const [queueStatusFilter, setQueueStatusFilter] = useState('all'); // all | Waiting | Accepted | In Progress | Completed
           // ── Detect new bookings for admin/staff notification ──────────────
+          const seenBookingIds = React.useRef(new Set());
           useEffect(() => {
             if (!userRole || (userRole !== 'admin' && userRole !== 'staff')) return;
-            // Only count Waiting entries (new self-booked appointments pending approval)
-            const waitingEntries = queue.filter(q => q.status === 'Waiting' && q.selfBooked);
-            const currentLen = waitingEntries.length;
-            if (prevQueueLengthRef.current > 0 && currentLen > prevQueueLengthRef.current) {
-              const newCount = currentLen - prevQueueLengthRef.current;
-              const newEntries = waitingEntries.slice(-newCount);
-              newEntries.forEach(entry => {
-                pushNotification(null,
-                  '🔔 New Booking Request',
-                  `${entry.name || 'A patient'} submitted a booking for ${entry.serviceCategory || entry.service || 'a service'}. Please review and accept.`,
-                  'info'
-                );
-              });
+            if (queue.length === 0) return;
+
+            const newWaiting = queue.filter(q =>
+              q.status === 'Waiting' &&
+              q.selfBooked &&
+              !seenBookingIds.current.has(q.id || q.queueId)
+            );
+
+            // On first load, just seed the set without notifying
+            if (seenBookingIds.current.size === 0) {
+              queue.forEach(q => seenBookingIds.current.add(q.id || q.queueId));
+              return;
             }
-            prevQueueLengthRef.current = currentLen;
+
+            // Notify for genuinely new entries
+            newWaiting.forEach(entry => {
+              seenBookingIds.current.add(entry.id || entry.queueId);
+              pushNotification(null,
+                '🔔 New Booking Request',
+                `${entry.name || 'A patient'} submitted a booking for ${entry.serviceCategory || entry.service || 'a service'}. Please review and accept.`,
+                'info'
+              );
+            });
           }, [queue.length, userRole]);
 
           // ── Data loading helpers ──────────────────────────────────────────
@@ -1542,13 +1551,7 @@ function normalizeUser(u) {
             const tasks = [loadPatients(), loadQueue(), loadVisitLog()];
             if (userRole === 'admin') tasks.push(loadUsers());
             if (userRole === 'resident') tasks.push(loadNotifications());
-            Promise.all(tasks).finally(() => {
-              setLoadingData(false);
-              // Set initial baseline after data loads so we don't false-trigger on login
-              setTimeout(() => {
-                prevQueueLengthRef.current = queue.filter(q => q.status === 'Waiting' && q.selfBooked).length;
-              }, 3000);
-            });
+            Promise.all(tasks).finally(() => setLoadingData(false));
           }, [userRole]);
 
           // ── Real-time polling: queue every 3 s, full refresh every 30 s ──
