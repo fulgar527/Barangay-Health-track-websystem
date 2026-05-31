@@ -545,6 +545,18 @@ router.put('/profile', async (req, res) => {
     if (updates.length === 0) return res.status(400).json({ error: 'Nothing to update.' });
     values.push(dbUserId);
     await db.query(`UPDATE users SET ${updates.join(', ')} WHERE user_id = $${idx}`, values);
+
+    // If email changed, also update Supabase Auth so login still works
+    if (email) {
+      try {
+        const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
+        await supabase.auth.admin.updateUserById(authUser.id, { email, email_confirm: true });
+        console.log('✅ Supabase auth email updated for user:', authUser.id);
+      } catch (sbErr) {
+        console.warn('⚠️ Supabase email update failed (non-fatal):', sbErr.message);
+      }
+    }
+
     res.json({ message: 'Profile updated successfully.' });
   } catch (err) {
     console.error('PUT /auth/profile error:', err);
