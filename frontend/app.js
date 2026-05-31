@@ -1489,17 +1489,22 @@ function normalizeUser(u) {
           // ── Detect new bookings for admin/staff notification ──────────────
           useEffect(() => {
             if (!userRole || (userRole !== 'admin' && userRole !== 'staff')) return;
-            const currentLen = queue.filter(q => !['Completed','Cancelled','Rejected'].includes(q.status)).length;
+            // Only count Waiting entries (new self-booked appointments pending approval)
+            const waitingEntries = queue.filter(q => q.status === 'Waiting' && q.selfBooked);
+            const currentLen = waitingEntries.length;
             if (prevQueueLengthRef.current > 0 && currentLen > prevQueueLengthRef.current) {
               const newCount = currentLen - prevQueueLengthRef.current;
-              pushNotification(null,
-                '🔔 New Booking Request',
-                `${newCount} new appointment booking${newCount > 1 ? 's' : ''} received. Please review and accept.`,
-                'info'
-              );
+              const newEntries = waitingEntries.slice(-newCount);
+              newEntries.forEach(entry => {
+                pushNotification(null,
+                  '🔔 New Booking Request',
+                  `${entry.name || 'A patient'} submitted a booking for ${entry.serviceCategory || entry.service || 'a service'}. Please review and accept.`,
+                  'info'
+                );
+              });
             }
             prevQueueLengthRef.current = currentLen;
-          }, [queue.length]);
+          }, [queue.length, userRole]);
 
           // ── Data loading helpers ──────────────────────────────────────────
           const loadPatients = async () => {
@@ -1537,11 +1542,13 @@ function normalizeUser(u) {
             const tasks = [loadPatients(), loadQueue(), loadVisitLog()];
             if (userRole === 'admin') tasks.push(loadUsers());
             if (userRole === 'resident') tasks.push(loadNotifications());
-            Promise.all(tasks).finally(() => setLoadingData(false));
-            // Also set prevQueueLengthRef after initial load
-            setTimeout(() => {
-              prevQueueLengthRef.current = queue.filter(q => !['Completed','Cancelled','Rejected'].includes(q.status)).length;
-            }, 2000);
+            Promise.all(tasks).finally(() => {
+              setLoadingData(false);
+              // Set initial baseline after data loads so we don't false-trigger on login
+              setTimeout(() => {
+                prevQueueLengthRef.current = queue.filter(q => q.status === 'Waiting' && q.selfBooked).length;
+              }, 3000);
+            });
           }, [userRole]);
 
           // ── Real-time polling: queue every 3 s, full refresh every 30 s ──
