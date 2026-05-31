@@ -1486,7 +1486,20 @@ function normalizeUser(u) {
           const [appointmentSearch, setAppointmentSearch] = useState('');
           const [queueSearch, setQueueSearch] = useState('');
           const [queueStatusFilter, setQueueStatusFilter] = useState('all'); // all | Waiting | Accepted | In Progress | Completed
-          const [prevQueueLength, setPrevQueueLength] = useState(0);
+          // ── Detect new bookings for admin/staff notification ──────────────
+          useEffect(() => {
+            if (!userRole || (userRole !== 'admin' && userRole !== 'staff')) return;
+            const currentLen = queue.filter(q => !['Completed','Cancelled','Rejected'].includes(q.status)).length;
+            if (prevQueueLengthRef.current > 0 && currentLen > prevQueueLengthRef.current) {
+              const newCount = currentLen - prevQueueLengthRef.current;
+              pushNotification(null,
+                '🔔 New Booking Request',
+                `${newCount} new appointment booking${newCount > 1 ? 's' : ''} received. Please review and accept.`,
+                'info'
+              );
+            }
+            prevQueueLengthRef.current = currentLen;
+          }, [queue.length]);
 
           // ── Data loading helpers ──────────────────────────────────────────
           const loadPatients = async () => {
@@ -1525,23 +1538,18 @@ function normalizeUser(u) {
             if (userRole === 'admin') tasks.push(loadUsers());
             if (userRole === 'resident') tasks.push(loadNotifications());
             Promise.all(tasks).finally(() => setLoadingData(false));
+            // Also set prevQueueLengthRef after initial load
+            setTimeout(() => {
+              prevQueueLengthRef.current = queue.filter(q => !['Completed','Cancelled','Rejected'].includes(q.status)).length;
+            }, 2000);
           }, [userRole]);
 
           // ── Real-time polling: queue every 3 s, full refresh every 30 s ──
+          const prevQueueLengthRef = React.useRef(0);
           useEffect(() => {
             if (!userRole) return;
             const queueTimer = setInterval(async () => {
-              const prevLen = queue.length;
               await loadQueue();
-              // Notify admin/staff of new bookings
-              if ((userRole === 'admin' || userRole === 'staff') && queue.length > prevLen) {
-                const newCount = queue.length - prevLen;
-                pushNotification(null,
-                  '🔔 New Booking Request',
-                  `${newCount} new appointment booking${newCount > 1 ? 's' : ''} received. Please review and accept.`,
-                  'info'
-                );
-              }
             }, 3000);
             const fullTimer = setInterval(() => {
               loadPatients();
@@ -1552,7 +1560,7 @@ function normalizeUser(u) {
               if (userRole === 'resident') loadNotifications();
             }, 10000);
             return () => { clearInterval(queueTimer); clearInterval(fullTimer); clearInterval(notifTimer); };
-          }, [userRole, queue.length]);
+          }, [userRole]);
 
           // Initial state for new patient registration
           const [newPatient, setNewPatient] = useState({
