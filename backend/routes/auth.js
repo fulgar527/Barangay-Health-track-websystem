@@ -187,6 +187,14 @@ router.post('/register', async (req, res) => {
         );
         console.log('Auto-created patient:', createdPatientId, 'DOB:', birthday, 'Age:', age);
       }
+
+      // Link patient_id back to the users table for notification lookups
+      if (createdPatientId) {
+        await db.query(
+          'UPDATE users SET patient_id = $1 WHERE user_id = $2',
+          [createdPatientId, user.user_id]
+        ).catch(e => console.warn('Could not link patient_id to user:', e.message));
+      }
     } catch (e) {
       // Log loudly — but don't fail registration. User can still log in;
       // staff can register them as a patient manually if needed.
