@@ -6624,6 +6624,259 @@ function normalizeUser(u) {
                       );
                     })()}
 
+                    {/* ══ 1. QUEUE PERFORMANCE KPIs ══════════════════════════ */}
+                    {(() => {
+                      const today = getLocalDateStr();
+                      const todayQueue = queue.filter(q => {
+                        const d = q.appointmentDate || (q.timeQueued ? q.timeQueued.slice(0,10) : '');
+                        return d === today || (q.timeQueued && q.timeQueued.slice(0,10) === today);
+                      });
+                      const totalToday = queue.length;
+                      const servedToday = queue.filter(q => q.status === 'Completed').length;
+                      const acceptedToday = queue.filter(q => q.status === 'Accepted' || q.status === 'In Progress' || q.status === 'Completed').length;
+                      const rejectedToday = queue.filter(q => q.status === 'Rejected').length;
+                      const waitingToday = queue.filter(q => q.status === 'Waiting').length;
+                      const acceptanceRate = totalToday > 0 ? Math.round((acceptedToday / totalToday) * 100) : 0;
+                      const servedRate = acceptedToday > 0 ? Math.round((servedToday / acceptedToday) * 100) : 0;
+
+                      // Peak hour from visit log
+                      const hourCounts = {};
+                      visitLog.forEach(v => {
+                        if (v.timeIn) {
+                          const h = new Date(v.timeIn).getHours();
+                          hourCounts[h] = (hourCounts[h] || 0) + 1;
+                        }
+                      });
+                      const peakHour = Object.entries(hourCounts).sort((a,b) => b[1]-a[1])[0];
+                      const peakHourLabel = peakHour ? (() => {
+                        const h = parseInt(peakHour[0]);
+                        return `${h % 12 || 12}:00 ${h >= 12 ? 'PM' : 'AM'}`;
+                      })() : 'N/A';
+
+                      return (
+                        <div className="bg-white rounded-xl shadow-md p-6">
+                          <div className="flex items-center gap-3 mb-5">
+                            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-green-500 to-teal-600 flex items-center justify-center text-white text-lg">⚡</div>
+                            <div>
+                              <h3 className="text-xl font-bold text-gray-800">Queue Performance</h3>
+                              <p className="text-sm text-gray-500">Today's clinic operations overview</p>
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
+                            {[
+                              { label: 'Total Queued', value: totalToday, icon: '📋', color: 'blue' },
+                              { label: 'Served Today', value: servedToday, icon: '✅', color: 'green' },
+                              { label: 'Waiting', value: waitingToday, icon: '⏳', color: 'orange' },
+                              { label: 'Rejected', value: rejectedToday, icon: '❌', color: 'red' },
+                            ].map(k => (
+                              <div key={k.label} className={`bg-${k.color}-50 border border-${k.color}-100 rounded-xl p-4 text-center`}>
+                                <p className="text-2xl mb-1">{k.icon}</p>
+                                <p className={`text-3xl font-black text-${k.color}-600`}>{k.value}</p>
+                                <p className="text-xs text-gray-500 mt-1 font-medium">{k.label}</p>
+                              </div>
+                            ))}
+                          </div>
+                          <div className="grid md:grid-cols-3 gap-4">
+                            <div className="bg-gray-50 rounded-xl p-4">
+                              <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Acceptance Rate</p>
+                              <p className="text-2xl font-black text-gray-800">{acceptanceRate}%</p>
+                              <div className="w-full bg-gray-200 rounded-full h-2 mt-2">
+                                <div className="h-2 rounded-full bg-green-500" style={{width:`${acceptanceRate}%`}}></div>
+                              </div>
+                              <p className="text-xs text-gray-400 mt-1">{acceptedToday} of {totalToday} bookings accepted</p>
+                            </div>
+                            <div className="bg-gray-50 rounded-xl p-4">
+                              <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Completion Rate</p>
+                              <p className="text-2xl font-black text-gray-800">{servedRate}%</p>
+                              <div className="w-full bg-gray-200 rounded-full h-2 mt-2">
+                                <div className="h-2 rounded-full bg-blue-500" style={{width:`${servedRate}%`}}></div>
+                              </div>
+                              <p className="text-xs text-gray-400 mt-1">{servedToday} of {acceptedToday} accepted patients served</p>
+                            </div>
+                            <div className="bg-gray-50 rounded-xl p-4">
+                              <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">Peak Hour</p>
+                              <p className="text-2xl font-black text-gray-800">{peakHourLabel}</p>
+                              <p className="text-xs text-gray-400 mt-2">{peakHour ? `${peakHour[1]} visits at this hour` : 'No visit data yet'}</p>
+                              {totalToday === 0 && <p className="text-xs text-amber-500 mt-1">⚠️ No queue entries today</p>}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {/* ══ 2. VISIT TRENDS LINE CHART ═════════════════════════ */}
+                    {(() => {
+                      // Build last 30 days visit data
+                      const days = [];
+                      for (let i = 29; i >= 0; i--) {
+                        const d = new Date();
+                        d.setDate(d.getDate() - i);
+                        const key = getLocalDateStr(d);
+                        const count = visitLog.filter(v => v.visitDate && v.visitDate.slice(0,10) === key).length;
+                        days.push({ date: key, count, label: `${d.getMonth()+1}/${d.getDate()}` });
+                      }
+                      const maxCount = Math.max(...days.map(d => d.count), 1);
+                      const totalVisits30 = days.reduce((s, d) => s + d.count, 0);
+                      const avgPerDay = (totalVisits30 / 30).toFixed(1);
+                      const peakDay = days.reduce((a, b) => a.count >= b.count ? a : b);
+
+                      const W = 700, H = 180, PAD = 40;
+                      const points = days.map((d, i) => {
+                        const x = PAD + (i / (days.length - 1)) * (W - PAD * 2);
+                        const y = H - PAD - (d.count / maxCount) * (H - PAD * 2);
+                        return `${x},${y}`;
+                      }).join(' ');
+
+                      return (
+                        <div className="bg-white rounded-xl shadow-md p-6">
+                          <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white text-lg">📈</div>
+                              <div>
+                                <h3 className="text-xl font-bold text-gray-800">Visit Trends (Last 30 Days)</h3>
+                                <p className="text-sm text-gray-500">Daily patient visit volume</p>
+                              </div>
+                            </div>
+                            <div className="flex gap-4 text-center">
+                              <div>
+                                <p className="text-2xl font-black text-blue-600">{totalVisits30}</p>
+                                <p className="text-xs text-gray-400">Total Visits</p>
+                              </div>
+                              <div>
+                                <p className="text-2xl font-black text-indigo-600">{avgPerDay}</p>
+                                <p className="text-xs text-gray-400">Avg/Day</p>
+                              </div>
+                              <div>
+                                <p className="text-2xl font-black text-purple-600">{peakDay.count}</p>
+                                <p className="text-xs text-gray-400">Peak Day</p>
+                              </div>
+                            </div>
+                          </div>
+                          {totalVisits30 === 0 ? (
+                            <div className="text-center py-8 text-gray-400">
+                              <p className="text-sm">📊 No visit data yet. Mark patients as Served to populate this chart.</p>
+                            </div>
+                          ) : (
+                            <div className="overflow-x-auto">
+                              <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{minWidth:'300px'}}>
+                                {/* Grid lines */}
+                                {[0,1,2,3,4].map(i => (
+                                  <line key={i} x1={PAD} x2={W-PAD} y1={PAD + i*(H-PAD*2)/4} y2={PAD + i*(H-PAD*2)/4}
+                                    stroke="#f3f4f6" strokeWidth="1"/>
+                                ))}
+                                {/* Area fill */}
+                                <defs>
+                                  <linearGradient id="visitGrad" x1="0" y1="0" x2="0" y2="1">
+                                    <stop offset="0%" stopColor="#3B82F6" stopOpacity="0.3"/>
+                                    <stop offset="100%" stopColor="#3B82F6" stopOpacity="0"/>
+                                  </linearGradient>
+                                </defs>
+                                <polygon
+                                  points={`${PAD},${H-PAD} ${points} ${W-PAD},${H-PAD}`}
+                                  fill="url(#visitGrad)"
+                                />
+                                {/* Line */}
+                                <polyline points={points} fill="none" stroke="#3B82F6" strokeWidth="2.5" strokeLinejoin="round"/>
+                                {/* Dots for non-zero */}
+                                {days.map((d, i) => {
+                                  if (d.count === 0) return null;
+                                  const x = PAD + (i / (days.length - 1)) * (W - PAD * 2);
+                                  const y = H - PAD - (d.count / maxCount) * (H - PAD * 2);
+                                  return <circle key={i} cx={x} cy={y} r="4" fill="#3B82F6" stroke="white" strokeWidth="2"/>;
+                                })}
+                                {/* X-axis labels — show every 5th */}
+                                {days.map((d, i) => {
+                                  if (i % 5 !== 0 && i !== days.length - 1) return null;
+                                  const x = PAD + (i / (days.length - 1)) * (W - PAD * 2);
+                                  return <text key={i} x={x} y={H-5} textAnchor="middle" fontSize="9" fill="#9ca3af">{d.label}</text>;
+                                })}
+                                {/* Y-axis labels */}
+                                {[0,1,2].map(i => {
+                                  const val = Math.round(maxCount * (1 - i/2));
+                                  const y = PAD + i*(H-PAD*2)/2;
+                                  return <text key={i} x={PAD-5} y={y+4} textAnchor="end" fontSize="9" fill="#9ca3af">{val}</text>;
+                                })}
+                              </svg>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+
+                    {/* ══ 3. TOP DIAGNOSES TABLE ══════════════════════════════ */}
+                    {(() => {
+                      // Parse diagnoses from visit log
+                      const diagCounts = {};
+                      visitLog.forEach(v => {
+                        const diag = (v.diagnosis || '').trim();
+                        if (!diag || diag.toLowerCase() === 'n/a' || diag === '') return;
+                        diagCounts[diag] = (diagCounts[diag] || 0) + 1;
+                      });
+                      const topDiags = Object.entries(diagCounts).sort((a,b) => b[1]-a[1]).slice(0, 10);
+                      const totalDiags = Object.values(diagCounts).reduce((s,v) => s + v, 0);
+
+                      return (
+                        <div className="bg-white rounded-xl shadow-md p-6">
+                          <div className="flex items-center gap-3 mb-5">
+                            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-red-500 to-pink-600 flex items-center justify-center text-white text-lg">📋</div>
+                            <div>
+                              <h3 className="text-xl font-bold text-gray-800">Top Diagnoses</h3>
+                              <p className="text-sm text-gray-500">Most recorded diagnoses from visit log</p>
+                            </div>
+                            <span className="ml-auto text-xs bg-red-50 text-red-600 border border-red-200 px-3 py-1 rounded-full font-semibold">
+                              {topDiags.length} unique diagnoses
+                            </span>
+                          </div>
+                          {topDiags.length === 0 ? (
+                            <div className="text-center py-8 text-gray-400">
+                              <p className="text-sm">📋 No diagnoses recorded yet. Mark patients as Served and enter diagnoses to populate this table.</p>
+                            </div>
+                          ) : (
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-sm">
+                                <thead>
+                                  <tr className="border-b border-gray-100">
+                                    <th className="text-left py-2 px-3 text-xs font-bold text-gray-500 uppercase tracking-wide">Rank</th>
+                                    <th className="text-left py-2 px-3 text-xs font-bold text-gray-500 uppercase tracking-wide">Diagnosis</th>
+                                    <th className="text-center py-2 px-3 text-xs font-bold text-gray-500 uppercase tracking-wide">Cases</th>
+                                    <th className="text-left py-2 px-3 text-xs font-bold text-gray-500 uppercase tracking-wide w-40">Frequency</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {topDiags.map(([diag, count], i) => {
+                                    const pct = totalDiags > 0 ? Math.round((count/totalDiags)*100) : 0;
+                                    const colors = ['bg-red-500','bg-orange-500','bg-yellow-500','bg-blue-500','bg-green-500',
+                                                    'bg-purple-500','bg-pink-500','bg-teal-500','bg-indigo-500','bg-gray-500'];
+                                    return (
+                                      <tr key={diag} className={`border-b border-gray-50 hover:bg-gray-50 transition-colors ${i < 3 ? 'font-semibold' : ''}`}>
+                                        <td className="py-3 px-3">
+                                          <span className={`w-6 h-6 rounded-full text-white text-xs flex items-center justify-center font-bold ${colors[i]}`}>
+                                            {i + 1}
+                                          </span>
+                                        </td>
+                                        <td className="py-3 px-3 text-gray-800 max-w-xs">
+                                          <span className="truncate block">{diag}</span>
+                                        </td>
+                                        <td className="py-3 px-3 text-center">
+                                          <span className="font-bold text-gray-800">{count}</span>
+                                          <span className="text-gray-400 text-xs ml-1">({pct}%)</span>
+                                        </td>
+                                        <td className="py-3 px-3">
+                                          <div className="w-full bg-gray-100 rounded-full h-2">
+                                            <div className={`h-2 rounded-full ${colors[i]}`} style={{width:`${pct}%`}}></div>
+                                          </div>
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+
                   </div>
                 )}
 
