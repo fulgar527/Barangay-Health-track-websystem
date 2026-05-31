@@ -1487,31 +1487,37 @@ function normalizeUser(u) {
           const [queueSearch, setQueueSearch] = useState('');
           const [queueStatusFilter, setQueueStatusFilter] = useState('all'); // all | Waiting | Accepted | In Progress | Completed
           // ── Detect new bookings for admin/staff notification ──────────────
-          const seenBookingIds = React.useRef(new Set());
+          const seenBookingIds = React.useRef(null); // null = not initialized yet
           useEffect(() => {
             if (!userRole || (userRole !== 'admin' && userRole !== 'staff')) return;
             if (queue.length === 0) return;
 
-            const newWaiting = queue.filter(q =>
-              q.status === 'Waiting' &&
-              q.selfBooked &&
-              !seenBookingIds.current.has(q.id || q.queueId)
-            );
+            // Get all self-booked waiting entries
+            const waitingEntries = queue.filter(q => q.status === 'Waiting' && q.selfBooked);
 
-            // On first load, just seed the set without notifying
-            if (seenBookingIds.current.size === 0) {
-              queue.forEach(q => seenBookingIds.current.add(q.id || q.queueId));
+            // First run — just seed the set, don't notify
+            if (seenBookingIds.current === null) {
+              seenBookingIds.current = new Set(waitingEntries.map(q => q.id || q.queueId));
               return;
             }
 
-            // Notify for genuinely new entries
-            newWaiting.forEach(entry => {
-              seenBookingIds.current.add(entry.id || entry.queueId);
-              pushNotification(null,
-                '🔔 New Booking Request',
-                `${entry.name || 'A patient'} submitted a booking for ${entry.serviceCategory || entry.service || 'a service'}. Please review and accept.`,
-                'info'
-              );
+            // Find entries not seen before
+            waitingEntries.forEach(entry => {
+              const id = entry.id || entry.queueId;
+              if (!seenBookingIds.current.has(id)) {
+                seenBookingIds.current.add(id);
+                const name = entry.name || 'A patient';
+                const service = entry.serviceCategory || entry.service || 'a service';
+                const notif = {
+                  id: Date.now() + Math.random(),
+                  title: '🔔 New Booking Request',
+                  message: `${name} submitted a booking for ${service}. Please review and accept.`,
+                  type: 'info',
+                  timestamp: new Date().toISOString(),
+                  read: false
+                };
+                setNotifications(prev => [notif, ...prev]);
+              }
             });
           }, [queue.length, userRole]);
 
