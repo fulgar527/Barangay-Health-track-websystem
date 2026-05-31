@@ -5624,9 +5624,22 @@ function normalizeUser(u) {
                                 <div className="flex justify-between items-start gap-4">
                                   {/* LEFT: Patient info */}
                                   <div className="flex-1 min-w-0">
-                                    {/* Top row: number + name + status badge */}
+                                    {/* Top row: queue number + name + status badge */}
                                     <div className="flex items-center gap-3 mb-2 flex-wrap">
-                                      <span className="text-3xl font-bold text-gray-700">#{index + 1}</span>
+                                      {/* Queue Number Badge */}
+                                      {item.queueNumber ? (
+                                        <div className="flex flex-col items-center justify-center min-w-[52px]">
+                                          <span className="text-xs font-bold uppercase tracking-wide text-gray-400 leading-none">Queue</span>
+                                          <span className="text-3xl font-black leading-tight" style={{color:'var(--ht-primary)'}}>
+                                            {String(item.queueNumber).padStart(3,'0')}
+                                          </span>
+                                        </div>
+                                      ) : (
+                                        <div className="flex flex-col items-center justify-center min-w-[52px]">
+                                          <span className="text-xs font-bold uppercase tracking-wide text-gray-400 leading-none">Pos</span>
+                                          <span className="text-3xl font-bold text-gray-400">#{index + 1}</span>
+                                        </div>
+                                      )}
                                       <div>
                                         <p className="font-bold text-gray-800 text-lg leading-tight">{item.name}</p>
                                         <p className="text-xs text-gray-500">ID: {item.patientId} | Age: {item.age} | Sex: {item.sex}</p>
