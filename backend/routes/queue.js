@@ -440,6 +440,33 @@ router.patch('/:queueId/status', async (req, res) => {
 
     await logAudit(db, req.user?.username, `QUEUE_${status.toUpperCase().replace(' ','_')}`, 'queue', queueId,
       { status, rejectedReason: req.body.rejectedReason || null }, req.ip);
+
+    // ── Auto-advance: when patient is Completed, move next priority patient to In Progress ──
+    if (status === 'Completed' && req.body.autoAdvance !== false) {
+      try {
+        const next = await db.query(
+          `UPDATE queue SET status = 'In Progress', time_started = CURRENT_TIMESTAMP
+           WHERE queue_id = (
+             SELECT queue_id FROM queue
+             WHERE status = 'Accepted'
+               AND (DATE(appointment_date) = CURRENT_DATE OR appointment_date IS NULL)
+             ORDER BY
+               CASE priority WHEN 'Priority Case' THEN 0 WHEN 'Urgent' THEN 1 ELSE 2 END,
+               queue_number ASC NULLS LAST,
+               created_at ASC
+             LIMIT 1
+           )
+           RETURNING queue_id, queue_number, service_category`,
+          []
+        );
+        if (next.rows.length > 0) {
+          console.log(`✅ Auto-advanced to queue #${next.rows[0].queue_number}`);
+        }
+      } catch (advErr) {
+        console.warn('⚠️ Auto-advance failed (non-fatal):', advErr.message);
+      }
+    }
+
     res.json(result.rows[0]);
   } catch (err) {
     console.error('❌ PATCH /queue/:queueId/status failed:', err.message);
