@@ -1285,13 +1285,27 @@ function normalizeUser(u) {
 
           // ── Clinic Appointment Slots (1-hour, 8 AM–5 PM, lunch 12–1 PM blocked) ──
           // ── Clinic Hours Settings ─────────────────────────────────────────
-          const [clinicHours, setClinicHours] = React.useState(() => {
-            try { const s = localStorage.getItem('ht_clinic_hours'); return s ? JSON.parse(s) : { open: '08:00', close: '17:00', lunchStart: '12:00', lunchEnd: '13:00' }; } catch { return { open: '08:00', close: '17:00', lunchStart: '12:00', lunchEnd: '13:00' }; }
-          });
-          const saveClinicHours = (hours) => {
+          const [clinicHours, setClinicHours] = React.useState({ open: '08:00', close: '17:00', lunchStart: '12:00', lunchEnd: '13:00', workDays: [1,2,3,4,5] });
+
+          const saveClinicHours = async (hours) => {
             setClinicHours(hours);
             localStorage.setItem('ht_clinic_hours', JSON.stringify(hours));
-            api('POST', '/tv-announcements', { clinicHours: hours }).catch(() => {});
+            try {
+              await api('POST', '/clinic-settings', { key: 'clinic_hours', value: hours });
+            } catch(e) { console.warn('Failed to save clinic hours to DB:', e.message); }
+          };
+
+          const loadClinicHours = async () => {
+            try {
+              const data = await api('GET', '/clinic-settings');
+              if (data?.clinic_hours) {
+                setClinicHours(data.clinic_hours);
+                localStorage.setItem('ht_clinic_hours', JSON.stringify(data.clinic_hours));
+              }
+            } catch(e) {
+              // Fallback to localStorage
+              try { const s = localStorage.getItem('ht_clinic_hours'); if (s) setClinicHours(JSON.parse(s)); } catch {}
+            }
           };
 
           // ── Dynamic CLINIC_SLOTS based on clinic hours ────────────────────
@@ -1592,7 +1606,7 @@ function normalizeUser(u) {
           useEffect(() => {
             if (!userRole) return;
             setLoadingData(true);
-            const tasks = [loadPatients(), loadQueue(), loadVisitLog()];
+            const tasks = [loadPatients(), loadQueue(), loadVisitLog(), loadClinicHours()];
             if (userRole === 'admin') tasks.push(loadUsers());
             if (userRole === 'resident') tasks.push(loadNotifications());
             Promise.all(tasks).finally(() => setLoadingData(false));
@@ -1608,6 +1622,7 @@ function normalizeUser(u) {
             const fullTimer = setInterval(() => {
               loadPatients();
               loadVisitLog();
+              loadClinicHours(); // keep clinic hours in sync across devices
               if (userRole === 'admin') loadUsers();
             }, 30000);
             const notifTimer = setInterval(() => {
@@ -3925,7 +3940,12 @@ function normalizeUser(u) {
                                       const val = e.target.value;
                                       if (val) {
                                         const day = new Date(val + 'T00:00:00').getDay();
-                                        if (day === 0 || day === 6) { alert('⚠️ Weekdays only (Mon–Fri).'); return; }
+                                        const workDays = clinicHours.workDays || [1,2,3,4,5];
+                                        if (!workDays.includes(day)) {
+                                          alert('⚠️ Selected day is not a clinic working day. Please choose a valid day.');
+                                          setResidentBooking({...residentBooking, appointmentDate: '', appointmentTime: ''});
+                                          return;
+                                        }
                                         if (isPHHoliday(val)) { alert('⚠️ ' + getPHHolidayName(val) + ' is a public holiday.'); return; }
                                       }
                                       setEditingAppointment({...editingAppointment, newAppointmentDate: val});
@@ -8339,6 +8359,29 @@ function normalizeUser(u) {
                             />
                           </div>
                         </div>
+                        {/* Working Days */}
+                        <div className="mt-3">
+                          <label className="block text-xs font-semibold text-gray-600 mb-2">📅 Working Days</label>
+                          <div className="flex gap-2 flex-wrap">
+                            {[{d:1,l:'Mon'},{d:2,l:'Tue'},{d:3,l:'Wed'},{d:4,l:'Thu'},{d:5,l:'Fri'},{d:6,l:'Sat'},{d:0,l:'Sun'}].map(({d, l}) => {
+                              const workDays = clinicHours.workDays || [1,2,3,4,5];
+                              const active = workDays.includes(d);
+                              return (
+                                <button key={d}
+                                  onClick={() => {
+                                    const cur = clinicHours.workDays || [1,2,3,4,5];
+                                    const updated = active ? cur.filter(x => x !== d) : [...cur, d].sort();
+                                    saveClinicHours({...clinicHours, workDays: updated});
+                                  }}
+                                  className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors ${active ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-400 border-gray-300'}`}
+                                >
+                                  {l}
+                                </button>
+                              );
+                            })}
+                          </div>
+                          <p className="text-xs text-gray-400 mt-1">Selected days will be available for booking appointments</p>
+                        </div>
                         {/* Preview slots */}
                         <div className="mt-3 bg-gray-50 rounded-xl p-3 border border-gray-200">
                           <p className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">Available Time Slots Preview</p>
@@ -8353,7 +8396,7 @@ function normalizeUser(u) {
                             {CLINIC_SLOTS.length} time slots · {clinicHours.open} – {clinicHours.close} · Lunch: {clinicHours.lunchStart}–{clinicHours.lunchEnd}
                           </p>
                         </div>
-                        <button onClick={() => saveClinicHours({ open: '08:00', close: '17:00', lunchStart: '12:00', lunchEnd: '13:00' })}
+                        <button onClick={() => saveClinicHours({ open: '08:00', close: '17:00', lunchStart: '12:00', lunchEnd: '13:00', workDays: [1,2,3,4,5] })}
                           className="mt-2 text-xs text-amber-600 hover:text-amber-800 font-medium">
                           ↺ Reset to default (8AM–5PM)
                         </button>
