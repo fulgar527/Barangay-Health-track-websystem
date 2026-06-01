@@ -1318,6 +1318,10 @@ function normalizeUser(u) {
             try { const s = localStorage.getItem('ht_tv_announcements'); return s ? JSON.parse(s) : []; } catch { return []; }
           });
           const [newAnnouncement, setNewAnnouncement] = React.useState('');
+          const [newAnnouncementColor, setNewAnnouncementColor] = React.useState('#FFFFFF');
+          const [newAnnouncementSize, setNewAnnouncementSize] = React.useState('normal');
+          const [tvTickerSize, setTvTickerSize] = React.useState(() => parseFloat(localStorage.getItem('tv_ticker_size') || '1.15'));
+          const [tvAnnouncementSize, setTvAnnouncementSize] = React.useState(() => parseFloat(localStorage.getItem('tv_ann_size') || '1.2')); // small | normal | large
           const saveTvAnnouncements = (list) => {
             setTvAnnouncements(list);
             localStorage.setItem('ht_tv_announcements', JSON.stringify(list));
@@ -8099,6 +8103,55 @@ function normalizeUser(u) {
                     <div className="p-6 space-y-6">
                       {/* Ticker */}
                       <div>
+                        {/* Size Sliders */}
+                        <div className="grid grid-cols-2 gap-4 p-4 bg-gray-50 rounded-xl border border-gray-200">
+                          <div>
+                            <label className="block text-xs font-bold text-gray-600 mb-2">
+                              📏 Ticker Size: <span className="text-blue-600">{tvTickerSize.toFixed(2)}rem</span>
+                            </label>
+                            <input type="range" min="0.8" max="2.5" step="0.05"
+                              value={tvTickerSize}
+                              onChange={e => {
+                                const v = parseFloat(e.target.value);
+                                setTvTickerSize(v);
+                                localStorage.setItem('tv_ticker_size', v);
+                                api('POST', '/tv-announcements', { tickerSize: v, annSize: tvAnnouncementSize, ticker: document.getElementById('tv-ticker-input')?.value, announcements: tvAnnouncements }).catch(()=>{});
+                              }}
+                              className="w-full"
+                            />
+                            <div className="flex justify-between text-xs text-gray-400 mt-1"><span>Small</span><span>Large</span></div>
+                          </div>
+                          <div>
+                            <label className="block text-xs font-bold text-gray-600 mb-2">
+                              📏 Announcement Size: <span className="text-blue-600">{tvAnnouncementSize.toFixed(2)}rem</span>
+                            </label>
+                            <input type="range" min="0.8" max="3.0" step="0.05"
+                              value={tvAnnouncementSize}
+                              onChange={e => {
+                                const v = parseFloat(e.target.value);
+                                setTvAnnouncementSize(v);
+                                localStorage.setItem('tv_ann_size', v);
+                                api('POST', '/tv-announcements', { tickerSize: tvTickerSize, annSize: v, ticker: document.getElementById('tv-ticker-input')?.value, announcements: tvAnnouncements }).catch(()=>{});
+                              }}
+                              className="w-full"
+                            />
+                            <div className="flex justify-between text-xs text-gray-400 mt-1"><span>Small</span><span>Large</span></div>
+                          </div>
+                          {/* Live Preview */}
+                          <div className="col-span-2 bg-gray-900 rounded-xl p-3 space-y-2">
+                            <div className="bg-red-700 rounded px-3 py-1 overflow-hidden">
+                              <p style={{fontFamily:'sans-serif', fontSize:`${tvTickerSize}rem`, fontWeight:700, color:'white', letterSpacing:'2px', textTransform:'uppercase', whiteSpace:'nowrap', overflow:'hidden'}}>
+                                TICKER · Clinic Hours 8AM–5PM · Thank you
+                              </p>
+                            </div>
+                            <div className="bg-blue-950 rounded px-3 py-1.5">
+                              <p style={{fontFamily:'sans-serif', fontSize:`${tvAnnouncementSize}rem`, fontWeight:700, color:'#FFD700'}}>
+                                📋 Announcement Preview
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+
                         <label className="block text-sm font-bold text-gray-700 mb-2">📢 Scrolling Ticker Text</label>
                         <textarea rows={2} id="tv-ticker-input"
                           defaultValue="Welcome to Barangay Upper Bicutan Health Clinic · Please wait for your number to be called · Clinic Hours: Monday – Friday, 8:00 AM – 5:00 PM · Lunch Break: 12:00 PM – 1:00 PM · Please have your PhilHealth card ready"
@@ -8120,14 +8173,55 @@ function normalizeUser(u) {
                           📋 Announcements
                           <span className="ml-2 text-xs font-normal text-gray-400">Shown on TV between queue numbers</span>
                         </label>
+                        {/* Color & Size options */}
+                        <div className="flex flex-wrap gap-3 mb-3 p-3 bg-gray-50 rounded-xl border border-gray-200">
+                          <div className="flex items-center gap-2">
+                            <label className="text-xs font-semibold text-gray-600">🎨 Text Color:</label>
+                            <div className="flex gap-1.5">
+                              {['#FFFFFF','#FFD700','#FF6B6B','#4EC9B0','#87CEEB','#FFA500'].map(color => (
+                                <button key={color} onClick={() => setNewAnnouncementColor(color)}
+                                  className={`w-6 h-6 rounded-full border-2 transition-transform ${newAnnouncementColor === color ? 'border-blue-500 scale-125' : 'border-gray-300'}`}
+                                  style={{background: color}} title={color}
+                                />
+                              ))}
+                              <input type="color" value={newAnnouncementColor}
+                                onChange={e => setNewAnnouncementColor(e.target.value)}
+                                className="w-6 h-6 rounded cursor-pointer border border-gray-300"
+                                title="Custom color"
+                              />
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <label className="text-xs font-semibold text-gray-600">📏 Size:</label>
+                            <div className="flex gap-1">
+                              {[{v:'small',l:'S'},{v:'normal',l:'M'},{v:'large',l:'L'},{v:'xlarge',l:'XL'}].map(s => (
+                                <button key={s.v} onClick={() => setNewAnnouncementSize(s.v)}
+                                  className={`px-2.5 py-1 rounded text-xs font-bold border transition-colors ${newAnnouncementSize === s.v ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-gray-600 border-gray-300 hover:border-blue-400'}`}>
+                                  {s.l}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                          {/* Preview */}
+                          {newAnnouncement && (
+                            <div className="w-full bg-gray-800 rounded px-3 py-1.5 mt-1">
+                              <p style={{
+                                color: newAnnouncementColor,
+                                fontSize: newAnnouncementSize === 'small' ? '0.75rem' : newAnnouncementSize === 'large' ? '1.1rem' : newAnnouncementSize === 'xlarge' ? '1.4rem' : '0.9rem',
+                                fontWeight: 600
+                              }}>{newAnnouncement}</p>
+                            </div>
+                          )}
+                        </div>
+
                         <div className="flex gap-2 mb-3">
                           <input type="text" value={newAnnouncement}
                             onChange={e => setNewAnnouncement(e.target.value)}
                             onKeyDown={e => {
                               if (e.key === 'Enter' && newAnnouncement.trim()) {
-                                const list = [...tvAnnouncements, { id: Date.now(), text: newAnnouncement.trim(), enabled: true }];
+                                const list = [...tvAnnouncements, { id: Date.now(), text: newAnnouncement.trim(), enabled: true, color: newAnnouncementColor, size: newAnnouncementSize }];
                                 saveTvAnnouncements(list);
-                                setNewAnnouncement('');
+                                setNewAnnouncement(''); setNewAnnouncementColor('#FFFFFF'); setNewAnnouncementSize('normal');
                               }
                             }}
                             placeholder="e.g. Free BP Check every Monday"
@@ -8135,9 +8229,9 @@ function normalizeUser(u) {
                           />
                           <button onClick={() => {
                             if (!newAnnouncement.trim()) return;
-                            const list = [...tvAnnouncements, { id: Date.now(), text: newAnnouncement.trim(), enabled: true }];
+                            const list = [...tvAnnouncements, { id: Date.now(), text: newAnnouncement.trim(), enabled: true, color: newAnnouncementColor, size: newAnnouncementSize }];
                             saveTvAnnouncements(list);
-                            setNewAnnouncement('');
+                            setNewAnnouncement(''); setNewAnnouncementColor('#FFFFFF'); setNewAnnouncementSize('normal');
                           }} className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold rounded-lg">
                             + Add
                           </button>
@@ -8156,6 +8250,8 @@ function normalizeUser(u) {
                                 }} className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 text-xs ${ann.enabled ? 'bg-blue-600 border-blue-600 text-white' : 'border-gray-300'}`}>
                                   {ann.enabled && '✓'}
                                 </button>
+                                {/* Color dot */}
+                                <div className="w-3 h-3 rounded-full flex-shrink-0" style={{background: ann.color || '#FFFFFF', border:'1px solid #ccc'}}></div>
                                 <p className="flex-1 text-sm text-gray-700">{ann.text}</p>
                                 <button onClick={() => saveTvAnnouncements(tvAnnouncements.filter((_,idx) => idx !== i))}
                                   className="text-red-400 hover:text-red-600 text-xl font-bold">×</button>
