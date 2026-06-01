@@ -553,6 +553,16 @@
     </div>
   </div>
 
+  <!-- ANNOUNCEMENT PANEL -->
+  <div id="announcement-panel" style="display:none;background:linear-gradient(90deg,#1a1a2e,#16213e);border-top:2px solid rgba(243,156,18,0.5);padding:8px 40px;flex-shrink:0;">
+    <div style="display:flex;align-items:center;gap:12px;">
+      <span style="font-family:'Bebas Neue',sans-serif;font-size:0.8rem;letter-spacing:3px;color:var(--gold);white-space:nowrap;">📋 ANNOUNCEMENT</span>
+      <div style="flex:1;overflow:hidden;">
+        <p id="announcement-text" style="font-family:'Barlow Condensed',sans-serif;font-size:0.9rem;color:rgba(255,255,255,0.9);font-weight:600;letter-spacing:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></p>
+      </div>
+    </div>
+  </div>
+
   <!-- TICKER -->
   <div class="ticker">
     <div class="ticker-inner">
@@ -767,9 +777,39 @@
     }
   }
 
+  // ── Fetch announcements and update ticker ────────────────────────────────
+  async function fetchAnnouncements() {
+    try {
+      const res = await fetch(`${API_BASE}/tv-announcements`);
+      if (!res.ok) return;
+      const data = await res.json();
+
+      // Update ticker text
+      if (data.ticker) {
+        const tickerEls = document.querySelectorAll('.ticker-text');
+        tickerEls.forEach(el => el.innerHTML = data.ticker);
+      }
+
+      // Update announcement panel if exists
+      const enabled = (data.announcements || []).filter(a => a.enabled);
+      const annPanel = document.getElementById('announcement-panel');
+      if (annPanel) {
+        if (enabled.length === 0) {
+          annPanel.style.display = 'none';
+        } else {
+          annPanel.style.display = 'block';
+          document.getElementById('announcement-text').textContent =
+            enabled.map(a => a.text).join('  ·  ');
+        }
+      }
+    } catch(e) { /* non-fatal */ }
+  }
+
   // ── Start ────────────────────────────────────────────────────────────────────
   fetchQueue();
+  fetchAnnouncements();
   setInterval(fetchQueue, REFRESH_MS);
+  setInterval(fetchAnnouncements, REFRESH_MS);
 </script>
 </body>
 </html>
