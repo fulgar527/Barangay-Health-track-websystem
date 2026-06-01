@@ -6685,13 +6685,16 @@ function normalizeUser(u) {
                     {/* ══ 1. QUEUE PERFORMANCE KPIs ══════════════════════════ */}
                     {(() => {
                       const today = getLocalDateStr();
-                      const todayQueue = queue.filter(q => {
-                        const d = q.appointmentDate || (q.timeQueued ? q.timeQueued.slice(0,10) : '');
-                        return d === today || (q.timeQueued && q.timeQueued.slice(0,10) === today);
-                      });
-                      const totalToday = queue.length;
-                      const servedToday = queue.filter(q => q.status === 'Completed').length;
-                      const acceptedToday = queue.filter(q => q.status === 'Accepted' || q.status === 'In Progress' || q.status === 'Completed').length;
+
+                      // Served = from visitLog (Completed patients move here)
+                      const servedToday = visitLog.filter(v => {
+                        const d = v.visitDate ? v.visitDate.slice(0,10) : '';
+                        return d === today;
+                      }).length;
+
+                      // Active queue stats
+                      const totalToday = queue.length + servedToday; // total = active + served
+                      const acceptedToday = queue.filter(q => q.status === 'Accepted' || q.status === 'In Progress').length + servedToday;
                       const rejectedToday = queue.filter(q => q.status === 'Rejected').length;
                       const waitingToday = queue.filter(q => q.status === 'Waiting').length;
                       const acceptanceRate = totalToday > 0 ? Math.round((acceptedToday / totalToday) * 100) : 0;
