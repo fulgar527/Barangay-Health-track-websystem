@@ -2342,7 +2342,12 @@ function normalizeUser(u) {
               return;
             }
             const [hours] = residentBooking.appointmentTime.split(':').map(Number);
-            if (hours < 8 || hours > 16) { alert('Please select a valid clinic slot (8 AM – 4 PM).'); return; }
+            const openH = parseInt(clinicHours.open.split(':')[0]);
+            const closeH = parseInt(clinicHours.close.split(':')[0]);
+            if (hours < openH || hours >= closeH) {
+              alert(`Please select a valid clinic slot (${openH % 12 || 12}:00 ${openH >= 12 ? 'PM' : 'AM'} – ${closeH % 12 || 12}:00 ${closeH >= 12 ? 'PM' : 'AM'}).`);
+              return;
+            }
             if (residentBooking.appointmentTime === clinicHours.lunchStart) { alert(`${clinicHours.lunchStart.replace(':00','')}:00 – ${clinicHours.lunchEnd.replace(':00','')}:00 is the lunch break.`); return; }
             const bookedSlots = getBookedSlots(residentBooking.appointmentDate);
             if (bookedSlots.has(bookingData.appointmentTime)) {
