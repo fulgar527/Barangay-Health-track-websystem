@@ -36,13 +36,25 @@ async function queryWithRetry(query, params, retries = 2) {
 router.get('/', async (req, res) => {
   try {
     const result = await queryWithRetry(
-      `SELECT * FROM queue_with_patient_details 
-       WHERE status != 'Completed' 
-       ORDER BY 
-         CASE priority 
-           WHEN 'Priority Case' THEN 1 
-           WHEN 'Urgent' THEN 2 
-           WHEN 'Regular' THEN 3 
+      `SELECT * FROM queue_with_patient_details
+       WHERE (
+         status NOT IN ('Completed', 'Cancelled')
+         OR (status = 'Completed' AND DATE(time_completed) = CURRENT_DATE)
+         OR (status = 'Rejected' AND DATE(rejected_at) = CURRENT_DATE)
+       )
+       ORDER BY
+         CASE status
+           WHEN 'In Progress' THEN 0
+           WHEN 'Accepted'    THEN 1
+           WHEN 'Waiting'     THEN 2
+           WHEN 'Rejected'    THEN 3
+           WHEN 'Completed'   THEN 4
+           ELSE 5
+         END,
+         CASE priority
+           WHEN 'Priority Case' THEN 1
+           WHEN 'Urgent'        THEN 2
+           WHEN 'Regular'       THEN 3
          END,
          time_queued`
     );
