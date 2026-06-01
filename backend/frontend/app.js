@@ -1284,17 +1284,31 @@ function normalizeUser(u) {
           };
 
           // ── Clinic Appointment Slots (1-hour, 8 AM–5 PM, lunch 12–1 PM blocked) ──
-          const CLINIC_SLOTS = [
-            { value: '08:00', label: '8:00 AM – 9:00 AM',   slot: 1 },
-            { value: '09:00', label: '9:00 AM – 10:00 AM',  slot: 2 },
-            { value: '10:00', label: '10:00 AM – 11:00 AM', slot: 3 },
-            { value: '11:00', label: '11:00 AM – 12:00 PM', slot: 4 },
-            { value: '12:00', label: '12:00 PM – 1:00 PM',  slot: 5, lunch: true },
-            { value: '13:00', label: '1:00 PM – 2:00 PM',   slot: 6 },
-            { value: '14:00', label: '2:00 PM – 3:00 PM',   slot: 7 },
-            { value: '15:00', label: '3:00 PM – 4:00 PM',   slot: 8 },
-            { value: '16:00', label: '4:00 PM – 5:00 PM',   slot: 9 },
-          ];
+          // ── Clinic Hours Settings ─────────────────────────────────────────
+          const [clinicHours, setClinicHours] = React.useState(() => {
+            try { const s = localStorage.getItem('ht_clinic_hours'); return s ? JSON.parse(s) : { open: '08:00', close: '17:00', lunchStart: '12:00', lunchEnd: '13:00' }; } catch { return { open: '08:00', close: '17:00', lunchStart: '12:00', lunchEnd: '13:00' }; }
+          });
+          const saveClinicHours = (hours) => {
+            setClinicHours(hours);
+            localStorage.setItem('ht_clinic_hours', JSON.stringify(hours));
+            api('POST', '/tv-announcements', { clinicHours: hours }).catch(() => {});
+          };
+
+          // ── Dynamic CLINIC_SLOTS based on clinic hours ────────────────────
+          const CLINIC_SLOTS = (() => {
+            const slots = [];
+            const openH = parseInt(clinicHours.open.split(':')[0]);
+            const closeH = parseInt(clinicHours.close.split(':')[0]);
+            const lunchH = parseInt(clinicHours.lunchStart.split(':')[0]);
+            for (let h = openH; h < closeH; h++) {
+              const val = `${String(h).padStart(2,'0')}:00`;
+              const nextH = h + 1;
+              const label = `${h % 12 || 12}:00 ${h >= 12 ? 'PM' : 'AM'} – ${nextH % 12 || 12}:00 ${nextH >= 12 ? 'PM' : 'AM'}`;
+              const isLunch = h === lunchH;
+              slots.push({ value: val, label, slot: h - openH + 1, lunch: isLunch });
+            }
+            return slots;
+          })();
 
           // Returns Set of booked time-values for a given date (excluding an optional appointment id)
           // ── Doctors State ────────────────────────────────────────────────────
@@ -2314,7 +2328,7 @@ function normalizeUser(u) {
             }
             const [hours] = residentBooking.appointmentTime.split(':').map(Number);
             if (hours < 8 || hours > 16) { alert('Please select a valid clinic slot (8 AM – 4 PM).'); return; }
-            if (residentBooking.appointmentTime === '12:00') { alert('12:00 PM – 1:00 PM is the lunch break.'); return; }
+            if (residentBooking.appointmentTime === clinicHours.lunchStart) { alert(`${clinicHours.lunchStart.replace(':00','')}:00 – ${clinicHours.lunchEnd.replace(':00','')}:00 is the lunch break.`); return; }
             const bookedSlots = getBookedSlots(residentBooking.appointmentDate);
             if (bookedSlots.has(bookingData.appointmentTime)) {
               alert('This time slot is already fully booked. Please choose another time.'); return;
@@ -8289,6 +8303,60 @@ function normalizeUser(u) {
                           className="px-4 py-2 bg-gray-800 hover:bg-black text-white text-sm font-semibold rounded-lg transition-colors">
                           📺 Open TV
                         </a>
+                      </div>
+
+                      {/* Clinic Hours */}
+                      <div className="border-t pt-5">
+                        <label className="block text-sm font-bold text-gray-700 mb-1">🕐 Clinic Operating Hours</label>
+                        <p className="text-xs text-gray-400 mb-4">Adjusting these changes the available appointment time slots for booking</p>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-600 mb-1">Opening Time</label>
+                            <input type="time" value={clinicHours.open}
+                              onChange={e => saveClinicHours({...clinicHours, open: e.target.value})}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-600 mb-1">Closing Time</label>
+                            <input type="time" value={clinicHours.close}
+                              onChange={e => saveClinicHours({...clinicHours, close: e.target.value})}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-600 mb-1">Lunch Break Start</label>
+                            <input type="time" value={clinicHours.lunchStart}
+                              onChange={e => saveClinicHours({...clinicHours, lunchStart: e.target.value})}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                            />
+                          </div>
+                          <div>
+                            <label className="block text-xs font-semibold text-gray-600 mb-1">Lunch Break End</label>
+                            <input type="time" value={clinicHours.lunchEnd}
+                              onChange={e => saveClinicHours({...clinicHours, lunchEnd: e.target.value})}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                            />
+                          </div>
+                        </div>
+                        {/* Preview slots */}
+                        <div className="mt-3 bg-gray-50 rounded-xl p-3 border border-gray-200">
+                          <p className="text-xs font-semibold text-gray-500 mb-2 uppercase tracking-wide">Available Time Slots Preview</p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {CLINIC_SLOTS.map(s => (
+                              <span key={s.value} className={`text-xs px-2 py-1 rounded-full font-medium ${s.lunch ? 'bg-orange-100 text-orange-600' : 'bg-blue-100 text-blue-700'}`}>
+                                {s.label} {s.lunch ? '🍽️' : ''}
+                              </span>
+                            ))}
+                          </div>
+                          <p className="text-xs text-gray-400 mt-2">
+                            {CLINIC_SLOTS.length} time slots · {clinicHours.open} – {clinicHours.close} · Lunch: {clinicHours.lunchStart}–{clinicHours.lunchEnd}
+                          </p>
+                        </div>
+                        <button onClick={() => saveClinicHours({ open: '08:00', close: '17:00', lunchStart: '12:00', lunchEnd: '13:00' })}
+                          className="mt-2 text-xs text-amber-600 hover:text-amber-800 font-medium">
+                          ↺ Reset to default (8AM–5PM)
+                        </button>
                       </div>
                     </div>
                   </div>
