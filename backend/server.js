@@ -237,10 +237,12 @@ app.get('/api/queue-display/live', async (req, res) => {
        LEFT JOIN patients p ON q.patient_id = p.patient_id
        WHERE q.status NOT IN ('Completed', 'Cancelled', 'Rejected')
          AND (
-           DATE(q.appointment_date) = CURRENT_DATE
+           q.status = 'In Progress'
+           OR DATE(q.appointment_date) = CURRENT_DATE
            OR (q.appointment_date IS NULL AND DATE(q.created_at) = CURRENT_DATE)
          )
        ORDER BY
+         CASE q.status WHEN 'In Progress' THEN 0 ELSE 1 END,
          CASE q.priority WHEN 'Priority Case' THEN 0 WHEN 'Urgent' THEN 1 ELSE 2 END,
          q.queue_number`
     );
