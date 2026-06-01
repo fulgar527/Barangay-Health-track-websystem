@@ -880,6 +880,7 @@ function normalizeUser(u) {
             const n = Math.max(1, Math.min(200, parseInt(val) || 38));
             setSlotCapacity(n);
             try { localStorage.setItem('ht_slot_capacity', String(n)); } catch {}
+            api('POST', '/clinic-settings', { key: 'slot_capacity', value: n }).catch(() => {});
           };
           const addCategory = () => {
             const name = newCategoryForm.name.trim();
@@ -1392,19 +1393,19 @@ function normalizeUser(u) {
             if (!date) return new Set();
             const counts = {};
             queue
-              .filter(q => q.appointmentDate === date && q.id !== excludeId && !['Cancelled','Rejected'].includes(q.status))
+              .filter(q => q.appointmentDate === date && q.id !== excludeId && !['Cancelled','Rejected','Completed'].includes(q.status))
               .forEach(q => {
                 if (q.appointmentTime) counts[q.appointmentTime] = (counts[q.appointmentTime] || 0) + 1;
               });
             return new Set(Object.entries(counts).filter(([, c]) => c >= SLOT_CAPACITY).map(([t]) => t));
           };
 
-          // Returns count of bookings for a specific slot
+          // Returns count of bookings for a specific slot (excludes completed/cancelled)
           const getSlotCount = (date, time) => {
             if (!date || !time) return 0;
             return queue.filter(q =>
               q.appointmentDate === date && q.appointmentTime === time &&
-              !['Cancelled','Rejected'].includes(q.status)
+              !['Cancelled','Rejected','Completed'].includes(q.status)
             ).length;
           };
 
@@ -2350,8 +2351,8 @@ function normalizeUser(u) {
             }
             if (residentBooking.appointmentTime === clinicHours.lunchStart) { alert(`${clinicHours.lunchStart.replace(':00','')}:00 – ${clinicHours.lunchEnd.replace(':00','')}:00 is the lunch break.`); return; }
             const bookedSlots = getBookedSlots(residentBooking.appointmentDate);
-            if (bookedSlots.has(bookingData.appointmentTime)) {
-              alert('This time slot is already fully booked. Please choose another time.'); return;
+            if (bookedSlots.has(residentBooking.appointmentTime)) {
+              alert('⚠️ This time slot is already fully booked. Please choose another time slot.'); return;
             }
             // Block past time slots for today
             const isBookingToday = bookingData.appointmentDate === getLocalDateStr();
