@@ -45,17 +45,22 @@ router.get('/', async (req, res) => {
        ORDER BY
          CASE status
            WHEN 'In Progress' THEN 0
-           WHEN 'Accepted'    THEN 1
-           WHEN 'Waiting'     THEN 2
-           WHEN 'Rejected'    THEN 3
-           WHEN 'Completed'   THEN 4
-           ELSE 5
+           ELSE 1
          END,
          CASE priority
-           WHEN 'Priority Case' THEN 1
-           WHEN 'Urgent'        THEN 2
-           WHEN 'Regular'       THEN 3
+           WHEN 'Priority Case' THEN 0
+           WHEN 'Urgent'        THEN 1
+           WHEN 'Regular'       THEN 2
+           ELSE 3
          END,
+         CASE status
+           WHEN 'Accepted'    THEN 0
+           WHEN 'Waiting'     THEN 1
+           WHEN 'Rejected'    THEN 2
+           WHEN 'Completed'   THEN 3
+           ELSE 4
+         END,
+         queue_number ASC NULLS LAST,
          time_queued`
     );
     res.json(result.rows);
@@ -250,7 +255,13 @@ router.post('/', async (req, res) => {
           1
         );
         
-        const SLOT_CAPACITY = 38; // matches frontend default
+        // Get capacity from DB or use default
+        let SLOT_CAPACITY = 38;
+        try {
+          const capR = await db.query("SELECT value FROM clinic_settings WHERE key = 'slot_capacity'");
+          if (capR.rows.length > 0) SLOT_CAPACITY = parseInt(capR.rows[0].value) || 38;
+        } catch(e) { /* use default */ }
+
         const count = parseInt(conflict.rows[0].count);
         if (count >= SLOT_CAPACITY) {
           console.warn('⚠️  Appointment slot full:', appointmentDate, appointmentTime);
