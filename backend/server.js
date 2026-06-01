@@ -316,6 +316,38 @@ app.get('/api/tv-announcements', (req, res) => {
   res.json(tvAnnouncementsCache);
 });
 
+// ── Clinic Settings ───────────────────────────────────────────────────────────
+app.get('/api/clinic-settings', async (req, res) => {
+  try {
+    const result = await db.query(`SELECT key, value FROM clinic_settings`);
+    const settings = {};
+    result.rows.forEach(r => {
+      try { settings[r.key] = JSON.parse(r.value); } catch { settings[r.key] = r.value; }
+    });
+    res.json(settings);
+  } catch (err) {
+    // Return defaults if table doesn't exist yet
+    res.json({ clinic_hours: { open:'08:00', close:'17:00', lunchStart:'12:00', lunchEnd:'13:00', workDays:[1,2,3,4,5] } });
+  }
+});
+
+app.post('/api/clinic-settings', requireAuth, async (req, res) => {
+  try {
+    const { key, value } = req.body;
+    if (!key || value === undefined) return res.status(400).json({ error: 'key and value required' });
+    await db.query(
+      `INSERT INTO clinic_settings (key, value, updated_at)
+       VALUES ($1, $2, NOW())
+       ON CONFLICT (key) DO UPDATE SET value = $2, updated_at = NOW()`,
+      [key, JSON.stringify(value)]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('POST /clinic-settings error:', err.message);
+    res.status(500).json({ error: 'Failed to save setting' });
+  }
+});
+
 app.use('/api/patients', requireAuth, require('./routes/patients'));
 app.use('/api/queue', requireAuth, require('./routes/queue'));
 app.use('/api/services', requireAuth, require('./routes/services'));
