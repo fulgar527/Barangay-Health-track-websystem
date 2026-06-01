@@ -1313,6 +1313,17 @@ function normalizeUser(u) {
           const saveDoctors = (updated) => { setDoctors(updated); try { localStorage.setItem('ht_doctors', JSON.stringify(updated)); } catch {} };
 
           // ── Doctor Management States ──────────────────────────────────────────
+          // ── TV Announcements State ───────────────────────────────────────────
+          const [tvAnnouncements, setTvAnnouncements] = React.useState(() => {
+            try { const s = localStorage.getItem('ht_tv_announcements'); return s ? JSON.parse(s) : []; } catch { return []; }
+          });
+          const [newAnnouncement, setNewAnnouncement] = React.useState('');
+          const saveTvAnnouncements = (list) => {
+            setTvAnnouncements(list);
+            localStorage.setItem('ht_tv_announcements', JSON.stringify(list));
+            // Push to server so TV display can read it
+            api('POST', '/tv-announcements', { announcements: list }).catch(() => {});
+          };
           const [showDoctorMgmt, setShowDoctorMgmt] = useState(false);
           const [doctorForm, setDoctorForm] = useState({ id:'', name:'', specialty:'General Physician', schedules:[], enabled:true });
           const [editingDoctorId, setEditingDoctorId] = useState(null);
@@ -5347,6 +5358,9 @@ function normalizeUser(u) {
                         { id: 'accounts', label: 'Accounts', icon: Users },
                         { id: 'auditlog', label: 'Audit Log', icon: List },
                         { id: 'theme', label: '🎨 Theme', icon: Activity }
+                      ] : []),
+                      ...(userRole === 'admin' || userRole === 'staff' ? [
+                        { id: 'tv', label: '📺 TV Display', icon: Activity }
                       ] : [])
                     ].map(tab => (
                       <button
@@ -8074,6 +8088,114 @@ function normalizeUser(u) {
                 </div>
               )}
 
+              {/* ===== TV DISPLAY TAB ===== */}
+              {activeTab === 'tv' && (userRole === 'admin' || userRole === 'staff') && (
+                <div className="max-w-2xl mx-auto space-y-6">
+                  <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
+                    <div className="px-6 py-4 border-b" style={{background:'linear-gradient(to right,#1a1a2e,#16213e)'}}>
+                      <h2 className="text-xl font-bold text-white">📺 TV Display Manager</h2>
+                      <p className="text-sm text-white/80 mt-0.5">Manage announcements and ticker shown on the queue TV</p>
+                    </div>
+                    <div className="p-6 space-y-6">
+                      {/* Ticker */}
+                      <div>
+                        <label className="block text-sm font-bold text-gray-700 mb-2">📢 Scrolling Ticker Text</label>
+                        <textarea rows={2} id="tv-ticker-input"
+                          defaultValue="Welcome to Barangay Upper Bicutan Health Clinic · Please wait for your number to be called · Clinic Hours: Monday – Friday, 8:00 AM – 5:00 PM · Lunch Break: 12:00 PM – 1:00 PM · Please have your PhilHealth card ready"
+                          className="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                        />
+                        <button onClick={() => {
+                          const text = document.getElementById('tv-ticker-input').value.trim();
+                          if (!text) return;
+                          api('POST', '/tv-announcements', { ticker: text, announcements: tvAnnouncements })
+                            .then(() => alert('✅ Ticker updated! TV refreshes in 5 seconds.'))
+                            .catch(() => alert('Failed.'));
+                        }} className="mt-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-lg">
+                          💾 Save Ticker
+                        </button>
+                      </div>
+                      {/* Announcements */}
+                      <div>
+                        <label className="block text-sm font-bold text-gray-700 mb-2">
+                          📋 Announcements
+                          <span className="ml-2 text-xs font-normal text-gray-400">Shown on TV between queue numbers</span>
+                        </label>
+                        <div className="flex gap-2 mb-3">
+                          <input type="text" value={newAnnouncement}
+                            onChange={e => setNewAnnouncement(e.target.value)}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter' && newAnnouncement.trim()) {
+                                const list = [...tvAnnouncements, { id: Date.now(), text: newAnnouncement.trim(), enabled: true }];
+                                saveTvAnnouncements(list);
+                                setNewAnnouncement('');
+                              }
+                            }}
+                            placeholder="e.g. Free BP Check every Monday"
+                            className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                          />
+                          <button onClick={() => {
+                            if (!newAnnouncement.trim()) return;
+                            const list = [...tvAnnouncements, { id: Date.now(), text: newAnnouncement.trim(), enabled: true }];
+                            saveTvAnnouncements(list);
+                            setNewAnnouncement('');
+                          }} className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold rounded-lg">
+                            + Add
+                          </button>
+                        </div>
+                        {tvAnnouncements.length === 0 ? (
+                          <div className="text-center py-6 bg-gray-50 rounded-xl border border-dashed border-gray-200">
+                            <p className="text-sm text-gray-400">No announcements yet.</p>
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            {tvAnnouncements.map((ann, i) => (
+                              <div key={ann.id} className={`flex items-center gap-3 px-4 py-3 rounded-xl border ${ann.enabled ? 'bg-blue-50 border-blue-200' : 'bg-gray-50 border-gray-200 opacity-60'}`}>
+                                <button onClick={() => {
+                                  const list = tvAnnouncements.map((a, idx) => idx === i ? {...a, enabled: !a.enabled} : a);
+                                  saveTvAnnouncements(list);
+                                }} className={`w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0 text-xs ${ann.enabled ? 'bg-blue-600 border-blue-600 text-white' : 'border-gray-300'}`}>
+                                  {ann.enabled && '✓'}
+                                </button>
+                                <p className="flex-1 text-sm text-gray-700">{ann.text}</p>
+                                <button onClick={() => saveTvAnnouncements(tvAnnouncements.filter((_,idx) => idx !== i))}
+                                  className="text-red-400 hover:text-red-600 text-xl font-bold">×</button>
+                              </div>
+                            ))}
+                            <button onClick={() => {
+                              saveTvAnnouncements(tvAnnouncements);
+                              alert('✅ Announcements pushed to TV!');
+                            }} className="w-full mt-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-lg">
+                              💾 Save & Push to TV
+                            </button>
+                          </div>
+                        )}
+                        {tvAnnouncements.filter(a => a.enabled).length > 0 && (
+                          <div className="mt-4 bg-gray-900 rounded-xl p-3">
+                            <p className="text-xs text-gray-500 mb-2 uppercase tracking-wide">📺 Preview</p>
+                            <div className="bg-red-800 rounded px-3 py-2">
+                              <p className="text-white text-xs font-semibold">
+                                {tvAnnouncements.filter(a => a.enabled).map(a => a.text).join(' · ')}
+                              </p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                      {/* Quick link */}
+                      <div className="bg-gray-50 rounded-xl p-4 flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-bold text-gray-700">Open TV Display</p>
+                          <p className="text-xs text-gray-400">Open the queue display for the waiting area screen</p>
+                        </div>
+                        <a href="/queue-display" target="_blank"
+                          className="px-4 py-2 bg-gray-800 hover:bg-black text-white text-sm font-semibold rounded-lg transition-colors">
+                          📺 Open TV
+                        </a>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* ===== THEME CUSTOMIZER PANEL ===== */}
               {activeTab === 'theme' && userRole === 'admin' && (() => {
                 const PRESETS = [
@@ -8178,6 +8300,7 @@ function normalizeUser(u) {
                       </button>
                     </div>
                   </div>
+
                 );
               })()}
 
