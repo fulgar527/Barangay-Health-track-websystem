@@ -300,12 +300,14 @@ app.patch('/api/notifications/read', requireAuth, async (req, res) => {
 });
 
 // ── TV Announcements ─────────────────────────────────────────────────────────
-let tvAnnouncementsCache = { ticker: null, announcements: [] };
+let tvAnnouncementsCache = { ticker: null, announcements: [], tickerSize: 1.15, annSize: 1.2 };
 
 app.post('/api/tv-announcements', requireAuth, (req, res) => {
-  const { ticker, announcements } = req.body;
+  const { ticker, announcements, tickerSize, annSize } = req.body;
   if (ticker) tvAnnouncementsCache.ticker = ticker;
   if (announcements) tvAnnouncementsCache.announcements = announcements;
+  if (tickerSize) tvAnnouncementsCache.tickerSize = tickerSize;
+  if (annSize) tvAnnouncementsCache.annSize = annSize;
   res.json({ ok: true });
 });
 
