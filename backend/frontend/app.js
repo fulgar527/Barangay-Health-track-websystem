@@ -502,7 +502,7 @@ function normalizeUser(u) {
         
         // ── Default Doctors ───────────────────────────────────────────────────
         const DEFAULT_DOCTORS = [
-          { id: 'doc-1', name: 'Dr. Maria Santos', specialty: 'General Physician', schedules: [{day:'Monday',start:'08:00',end:'17:00'},{day:'Wednesday',start:'08:00',end:'17:00'},{day:'Friday',start:'08:00',end:'17:00'}], enabled: true },
+          { id: 'doc-1', name: 'Dr. Maria Santos', specialty: 'General Physician', schedules: [{day:'Monday',start:'08:00',end:'17:00'},{day:'Tuesday',start:'08:00',end:'17:00'},{day:'Wednesday',start:'08:00',end:'17:00'},{day:'Thursday',start:'08:00',end:'17:00'},{day:'Friday',start:'08:00',end:'17:00'}], enabled: true },
           { id: 'doc-2', name: 'Dr. Jose Reyes', specialty: 'Pediatrician', schedules: [{day:'Tuesday',start:'09:00',end:'16:00'},{day:'Thursday',start:'09:00',end:'16:00'}], enabled: true },
           { id: 'doc-3', name: 'Dr. Ana Garcia', specialty: 'OB-GYN', schedules: [{day:'Monday',start:'08:00',end:'12:00'},{day:'Wednesday',start:'13:00',end:'17:00'},{day:'Friday',start:'08:00',end:'17:00'}], enabled: true },
         ];
@@ -1299,7 +1299,16 @@ function normalizeUser(u) {
           // Returns Set of booked time-values for a given date (excluding an optional appointment id)
           // ── Doctors State ────────────────────────────────────────────────────
           const [doctors, setDoctors] = React.useState(() => {
-            try { const s = localStorage.getItem('ht_doctors'); return s ? JSON.parse(s) : DEFAULT_DOCTORS; } catch { return DEFAULT_DOCTORS; }
+            try { 
+              const s = localStorage.getItem('ht_doctors'); 
+              const saved = s ? JSON.parse(s) : null;
+              // Reset if saved version is old (missing weekday schedules)
+              if (saved && saved[0] && saved[0].schedules && saved[0].schedules.length <= 3) {
+                localStorage.removeItem('ht_doctors');
+                return DEFAULT_DOCTORS;
+              }
+              return saved || DEFAULT_DOCTORS; 
+            } catch { return DEFAULT_DOCTORS; }
           });
           const saveDoctors = (updated) => { setDoctors(updated); try { localStorage.setItem('ht_doctors', JSON.stringify(updated)); } catch {} };
 
@@ -5532,8 +5541,23 @@ function normalizeUser(u) {
                           <UserPlus className="w-5 h-5" />
                           <span>Walk-in Queue</span>
                         </button>
-                      </div>
-                    </div>
+                        <button
+                          onClick={async () => {
+                            const nextPatient = queue.find(q => q.status === 'Accepted');
+                            if (!nextPatient) {
+                              alert('No accepted patients in queue to advance.');
+                              return;
+                            }
+                            if (window.confirm(`Manually call next patient?\n\n${nextPatient.name}\nQueue #${String(nextPatient.queueNumber || '?').padStart(3,'0')} · ${nextPatient.serviceCategory || nextPatient.service}`)) {
+                              await callToTV(nextPatient);
+                            }
+                          }}
+                          className="flex items-center gap-1.5 bg-purple-600 hover:bg-purple-700 text-white px-4 py-3 rounded-lg font-semibold transition-all shadow-md"
+                          title="Manually call next patient to TV display"
+                        >
+                          <span>⏭️</span>
+                          <span>Next</span>
+                        </button>
 
                     {/* Status Filter Tabs */}
                     <div className="flex flex-wrap gap-2">
