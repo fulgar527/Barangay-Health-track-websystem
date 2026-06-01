@@ -5506,6 +5506,7 @@ function normalizeUser(u) {
                 {/* QUEUE MANAGEMENT TAB */}
                 {activeTab === 'queue' && (
                   <div className="space-y-6">
+                    {/* Header row */}
                     <div className="flex flex-wrap justify-between items-center gap-3">
                       <div className="flex items-center gap-3">
                         <h2 className="text-2xl font-bold text-gray-800">Queue Management</h2>
@@ -5558,6 +5559,8 @@ function normalizeUser(u) {
                           <span>⏭️</span>
                           <span>Next</span>
                         </button>
+                      </div>
+                    </div>
 
                     {/* Status Filter Tabs */}
                     <div className="flex flex-wrap gap-2">
