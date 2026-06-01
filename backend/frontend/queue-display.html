@@ -696,7 +696,7 @@
 
     numEl.textContent = numStr;
     nameEl.textContent = entry.name;
-    svcEl.textContent = entry.service || '';
+    svcEl.textContent = '';
     banner.classList.add('show');
   }
 
@@ -727,7 +727,7 @@
             <div class="num" style="color:#E74C3C;">${numStr}</div>
             <div class="info">
               <div class="name">${display} ${badge}</div>
-              <div class="svc">${q.service || 'Walk-in'}${q.appointmentTime ? ` · ${formatTime(q.appointmentTime)}` : ''}</div>
+              <div class="svc">${q.appointmentTime ? formatTime(q.appointmentTime) : ''}</div>
             </div>
             ${isNext ? `<div class="badge-next" style="background:#E74C3C;">Next</div>` : `<div class="badge-pos">#${i+1}</div>`}
           </div>`;
@@ -752,7 +752,7 @@
             <div class="num">${numStr}</div>
             <div class="info">
               <div class="name">${display}</div>
-              <div class="svc">${q.service || 'Walk-in'}${q.appointmentTime ? ` · ${formatTime(q.appointmentTime)}` : ''}</div>
+              <div class="svc">${q.appointmentTime ? formatTime(q.appointmentTime) : ''}</div>
             </div>
             ${isNext ? `<div class="badge-next">Next</div>` : `<div class="badge-pos">#${i+1}</div>`}
           </div>`;
