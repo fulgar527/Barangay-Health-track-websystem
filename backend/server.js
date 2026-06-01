@@ -299,6 +299,20 @@ app.patch('/api/notifications/read', requireAuth, async (req, res) => {
   }
 });
 
+// ── TV Announcements ─────────────────────────────────────────────────────────
+let tvAnnouncementsCache = { ticker: null, announcements: [] };
+
+app.post('/api/tv-announcements', requireAuth, (req, res) => {
+  const { ticker, announcements } = req.body;
+  if (ticker) tvAnnouncementsCache.ticker = ticker;
+  if (announcements) tvAnnouncementsCache.announcements = announcements;
+  res.json({ ok: true });
+});
+
+app.get('/api/tv-announcements', (req, res) => {
+  res.json(tvAnnouncementsCache);
+});
+
 app.use('/api/patients', requireAuth, require('./routes/patients'));
 app.use('/api/queue', requireAuth, require('./routes/queue'));
 app.use('/api/services', requireAuth, require('./routes/services'));
