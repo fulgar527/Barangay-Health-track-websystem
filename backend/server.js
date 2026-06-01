@@ -235,7 +235,7 @@ app.get('/api/queue-display/live', async (req, res) => {
               p.date_of_birth, p.pwd_id
        FROM queue q
        LEFT JOIN patients p ON q.patient_id = p.patient_id
-       WHERE q.status NOT IN ('Completed', 'Cancelled', 'Rejected')
+       WHERE q.status NOT IN ('Completed', 'Cancelled', 'Rejected', 'Waiting')
          AND (
            q.status = 'In Progress'
            OR DATE(q.appointment_date) = CURRENT_DATE
