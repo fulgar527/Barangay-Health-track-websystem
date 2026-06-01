@@ -300,14 +300,15 @@ app.patch('/api/notifications/read', requireAuth, async (req, res) => {
 });
 
 // ── TV Announcements ─────────────────────────────────────────────────────────
-let tvAnnouncementsCache = { ticker: null, announcements: [], tickerSize: 1.15, annSize: 1.2 };
+let tvAnnouncementsCache = { ticker: null, announcements: [], tickerSize: 1.15, annSize: 1.2, clinicHours: { open: '08:00', close: '17:00', lunchStart: '12:00', lunchEnd: '13:00' } };
 
 app.post('/api/tv-announcements', requireAuth, (req, res) => {
-  const { ticker, announcements, tickerSize, annSize } = req.body;
+  const { ticker, announcements, tickerSize, annSize, clinicHours } = req.body;
   if (ticker) tvAnnouncementsCache.ticker = ticker;
   if (announcements) tvAnnouncementsCache.announcements = announcements;
   if (tickerSize) tvAnnouncementsCache.tickerSize = tickerSize;
   if (annSize) tvAnnouncementsCache.annSize = annSize;
+  if (clinicHours) tvAnnouncementsCache.clinicHours = clinicHours;
   res.json({ ok: true });
 });
 
